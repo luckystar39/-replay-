@@ -1,0 +1,54 @@
+# ============================================================
+#  RepRecorder —— 只把「自己写的东西」放进仓库
+#  下面每一条都写清楚为什么排除，别随手删。
+# ============================================================
+
+# ---------- 游戏本体：别人的整合包，11 GB ----------
+【完整包】非想天则整合包2026-06-15/
+
+# ---------- 第三方二进制：可重新下载 ----------
+# ffmpeg.exe 约 217 MB，超过 GitHub 单文件 100 MB 硬限制，推不上去。
+# 重新获取：winget install Gyan.FFmpeg，再把 bin\ffmpeg.exe 复制到 RepRecorder-给别人\ 旁边。
+RepRecorder-给别人/ffmpeg.exe
+
+# ---------- 打包产物：随时可以用 编译.bat / 重新压缩 生成 ----------
+*.zip
+
+# ---------- 重复的编译产物 ----------
+# 只把「真正的那个」入库：RepRecorder/RepRecorder.exe
+# 它是 2026-09-29 22:22 的构建，和同一分钟的 RepRecorder.cs 配套，是当前版本。
+# 下面两个是它的旧副本（09-29 21:56 的构建，比源码旧），放进来会让人误以为
+# 「RepRecorder-源码/ 里的 exe 就是这份源码编出来的」—— 其实不是。要更新，
+# 就在 RepRecorder/ 跑一次 编译.bat，再把 exe 复制过去。
+RepRecorder-源码/RepRecorder.exe
+RepRecorder-给别人/RepRecorder.exe
+
+# ---------- 本机状态：含本机绝对路径，别人拿到会找不到东西 ----------
+# （部署说明里明确写了「不要把它发给别人」，所以也不进仓库）
+RepRecorder/RepRecorder.settings.json
+RepRecorder-源码/RepRecorder.settings.json
+RepRecorder/RepRecorder.log
+RepRecorder/RepRecorder-上次.log
+RepRecorder/RepRecorder.已静音待恢复
+RepRecorder/RepRecorder.lastframe.jpg
+RepRecorder/*.log
+
+# ---------- 桌面快捷方式：指向本机绝对路径，换台电脑就失效 ----------
+Rep录制器.lnk
+
+# ---------- 对话存档：个人历史，不入库（留在磁盘上）----------
+上一段对话-英伟达显卡转换replay为mp4.md
+本次会话-删插件与恢复对话.md
+
+# ---------- DSH 工具链与回滚备份：留在磁盘，不入库 ----------
+# 注意：下面三个 .bak 是 2026-09-26 解除会话归档 / 删插件时的回滚点，
+#       workspace.json.bak 里含改动前的原始归档 id 列表，删了就没法完全回退。
+export-session.mjs
+restart-dsh-web.ps1
+restart-dsh-web-detached.ps1
+workspace.json.bak-*
+web-profile-package.json.bak-*
+web-profile-pnpm-lock.yaml.bak-*
+
+# ---------- 编辑器 / 工具 ----------
+.claude/
