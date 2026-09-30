@@ -769,7 +769,7 @@ namespace RepRecorder
         Label hint;
         Label obsState;
         Panel hudTop;              // 顶部状态条
-        Label hudLeftTitle;        // 左侧面板的小标题
+        SplitContainer split;      // 上下分栏（列表 / 终端），做成字段才能按 3:5 比例摆
         Label lblParHint;
         Button btnStart, btnStop, btnClear, btnRemove, btnCheck, btnPrepare, btnSet, btnOpenLog;
         Label lblSoundNote;
@@ -786,23 +786,28 @@ namespace RepRecorder
         StatusStrip status;
         ToolStripStatusLabel statusLabel;
 
+        static string monoName = null;     // 自动挑出来的等宽字体名（挑不到就 Consolas）
+        bool splitRatioLocked = false;     // 防止 ApplySplitRatio 改 SplitterDistance 时又触发 Layout 递归进来
+        static Font hudFrameFont;          // "| 队列 / QUEUE |" 这种边框标题用的字体
+
         public MainForm(string[] args)
         {
             cfg = Settings.Load();
             Text = "Rep → MP4 录制器（OBS）";
-            Font = new Font("Microsoft YaHei UI", 9F);
+            Font = Ui(9F);                                  // 中文控件走雅黑（等宽字体没有中文字形）
             ClientSize = new Size(1180, 780);   // 左侧控制面板竖排要够高，不然会被裁
             MinimumSize = new Size(760, 520);
-            BackColor = Color.FromArgb(9, 13, 26);          // 蓝黑主题：窗体底色
-            ForeColor = Color.FromArgb(198, 216, 255);
+            BackColor = HudBg;                              // 蓝黑主题：窗体底色
+            ForeColor = HudText;
+            Opacity = 0.95;                                 // 半透明，参考图那种 HUD 观感
             AllowDrop = true;
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
             StartPosition = FormStartPosition.CenterScreen;
 
             // ---- 蓝黑 HUD 风格：左边控制面板 / 右边 rep 列表 / 下面终端 ----
-            FlowLayoutPanel top = new FlowLayoutPanel();
-            top.Dock = DockStyle.Left;            // 左边一整列：所有按钮和选项
+            FlowLayoutPanel top = new FlowLayoutPanel();   // 左边一整列：所有按钮和选项
+            top.Dock = DockStyle.Fill;            // 外面再套一层 MakeFrame（| 控制面板 / CONTROL |）
             top.Width = 312;
             top.FlowDirection = FlowDirection.TopDown;
             top.WrapContents = false;
@@ -816,13 +821,14 @@ namespace RepRecorder
             row1.WrapContents = false;
             row1.Margin = new Padding(0, 0, 0, 6);
 
-            btnStart = MakeButton("开始录制", 116, OnStart, Color.FromArgb(0, 120, 60));
-            btnStop = MakeButton("停止", 72, OnStop, Color.FromArgb(160, 60, 60));
+            // 开始/停止用 HUD 的深蓝/深灰（用户版配色），不再用绿/红语义色
+            btnStart = MakeButton("开始录制", 116, OnStart, HudOn);
+            btnStop = MakeButton("停止", 72, OnStop, HudOff);
             btnClear = MakeButton("清空队列", 88, OnClear, Color.Empty);
             btnRemove = MakeButton("移除选中", 88, OnRemove, Color.Empty);
             btnRefresh = MakeButton("刷新", 60, OnRefreshQueue, Color.Empty);
             btnCheck = MakeButton("检查环境", 88, OnCheck, Color.Empty);
-            btnPrepare = MakeButton("准备 OBS（自动建源+绑定窗口）", 208, OnPrepare, Color.Empty);
+            btnPrepare = MakeButton("准备 OBS（自动建源+绑定窗口）", 294, OnPrepare, Color.Empty);
             btnSet = MakeButton("设置…", 72, OnSettings, Color.Empty);
             btnOpenLog = MakeButton("日志", 60, OnOpenLog, Color.Empty);
             btnSound = MakeButton("声音：开 ✓", 124, OnSoundToggle, Color.Empty);
@@ -929,8 +935,8 @@ namespace RepRecorder
 
             hint = new Label();
             hint.AutoSize = true;
-            hint.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            hint.ForeColor = Color.FromArgb(30, 90, 170);
+            hint.Font = new Font(Font, FontStyle.Bold);   // 中文提示 → 跟着窗体的雅黑
+            hint.ForeColor = HudAccent;
             hint.Text = "把 .rep 文件（可多选，也可以整个文件夹）拖到这里  ↓";
             hint.Margin = new Padding(6, 8, 16, 0);
 
@@ -951,14 +957,15 @@ namespace RepRecorder
             lblPar.Text = "同时录制数量：";
             lblPar.AutoSize = true;
             lblPar.Margin = new Padding(14, 10, 2, 0);
-            // 这个数量很关键（决定并行几格 / 分几批），做成醒目的琥珀色再加粗，别让人找不到
-            lblPar.ForeColor = Color.FromArgb(178, 92, 0);
+            // 这个数量很关键（决定并行几格 / 分几批），用 HUD 的亮蓝强调色 + 加粗，别让人找不到
+            lblPar.ForeColor = HudAccent2;
             lblPar.Font = new Font(Font, FontStyle.Bold);
             cbParallel = new ComboBox();
             cbParallel.DropDownStyle = ComboBoxStyle.DropDownList;
             cbParallel.Width = 96;
             cbParallel.Margin = new Padding(0, 5, 0, 0);
-            cbParallel.BackColor = Color.FromArgb(255, 236, 179);   // 淡琥珀底，比周围控件显眼
+            cbParallel.BackColor = HudSel;          // 选中蓝底，比周围控件显眼
+            cbParallel.ForeColor = Color.White;
             cbParallel.Font = new Font(Font, FontStyle.Bold);
             for (int n = 1; n <= 6; n++) cbParallel.Items.Add(n.ToString());
             int pn = cfg.ParallelCount;
@@ -979,7 +986,7 @@ namespace RepRecorder
             // 选中几个 rep 就自动把数量改成几个（省得每次去点下拉框），并在旁边说明
             lblParHint = new Label();
             lblParHint.AutoSize = true;
-            lblParHint.ForeColor = Color.FromArgb(178, 92, 0);
+            lblParHint.ForeColor = HudAccent2;
             lblParHint.Margin = new Padding(4, 10, 0, 0);
             row2.Controls.Add(lblParHint);
             row2.Controls.Add(lblMic); row2.Controls.Add(cbMic);
@@ -1005,7 +1012,7 @@ namespace RepRecorder
             top.Controls.Add(row2);
             top.Controls.Add(row3);
 
-            // ---- 列表 + 日志 ----
+            // ---- 列表 + 日志（各自装进带边框的 HUD 面板里）----
             list = new ListView();
             list.Dock = DockStyle.Fill;
             list.View = View.Details;
@@ -1013,19 +1020,19 @@ namespace RepRecorder
             list.GridLines = false;
             list.HideSelection = false;
             list.BorderStyle = BorderStyle.None;
-            list.BackColor = Color.FromArgb(9, 13, 26);
-            list.ForeColor = Color.FromArgb(198, 216, 255);
-            list.Font = new Font("Microsoft YaHei UI", 9F);
+            list.BackColor = HudBg;
+            list.ForeColor = HudText;
+            list.Font = Mono(9F);                  // 列表用等宽：文件名 / 数字对齐
             list.OwnerDraw = true;                 // 自己画：表头/行都跟着蓝黑风格
             list.DrawColumnHeader += OnHudDrawColumnHeader;
             list.DrawItem += OnHudDrawItem;
             list.DrawSubItem += OnHudDrawSubItem;
             list.Columns.Add("#", 44);
-            list.Columns.Add("文件", 380);
-            list.Columns.Add("状态", 90);
-            list.Columns.Add("用时", 86);
-            list.Columns.Add("大小", 90);
-            list.Columns.Add("说明", 240);
+            list.Columns.Add("文件", 290);
+            list.Columns.Add("状态", 84);
+            list.Columns.Add("用时", 78);
+            list.Columns.Add("大小", 82);
+            list.Columns.Add("说明", 200);
             list.DoubleClick += OnListDoubleClick;
 
             logBox = new TextBox();
@@ -1034,37 +1041,46 @@ namespace RepRecorder
             logBox.ReadOnly = true;
             logBox.ScrollBars = ScrollBars.Vertical;
             logBox.BorderStyle = BorderStyle.None;
-            logBox.BackColor = Color.FromArgb(7, 10, 20);
-            logBox.ForeColor = Color.FromArgb(150, 200, 255);
-            logBox.Font = new Font("Consolas", 9F);
+            logBox.BackColor = HudBg;
+            logBox.ForeColor = HudAccent2;
+            logBox.Font = Mono(9F);                // 终端也用等宽
 
-            SplitContainer split = new SplitContainer();
+            Panel frameQueue = MakeFrame("队列 / QUEUE");
+            frameQueue.Dock = DockStyle.Fill;
+            frameQueue.Controls.Add(list);
+            Panel frameLog = MakeFrame("终端 / STDOUT");
+            frameLog.Dock = DockStyle.Fill;
+            frameLog.Controls.Add(logBox);
+
+            split = new SplitContainer();
             split.Dock = DockStyle.Fill;
             split.Orientation = Orientation.Horizontal;   // 上面列表、下面终端
-            split.Panel1.Controls.Add(list);
-            split.Panel2.Controls.Add(logBox);
-            split.BackColor = Color.FromArgb(38, 62, 110);
-            split.Panel1.BackColor = Color.FromArgb(9, 13, 26);
-            split.Panel2.BackColor = Color.FromArgb(7, 10, 20);
+            split.Panel1.Padding = new Padding(6, 6, 6, 3);
+            split.Panel2.Padding = new Padding(6, 3, 6, 6);
+            split.Panel1.Controls.Add(frameQueue);
+            split.Panel2.Controls.Add(frameLog);
+            split.BackColor = HudBg;
+            split.SplitterWidth = 6;                      // 上下比例由 ApplySplitRatio() 按 3:5 摆
 
             status = new StatusStrip();
             statusLabel = new ToolStripStatusLabel("就绪");
             status.Items.Add(statusLabel);
-            status.BackColor = Color.FromArgb(11, 16, 32);
-            status.ForeColor = Color.FromArgb(150, 200, 255);
-            statusLabel.ForeColor = Color.FromArgb(150, 200, 255);
+            status.BackColor = HudPanel;
+            status.ForeColor = HudDim;
+            statusLabel.ForeColor = HudDim;
+            status.Font = Mono(9F);
             status.SizingGrip = false;
 
             // 顶部条：应用名 + 环境状态（像截图里那条状态栏）
             hudTop = new Panel();
             hudTop.Dock = DockStyle.Top;
             hudTop.Height = 30;
-            hudTop.BackColor = Color.FromArgb(11, 16, 32);
+            hudTop.BackColor = HudPanel;
             Label hudTitle = new Label();
             hudTitle.Text = "REP → MP4  录制器   (OBS)";
             hudTitle.AutoSize = true;
-            hudTitle.ForeColor = Color.FromArgb(120, 190, 255);
-            hudTitle.Font = new Font("Consolas", 10F, FontStyle.Bold);
+            hudTitle.ForeColor = HudAccent;
+            hudTitle.Font = Mono(10F, FontStyle.Bold);
             hudTitle.Location = new Point(12, 7);
             hudTop.Controls.Add(hudTitle);
             obsState.Location = new Point(280, 8);
@@ -1072,34 +1088,52 @@ namespace RepRecorder
             hudTop.Controls.Add(obsState);
             hudTop.Paint += delegate(object s, PaintEventArgs pe)
             {
+                pe.Graphics.Clear(HudPanel);
                 using (Pen hudPen1 = new Pen(HudLine))
                     pe.Graphics.DrawLine(hudPen1, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
+                // 右边一小段刻度装饰线（参考图顶栏那个细节）
+                using (Pen hudPen2 = new Pen(HudLineDim))
+                    for (int hx = hudTop.Width - 240; hx < hudTop.Width - 12; hx += 10)
+                        pe.Graphics.DrawLine(hudPen2, hx, 10, hx, 20);
             };
 
-            // 分区标题（截图里那种 | 名字 | 的框）
-            hudLeftTitle = MakeHudSectionTitle("控制面板 / CONTROL", 0);
-            top.Controls.Add(hudLeftTitle);
-            top.Controls.SetChildIndex(hudLeftTitle, 0);
+            // 左侧控制面板也装进带边框的面板（| 控制面板 / CONTROL |）
+            Panel frameCtrl = MakeFrame("控制面板 / CONTROL");
+            frameCtrl.Dock = DockStyle.Left;
+            frameCtrl.Width = 322;
+            frameCtrl.Margin = new Padding(0);
+            frameCtrl.Controls.Add(top);
 
             Controls.Add(split);
-            Controls.Add(top);
+            Controls.Add(frameCtrl);
             Controls.Add(status);
             Controls.Add(hudTop);
 
             // 整体套上蓝黑主题 + 窗口标题栏也变深色
             ApplyHudTheme(this);
             EnableDarkTitleBar();
-            // 主题之后再钉一次尺寸与强调色（FlowLayoutPanel 里下拉框容易被挤小/被主题改掉琥珀底）
+            // 主题之后再钉一次尺寸与强调色（FlowLayoutPanel 里下拉框容易被挤小/被主题改掉）
             try
             {
                 cbParallel.Width = 96;
-                cbParallel.BackColor = Color.FromArgb(52, 40, 12);
-                cbParallel.ForeColor = Color.FromArgb(255, 214, 120);
+                cbParallel.BackColor = HudSel;
+                cbParallel.ForeColor = Color.White;
                 cbMic.Width = 210;
-                lblParHint.ForeColor = Color.FromArgb(255, 196, 90);
-                if (hint != null) hint.ForeColor = Color.FromArgb(120, 190, 255);
+                lblParHint.ForeColor = HudAccent2;
+                if (hint != null) hint.ForeColor = HudAccent;
             }
             catch { }
+
+            // 上下分栏固定 3:5（列表 3 / 终端 2），窗口一改尺寸就重算
+            split.Resize += delegate { ApplySplitRatio(); };
+            Layout += delegate { ApplySplitRatio(); };
+            Shown += delegate
+            {
+                // 滚动条都换深色（要在句柄建好之后才能设）：终端那个文本框 + 左边这列控制面板
+                DarkenScrollbars(logBox);
+                DarkenScrollbars(top);
+                BeginInvoke((MethodInvoker)delegate { ApplySplitRatio(); });
+            };
 
             Log.OnLine += OnLogLine;
             FormClosing += OnFormClosing;
@@ -1133,7 +1167,6 @@ namespace RepRecorder
 
             Shown += delegate
             {
-                try { split.SplitterDistance = 380; } catch { }
                 cfg.Save();
                 RefreshEnvLabel();
                 RefreshSoundButtons();
@@ -1286,38 +1319,92 @@ namespace RepRecorder
 
         // ============================================================ 蓝黑 HUD 风格
         // 取自用户给的参考图：深蓝黑底 + 蓝色描边 + 终端里的等宽字。
-        static readonly Color HudBg = Color.FromArgb(9, 13, 26);
-        static readonly Color HudPanel = Color.FromArgb(14, 20, 38);
-        static readonly Color HudLine = Color.FromArgb(38, 62, 110);
-        static readonly Color HudText = Color.FromArgb(198, 216, 255);
-        static readonly Color HudDim = Color.FromArgb(120, 158, 214);
-        static readonly Color HudAccent = Color.FromArgb(90, 170, 255);
-        static readonly Color HudGreen = Color.FromArgb(24, 120, 74);
-        static readonly Color HudRed = Color.FromArgb(140, 40, 52);
-        static readonly Color HudGrey = Color.FromArgb(40, 52, 80);
+        static readonly Color HudBg = Color.FromArgb(8, 10, 18);
+        static readonly Color HudPanel = Color.FromArgb(13, 18, 33);
+        static readonly Color HudPanel2 = Color.FromArgb(18, 25, 45);
+        static readonly Color HudLine = Color.FromArgb(48, 72, 126);
+        static readonly Color HudLineDim = Color.FromArgb(30, 45, 80);
+        static readonly Color HudText = Color.FromArgb(200, 216, 252);
+        static readonly Color HudDim = Color.FromArgb(124, 154, 210);
+        static readonly Color HudAccent = Color.FromArgb(126, 163, 244);
+        static readonly Color HudAccent2 = Color.FromArgb(172, 199, 255);
+        static readonly Color HudSel = Color.FromArgb(36, 62, 120);
+        static readonly Color HudMark = Color.FromArgb(24, 42, 84);
+        static readonly Color HudOn = Color.FromArgb(32, 60, 118);    // 开关按钮「开」
+        static readonly Color HudOff = Color.FromArgb(26, 34, 58);    // 开关按钮「关」
+        static readonly Color HudBatch = Color.FromArgb(20, 68, 48);  // 列表里"本批"那几行的绿底
+        static readonly Color HudBatchBar = Color.FromArgb(60, 200, 130);
 
-        // 分区小标题：像参考图里 | 控制面板 | 那样的一条
-        Label MakeHudSectionTitle(string text, int width)
+        // ---- 字体：中文控件走雅黑，终端/表头/边框标题走等宽
+        // （等宽字体没有中文字形，硬套上去中文会回退成雅黑、和西文混排时字重基线都对不齐）
+        static string MonoName()
         {
-            Label l = new Label();
-            l.Text = "| " + text + " |";
-            l.AutoSize = true;
-            l.ForeColor = HudAccent;
-            l.Font = new Font("Consolas", 9.5F, FontStyle.Bold);
-            l.Margin = new Padding(0, 2, 0, 4);
-            if (width > 0) l.Width = width;
-            return l;
+            if (monoName != null) return monoName;
+            string[] want = new string[] { "Sarasa Mono SC", "Sarasa Term SC", "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas" };
+            foreach (string n in want)
+            {
+                try
+                {
+                    using (Font f = new Font(n, 9F))
+                        if (string.Equals(f.Name, n, StringComparison.OrdinalIgnoreCase)) { monoName = n; break; }
+                }
+                catch { }
+            }
+            if (monoName == null) monoName = "Consolas";
+            return monoName;
+        }
+
+        static Font Mono(float size) { return new Font(MonoName(), size); }
+        static Font Mono(float size, FontStyle st) { return new Font(MonoName(), size, st); }
+        static Font Ui(float size) { return new Font("Microsoft YaHei UI", size); }
+
+        // 带边框和标题的面板：参考图里 | 队列 / QUEUE | 那种框
+        Panel MakeFrame(string title)
+        {
+            if (hudFrameFont == null) hudFrameFont = Mono(9.5F, FontStyle.Bold);
+            Panel p = new Panel();
+            p.Tag = "hudframe";                 // ApplyHudTheme 看到这个标记就跳过，不改它的底色
+            p.BackColor = HudPanel;
+            p.Padding = new Padding(2, 24, 2, 2);
+            p.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                Graphics g = pe.Graphics;
+                Rectangle rc = p.ClientRectangle;
+                using (Pen pen = new Pen(HudLine))
+                    g.DrawRectangle(pen, 0, 0, rc.Width - 1, rc.Height - 1);
+                string text = "| " + title + " |";
+                Size sz = TextRenderer.MeasureText(g, text, hudFrameFont);
+                using (SolidBrush br = new SolidBrush(HudPanel))
+                    g.FillRectangle(br, 8, 0, sz.Width + 4, 20);
+                TextRenderer.DrawText(g, text, hudFrameFont, new Point(10, 3), HudAccent);
+                int x = 10 + sz.Width + 8;
+                if (x < rc.Width - 12)
+                    using (Pen pen2 = new Pen(HudLineDim))
+                        g.DrawLine(pen2, x, 10, rc.Width - 10, 10);
+            };
+            return p;
+        }
+
+        // 开关按钮（声音 / 录打击音效 / 录BGM）统一的"开/关"外观
+        static void HudSetToggle(Button b, bool on)
+        {
+            if (b == null) return;
+            b.BackColor = on ? HudOn : HudOff;
+            b.ForeColor = on ? HudAccent2 : HudDim;
+            b.FlatAppearance.BorderColor = on ? HudAccent : HudLine;
+            b.FlatStyle = FlatStyle.Flat;
         }
 
         // 把"语义色"（绿=开 / 红=停 / 灰=关）换成蓝黑主题里的对应色
         static Color HudMapBack(Color c)
         {
-            if (c == Color.FromArgb(0, 120, 60)) return HudGreen;
-            if (c == Color.FromArgb(160, 60, 60)) return HudRed;
-            if (c == Color.FromArgb(190, 60, 60)) return HudRed;
-            if (c == Color.FromArgb(120, 120, 120)) return HudGrey;
-            if (c == Color.FromArgb(180, 180, 180)) return Color.FromArgb(28, 36, 58);
-            return HudPanel;
+            if (c == Color.FromArgb(0, 120, 60)) return HudOn;
+            if (c == Color.FromArgb(160, 60, 60)) return HudOff;
+            if (c == Color.FromArgb(190, 60, 60)) return HudOff;
+            if (c == Color.FromArgb(120, 120, 120)) return HudOff;
+            if (c == Color.FromArgb(180, 180, 180)) return HudPanel2;
+            if (c == Color.FromArgb(255, 236, 179)) return HudPanel2;
+            return c;
         }
 
         // 递归给所有控件套上蓝黑主题（按钮/复选框/下拉框/标签/面板）
@@ -1335,12 +1422,13 @@ namespace RepRecorder
                         b.FlatStyle = FlatStyle.Flat;
                         b.FlatAppearance.BorderColor = HudLine;
                         b.FlatAppearance.BorderSize = 1;
-                        b.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 46, 84);
-                        b.FlatAppearance.MouseDownBackColor = Color.FromArgb(20, 32, 60);
+                        b.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 68, 128);
+                        b.FlatAppearance.MouseDownBackColor = Color.FromArgb(24, 40, 76);
                         if (colored) b.BackColor = HudMapBack(b.BackColor);
                         else b.BackColor = HudPanel;
+                        // 白字（开始/停止）和灰字（「录BGM」被锁时）保留，别被刷掉
                         if (b.ForeColor != Color.White && b.ForeColor != Color.DimGray) b.ForeColor = HudText;
-                        b.Font = new Font("Microsoft YaHei UI", 9F);
+                        b.Font = Ui(9F);
                     }
                     CheckBox cb = c as CheckBox;
                     if (cb != null)
@@ -1348,21 +1436,21 @@ namespace RepRecorder
                         cb.ForeColor = HudText;
                         cb.BackColor = Color.Transparent;
                         cb.FlatStyle = FlatStyle.Flat;
-                        cb.Font = new Font("Microsoft YaHei UI", 9F);
+                        cb.Font = Ui(9F);
                     }
                     ComboBox cmb = c as ComboBox;
                     if (cmb != null)
                     {
                         cmb.FlatStyle = FlatStyle.Flat;
-                        cmb.BackColor = Color.FromArgb(18, 26, 46);
+                        cmb.BackColor = HudPanel2;
                         cmb.ForeColor = HudText;
-                        cmb.Font = new Font("Microsoft YaHei UI", 9F);
+                        cmb.Font = Ui(9F);
                     }
                     Label lb = c as Label;
                     if (lb != null)
                     {
                         if (lb.BackColor != Color.Transparent) lb.BackColor = Color.Transparent;
-                        if (lb != hudLeftTitle && lb.ForeColor != HudAccent)
+                        if (lb.ForeColor != HudAccent && lb.ForeColor != HudAccent2)
                         {
                             bool dim = lb.ForeColor == Color.DimGray;
                             lb.ForeColor = dim ? HudDim : HudText;
@@ -1371,7 +1459,9 @@ namespace RepRecorder
                     FlowLayoutPanel flp = c as FlowLayoutPanel;
                     if (flp != null) flp.BackColor = Color.Transparent;
                     Panel pn = c as Panel;
-                    if (pn != null && pn != hudTop) pn.BackColor = HudBg;
+                    // MakeFrame 造出来的面板自己要留 HudPanel 底 + 蓝色边框，别被刷成 HudBg
+                    bool isFrame = pn != null && pn.Tag is string && (string)pn.Tag == "hudframe";
+                    if (pn != null && pn != hudTop && !isFrame) pn.BackColor = HudBg;
                     ApplyHudTheme(c);
                 }
             }
@@ -1391,6 +1481,51 @@ namespace RepRecorder
             catch { }
         }
 
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hWnd, string app, string idlist);
+        // 滚动条默认是浅色的，在蓝黑底上很扎眼 → 换成深色滚动条
+        static void DarkenScrollbars(Control c)
+        {
+            try { if (c != null) SetWindowTheme(c.Handle, "DarkMode_Explorer", null); }
+            catch { }
+        }
+
+        // 上下分栏固定 3:5（列表 3 / 终端 2），窗口一改尺寸就重算
+        void FitLastColumn()
+        {
+            try
+            {
+                if (list == null || list.Columns.Count == 0) return;
+                int used = 0;
+                for (int i = 0; i < list.Columns.Count - 1; i++) used += list.Columns[i].Width;
+                int rest = list.ClientSize.Width - used;
+                if (rest > 60 && list.Columns[list.Columns.Count - 1].Width != rest)
+                    list.Columns[list.Columns.Count - 1].Width = rest;
+            }
+            catch { }
+        }
+
+        void ApplySplitRatio()
+        {
+            if (splitRatioLocked) return;
+            splitRatioLocked = true;
+            try
+            {
+                int h = split.Height;
+                if (h <= 0) return;
+                int usable = h - split.SplitterWidth;
+                if (usable <= 0) return;
+                int d = (int)Math.Round(usable * 3.0 / 5.0);
+                int max = usable - split.Panel2MinSize;
+                if (d > max) d = max;
+                if (d < split.Panel1MinSize) d = split.Panel1MinSize;
+                if (d != split.SplitterDistance) split.SplitterDistance = d;
+                FitLastColumn();
+            }
+            catch { }
+            finally { splitRatioLocked = false; }
+        }
+
         // 表头：深底 + 蓝字 + 一条下划线
         void OnHudDrawColumnHeader(object sender, DrawListViewColumnHeaderEventArgs e)
         {
@@ -1405,16 +1540,23 @@ namespace RepRecorder
         // 行背景：整行画（本批=绿色底；选中=亮蓝底）
         void OnHudDrawItem(object sender, DrawListViewItemEventArgs e)
         {
+            bool batch = e.Item.BackColor == Color.FromArgb(214, 244, 214);   // 被标记成"本批"的那几行
             Color bg;
-            if (e.Item.Selected) bg = Color.FromArgb(30, 62, 124);
-            else if (e.Item.BackColor == Color.Empty || e.Item.BackColor == Color.White) bg = HudBg;
-            else if (e.Item.BackColor == Color.FromArgb(214, 244, 214)) bg = Color.FromArgb(20, 68, 48);   // 本批绿
+            if (e.Item.Selected) bg = HudSel;
+            else if (batch) bg = HudBatch;
             else bg = HudBg;
             using (SolidBrush bb = new SolidBrush(bg)) e.Graphics.FillRectangle(bb, e.Bounds);
-            if (e.Item.Index % 2 == 1 && !e.Item.Selected && bg == HudBg)
+            // 隔行稍微深一点，长列表更好扫
+            if (e.Item.Index % 2 == 1 && !e.Item.Selected && !batch)
             {
-                using (SolidBrush bb = new SolidBrush(Color.FromArgb(12, 18, 34)))
+                using (SolidBrush bb = new SolidBrush(HudPanel))
                     e.Graphics.FillRectangle(bb, e.Bounds);
+            }
+            // "本批"那几行左边再压一条绿条，一眼能认出来
+            if (batch && !e.Item.Selected)
+            {
+                using (SolidBrush bb = new SolidBrush(HudBatchBar))
+                    e.Graphics.FillRectangle(bb, e.Bounds.Left, e.Bounds.Top, 2, e.Bounds.Height);
             }
         }
 
@@ -3626,23 +3768,22 @@ namespace RepRecorder
             {
                 btnSound.Text = "声音：未知";
                 btnSound.Width = 124;
-                btnSound.BackColor = Color.Gainsboro;
-                btnSound.ForeColor = Color.Black;
+                btnSound.BackColor = HudOff;
+                btnSound.ForeColor = HudDim;
+                btnSound.FlatAppearance.BorderColor = HudLine;
                 return;
             }
             if (muted)
             {
                 btnSound.Text = "声音：静音 ✕（录完自动恢复）";
                 btnSound.Width = 236;
-                btnSound.BackColor = Color.FromArgb(190, 60, 60);
-                btnSound.ForeColor = Color.White;
+                HudSetToggle(btnSound, false);
             }
             else
             {
                 btnSound.Text = "声音：开 ✓";
                 btnSound.Width = 124;
-                btnSound.BackColor = Color.FromArgb(0, 120, 60);
-                btnSound.ForeColor = Color.White;
+                HudSetToggle(btnSound, true);
             }
         }
 
@@ -3738,14 +3879,12 @@ namespace RepRecorder
             if (cfg.RecordGameAudio)
             {
                 btnGameAudio.Text = "录打击音效：开 ✓";
-                btnGameAudio.BackColor = Color.FromArgb(0, 120, 60);
-                btnGameAudio.ForeColor = Color.White;
+                HudSetToggle(btnGameAudio, true);
             }
             else
             {
                 btnGameAudio.Text = "录打击音效：关 ✕";
-                btnGameAudio.BackColor = Color.FromArgb(120, 120, 120);
-                btnGameAudio.ForeColor = Color.White;
+                HudSetToggle(btnGameAudio, false);
             }
             // 「录打击音效」关掉 = 录出来完全无声 → 顺手把「录BGM」锁成关（连游戏里也不放 BGM）
             if (btnBgm != null)
@@ -3754,8 +3893,8 @@ namespace RepRecorder
                 if (!cfg.RecordGameAudio)
                 {
                     btnBgm.Text = "录BGM：关 ✕（已锁）";
-                    btnBgm.BackColor = Color.FromArgb(180, 180, 180);
-                    btnBgm.ForeColor = Color.DimGray;
+                    btnBgm.BackColor = HudOff;
+                    btnBgm.ForeColor = HudDim;
                 }
                 else RefreshBgmButton();
             }
@@ -3864,14 +4003,13 @@ namespace RepRecorder
             if (cfg.RecordBgm)
             {
                 btnBgm.Text = "录BGM：开 ✓";
-                btnBgm.BackColor = Color.FromArgb(0, 120, 60);
+                HudSetToggle(btnBgm, true);
             }
             else
             {
                 btnBgm.Text = "录BGM：关 ✕";
-                btnBgm.BackColor = Color.FromArgb(120, 120, 120);
+                HudSetToggle(btnBgm, false);
             }
-            btnBgm.ForeColor = Color.White;
         }
 
         // 启动时把 ini 的真实状态同步到设置和按钮上

@@ -1,0 +1,34 @@
+[Error] 2026/8/14 11:09:03: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()
+[Error] 2026/8/19 11:18:53: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()
+[Error] 2026/8/22 11:21:15: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()
+[Error] 2026/8/25 23:57:56: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()
+[Information] 2026/9/22 18:05:48: Error fetching modules data snapshot for SokuCN-gitee: modules.json not found or empty
+[Information] 2026/9/22 18:05:50: Error fetching modules data for SokuCN-gitee: modules.json not found or empty
+[Information] 2026/9/22 18:06:12: Error fetching modules data snapshot for SokuCN-gitee: modules.json not found or empty
+[Information] 2026/9/22 18:06:14: Error fetching modules data for SokuCN-gitee: modules.json not found or empty
+[Error] 2026/9/22 21:25:40: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()
+[Error] 2026/9/23 20:56:07: th123\swarm.exe
+Exception: System.ComponentModel.Win32Exception (0x80004005): 无法成功完成操作，因为文件包含病毒或潜在的垃圾软件。
+   在 System.Diagnostics.Process.StartWithShellExecuteEx(ProcessStartInfo startInfo)
+   在 System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   在 SokuLauncher.App.<OnStartup>d__0.MoveNext()

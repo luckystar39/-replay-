@@ -1,0 +1,944 @@
+diff --git "a/D:\\【完整包】非想天则整合包2026-06-15\\RepRecorder\\_恢复\\反编译-你的\\RepRecorder-你的版本-0EB90E5B.decompiled.cs" "b/D:\\【完整包】非想天则整合包2026-06-15\\RepRecorder\\_恢复\\反编译-我的\\RepRecorder.decompiled.cs"
+index 2c1bd57..274e412 100644
+--- "a/D:\\【完整包】非想天则整合包2026-06-15\\RepRecorder\\_恢复\\反编译-你的\\RepRecorder-你的版本-0EB90E5B.decompiled.cs"
++++ "b/D:\\【完整包】非想天则整合包2026-06-15\\RepRecorder\\_恢复\\反编译-我的\\RepRecorder.decompiled.cs"
+@@ -62,6 +62,6 @@ public class Settings
+ 	public bool KeepGameCapturable { get; set; }
+ 
+-	[Category("录制")]
+ 	[Description("单个 rep 的录制上限（分钟），超时强制停止。")]
++	[Category("录制")]
+ 	public int MaxMinutes { get; set; }
+ 
+@@ -70,10 +70,10 @@ public class Settings
+ 	public int PreRollSeconds { get; set; }
+ 
+-	[Category("录制")]
+ 	[Description("游戏退出后、停止录像前等待的秒数。")]
++	[Category("录制")]
+ 	public int PostRollSeconds { get; set; }
+ 
+-	[Category("行为")]
+ 	[Description("把 rep 拖进窗口后立刻自动开始录制。")]
++	[Category("行为")]
+ 	public bool AutoStartOnDrop { get; set; }
+ 
+@@ -82,6 +82,6 @@ public class Settings
+ 	public bool AutoPrepareObs { get; set; }
+ 
+-	[Description("「准备 OBS」和每次开录时，是否把 OBS 的画布/输出分辨率与帧率设成下面三个值。\r\n非想天则原生是 4:3 的 640×480：用 1440×1080 这种 4:3 画布时画面正好铺满、左右没有黑边；\r\n关掉则不动 OBS 设置（若 OBS 画布是 1920×1080 的 16:9，4:3 画面会居中、左右各留黑边）。\r\n（原来主界面上的那个复选框就是这个开关，已合并到这里）")]
+ 	[Category("画布")]
++	[Description("「准备 OBS」和每次开录时，是否把 OBS 的画布/输出分辨率与帧率设成下面三个值。\r\n非想天则原生是 4:3 的 640×480：用 1440×1080 这种 4:3 画布时画面正好铺满、左右没有黑边；\r\n关掉则不动 OBS 设置（若 OBS 画布是 1920×1080 的 16:9，4:3 画面会居中、左右各留黑边）。\r\n（原来主界面上的那个复选框就是这个开关，已合并到这里）")]
+ 	public bool AutoCanvas { get; set; }
+ 
+@@ -98,6 +98,6 @@ public class Settings
+ 	public int CanvasFps { get; set; }
+ 
+-	[Category("行为")]
+ 	[Description("全部录完后关闭 OBS。")]
++	[Category("行为")]
+ 	public bool CloseObsAfter { get; set; }
+ 
+@@ -110,6 +110,6 @@ public class Settings
+ 	public bool RecordGameAudio { get; set; }
+ 
+-	[Description("gameOnly = 只录游戏声音（录制时自动静音麦克风）；gameAndMic = 游戏声音 + 麦克风（边录边解说）。")]
+ 	[Category("录音")]
++	[Description("gameOnly = 只录游戏声音（录制时自动静音麦克风）；gameAndMic = 游戏声音 + 麦克风（边录边解说）。")]
+ 	public string MicMode { get; set; }
+ 
+@@ -118,6 +118,6 @@ public class Settings
+ 	public bool GameAudioOnly { get; set; }
+ 
+-	[Category("录音")]
+ 	[Description("录进视频的音量倍数（增益），默认 1.0。\r\n0.5 = 一半音量；2.0 = 两倍（+6dB）；上限 20。\r\n为什么需要：任务栏那个「电脑音量」调的是输出设备，OBS 抓的是进程音频流，改它【不会】影响录像音量；\r\n所以想改录像的响度就用这里，或者用 Windows「音量合成器」里 th123 那一条（那条会影响录像）。")]
++	[Category("录音")]
+ 	public double RecordVolume { get; set; }
+ 
+@@ -126,6 +126,6 @@ public class Settings
+ 	public bool RoundRecord { get; set; }
+ 
+-	[Category("录音")]
+ 	[Description("是否把游戏背景音乐（BGM）也录进视频。\r\n开 = 会自动把 ReplayDnD.ini 里的 MuteMusic 改成 0（播放 rep 时放 BGM）；关 = 改回 1。\r\n界面上有「录BGM」按钮可以直接切。注意 BGM 有版权风险。")]
++	[Category("录音")]
+ 	public bool RecordBgm { get; set; }
+ 
+@@ -142,6 +142,6 @@ public class Settings
+ 	public bool SkipExisting { get; set; }
+ 
+-	[Description("每录完一个视频就弹窗问你：要放在哪里。")]
+ 	[Category("行为")]
++	[Description("每录完一个视频就弹窗问你：要放在哪里。")]
+ 	public bool AskSaveLocation { get; set; }
+ 
+@@ -562,8 +562,4 @@ public class Job
+ 	public bool Force;
+ 
+-	public int NativeW;
+-
+-	public int NativeH;
+-
+ 	public ListViewItem Item;
+ 
+@@ -1106,5 +1102,5 @@ public class MainForm : Form
+ 	private Panel hudTop;
+ 
+-	private SplitContainer split;
++	private Label hudLeftTitle;
+ 
+ 	private Label lblParHint;
+@@ -1158,35 +1154,21 @@ public class MainForm : Form
+ 	private ToolStripStatusLabel statusLabel;
+ 
+-	private static readonly Color HudBg = Color.FromArgb(8, 10, 18);
+-
+-	private static readonly Color HudPanel = Color.FromArgb(13, 18, 33);
+-
+-	private static readonly Color HudPanel2 = Color.FromArgb(18, 25, 45);
+-
+-	private static readonly Color HudLine = Color.FromArgb(48, 72, 126);
+-
+-	private static readonly Color HudLineDim = Color.FromArgb(30, 45, 80);
++	private static readonly Color HudBg = Color.FromArgb(9, 13, 26);
+ 
+-	private static readonly Color HudText = Color.FromArgb(200, 216, 252);
++	private static readonly Color HudPanel = Color.FromArgb(14, 20, 38);
+ 
+-	private static readonly Color HudDim = Color.FromArgb(124, 154, 210);
++	private static readonly Color HudLine = Color.FromArgb(38, 62, 110);
+ 
+-	private static readonly Color HudAccent = Color.FromArgb(126, 163, 244);
++	private static readonly Color HudText = Color.FromArgb(198, 216, 255);
+ 
+-	private static readonly Color HudAccent2 = Color.FromArgb(172, 199, 255);
++	private static readonly Color HudDim = Color.FromArgb(120, 158, 214);
+ 
+-	private static readonly Color HudSel = Color.FromArgb(36, 62, 120);
++	private static readonly Color HudAccent = Color.FromArgb(90, 170, 255);
+ 
+-	private static readonly Color HudMark = Color.FromArgb(24, 42, 84);
++	private static readonly Color HudGreen = Color.FromArgb(24, 120, 74);
+ 
+-	private static readonly Color HudOn = Color.FromArgb(32, 60, 118);
++	private static readonly Color HudRed = Color.FromArgb(140, 40, 52);
+ 
+-	private static readonly Color HudOff = Color.FromArgb(26, 34, 58);
+-
+-	private static string monoName = null;
+-
+-	private bool splitRatioLocked = false;
+-
+-	private static Font hudFrameFont;
++	private static readonly Color HudGrey = Color.FromArgb(40, 52, 80);
+ 
+ 	private Font batchFont = null;
+@@ -1284,10 +1266,9 @@ public class MainForm : Form
+ 		cfg = Settings.Load();
+ 		Text = "Rep → MP4 录制器（OBS）";
+-		Font = Mono(9f);
++		Font = new Font("Microsoft YaHei UI", 9f);
+ 		ClientSize = new Size(1180, 780);
+ 		MinimumSize = new Size(760, 520);
+-		BackColor = HudBg;
+-		ForeColor = HudText;
+-		Opacity = 0.95;
++		BackColor = Color.FromArgb(9, 13, 26);
++		ForeColor = Color.FromArgb(198, 216, 255);
+ 		AllowDrop = true;
+ 		DragEnter += OnDragEnter;
+@@ -1311,11 +1292,11 @@ public class MainForm : Form
+ 			Margin = new Padding(0, 0, 0, 6)
+ 		};
+-		btnStart = MakeButton("开始录制", 116, OnStart, HudOn);
+-		btnStop = MakeButton("停止", 72, OnStop, HudOff);
++		btnStart = MakeButton("开始录制", 116, OnStart, Color.FromArgb(0, 120, 60));
++		btnStop = MakeButton("停止", 72, OnStop, Color.FromArgb(160, 60, 60));
+ 		btnClear = MakeButton("清空队列", 88, OnClear, Color.Empty);
+ 		btnRemove = MakeButton("移除选中", 88, OnRemove, Color.Empty);
+ 		btnRefresh = MakeButton("刷新", 60, OnRefreshQueue, Color.Empty);
+ 		btnCheck = MakeButton("检查环境", 88, OnCheck, Color.Empty);
+-		btnPrepare = MakeButton("准备 OBS（自动建源+绑窗口）", 294, OnPrepare, Color.Empty);
++		btnPrepare = MakeButton("准备 OBS（自动建源+绑定窗口）", 208, OnPrepare, Color.Empty);
+ 		btnSet = MakeButton("设置…", 72, OnSettings, Color.Empty);
+ 		btnOpenLog = MakeButton("日志", 60, OnOpenLog, Color.Empty);
+@@ -1420,6 +1401,6 @@ public class MainForm : Form
+ 		hint = new Label();
+ 		hint.AutoSize = true;
+-		hint.Font = Mono(10f, FontStyle.Bold);
+-		hint.ForeColor = HudAccent;
++		hint.Font = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold);
++		hint.ForeColor = Color.FromArgb(30, 90, 170);
+ 		hint.Text = "把 .rep 文件（可多选，也可以整个文件夹）拖到这里  ↓";
+ 		hint.Margin = new Padding(6, 8, 16, 0);
+@@ -1450,6 +1431,6 @@ public class MainForm : Form
+ 			AutoSize = true,
+ 			Margin = new Padding(14, 10, 2, 0),
+-			ForeColor = HudAccent2,
+-			Font = Mono(9f, FontStyle.Bold)
++			ForeColor = Color.FromArgb(178, 92, 0),
++			Font = new Font(Font, FontStyle.Bold)
+ 		};
+ 		cbParallel = new ComboBox();
+@@ -1457,7 +1438,6 @@ public class MainForm : Form
+ 		cbParallel.Width = 96;
+ 		cbParallel.Margin = new Padding(0, 5, 0, 0);
+-		cbParallel.BackColor = HudSel;
+-		cbParallel.ForeColor = Color.White;
+-		cbParallel.Font = Mono(9f, FontStyle.Bold);
++		cbParallel.BackColor = Color.FromArgb(255, 236, 179);
++		cbParallel.Font = new Font(Font, FontStyle.Bold);
+ 		for (int num = 1; num <= 6; num++)
+ 		{
+@@ -1488,5 +1468,5 @@ public class MainForm : Form
+ 		lblParHint = new Label();
+ 		lblParHint.AutoSize = true;
+-		lblParHint.ForeColor = HudAccent2;
++		lblParHint.ForeColor = Color.FromArgb(178, 92, 0);
+ 		lblParHint.Margin = new Padding(4, 10, 0, 0);
+ 		flowLayoutPanel3.Controls.Add(lblParHint);
+@@ -1518,7 +1498,7 @@ public class MainForm : Form
+ 		list.HideSelection = false;
+ 		list.BorderStyle = BorderStyle.None;
+-		list.BackColor = HudBg;
+-		list.ForeColor = HudText;
+-		list.Font = Mono(9f);
++		list.BackColor = Color.FromArgb(9, 13, 26);
++		list.ForeColor = Color.FromArgb(198, 216, 255);
++		list.Font = new Font("Microsoft YaHei UI", 9f);
+ 		list.OwnerDraw = true;
+ 		list.DrawColumnHeader += OnHudDrawColumnHeader;
+@@ -1526,9 +1506,9 @@ public class MainForm : Form
+ 		list.DrawSubItem += OnHudDrawSubItem;
+ 		list.Columns.Add("#", 44);
+-		list.Columns.Add("文件", 290);
+-		list.Columns.Add("状态", 84);
+-		list.Columns.Add("用时", 78);
+-		list.Columns.Add("大小", 82);
+-		list.Columns.Add("说明", 200);
++		list.Columns.Add("文件", 380);
++		list.Columns.Add("状态", 90);
++		list.Columns.Add("用时", 86);
++		list.Columns.Add("大小", 90);
++		list.Columns.Add("说明", 240);
+ 		list.DoubleClick += OnListDoubleClick;
+ 		logBox = new TextBox();
+@@ -1538,42 +1518,32 @@ public class MainForm : Form
+ 		logBox.ScrollBars = ScrollBars.Vertical;
+ 		logBox.BorderStyle = BorderStyle.None;
+-		logBox.BackColor = HudBg;
+-		logBox.ForeColor = HudAccent2;
+-		logBox.Font = Mono(9f);
+-		Panel panel = MakeFrame("队列 / QUEUE");
+-		panel.Dock = DockStyle.Fill;
+-		list.Dock = DockStyle.Fill;
+-		panel.Controls.Add(list);
+-		Panel panel2 = MakeFrame("终端 / STDOUT");
+-		panel2.Dock = DockStyle.Fill;
+-		logBox.Dock = DockStyle.Fill;
+-		panel2.Controls.Add(logBox);
+-		split = new SplitContainer();
++		logBox.BackColor = Color.FromArgb(7, 10, 20);
++		logBox.ForeColor = Color.FromArgb(150, 200, 255);
++		logBox.Font = new Font("Consolas", 9f);
++		SplitContainer split = new SplitContainer();
+ 		split.Dock = DockStyle.Fill;
+ 		split.Orientation = Orientation.Horizontal;
+-		split.Panel1.Padding = new Padding(6, 6, 6, 3);
+-		split.Panel2.Padding = new Padding(6, 3, 6, 6);
+-		split.Panel1.Controls.Add(panel);
+-		split.Panel2.Controls.Add(panel2);
+-		split.BackColor = HudBg;
+-		split.SplitterWidth = 6;
++		split.Panel1.Controls.Add(list);
++		split.Panel2.Controls.Add(logBox);
++		split.BackColor = Color.FromArgb(38, 62, 110);
++		split.Panel1.BackColor = Color.FromArgb(9, 13, 26);
++		split.Panel2.BackColor = Color.FromArgb(7, 10, 20);
+ 		status = new StatusStrip();
+ 		statusLabel = new ToolStripStatusLabel("就绪");
+ 		status.Items.Add(statusLabel);
+-		status.BackColor = HudPanel;
+-		status.ForeColor = HudDim;
+-		statusLabel.ForeColor = HudDim;
+-		status.Font = Mono(9f);
++		status.BackColor = Color.FromArgb(11, 16, 32);
++		status.ForeColor = Color.FromArgb(150, 200, 255);
++		statusLabel.ForeColor = Color.FromArgb(150, 200, 255);
+ 		status.SizingGrip = false;
+ 		hudTop = new Panel();
+ 		hudTop.Dock = DockStyle.Top;
+ 		hudTop.Height = 30;
+-		hudTop.BackColor = HudPanel;
++		hudTop.BackColor = Color.FromArgb(11, 16, 32);
+ 		Label value4 = new Label
+ 		{
+ 			Text = "REP → MP4  录制器   (OBS)",
+ 			AutoSize = true,
+-			ForeColor = HudAccent,
+-			Font = Mono(10f, FontStyle.Bold),
++			ForeColor = Color.FromArgb(120, 190, 255),
++			Font = new Font("Consolas", 10f, FontStyle.Bold),
+ 			Location = new Point(12, 7)
+ 		};
+@@ -1584,23 +1554,12 @@ public class MainForm : Form
+ 		hudTop.Paint += (object s, PaintEventArgs pe) =>
+ 		{
+-			pe.Graphics.Clear(HudPanel);
+-			using (Pen pen = new Pen(HudLine))
+-			{
+-				pe.Graphics.DrawLine(pen, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
+-			}
+-			using Pen pen2 = new Pen(HudLineDim);
+-			for (int i = hudTop.Width - 240; i < hudTop.Width - 12; i += 10)
+-			{
+-				pe.Graphics.DrawLine(pen2, i, 10, i, 20);
+-			}
++			using Pen pen = new Pen(HudLine);
++			pe.Graphics.DrawLine(pen, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
+ 		};
+-		Panel panel3 = MakeFrame("控制面板 / CONTROL");
+-		panel3.Dock = DockStyle.Left;
+-		panel3.Width = 322;
+-		panel3.Margin = new Padding(0);
+-		flowLayoutPanel.Dock = DockStyle.Fill;
+-		panel3.Controls.Add(flowLayoutPanel);
++		hudLeftTitle = MakeHudSectionTitle("控制面板 / CONTROL", 0);
++		flowLayoutPanel.Controls.Add(hudLeftTitle);
++		flowLayoutPanel.Controls.SetChildIndex(hudLeftTitle, 0);
+ 		Controls.Add(split);
+-		Controls.Add(panel3);
++		Controls.Add(flowLayoutPanel);
+ 		Controls.Add(status);
+ 		Controls.Add(hudTop);
+@@ -1610,11 +1569,11 @@ public class MainForm : Form
+ 		{
+ 			cbParallel.Width = 96;
+-			cbParallel.BackColor = HudSel;
+-			cbParallel.ForeColor = Color.White;
++			cbParallel.BackColor = Color.FromArgb(52, 40, 12);
++			cbParallel.ForeColor = Color.FromArgb(255, 214, 120);
+ 			cbMic.Width = 210;
+-			lblParHint.ForeColor = HudAccent2;
++			lblParHint.ForeColor = Color.FromArgb(255, 196, 90);
+ 			if (hint != null)
+ 			{
+-				hint.ForeColor = HudAccent;
++				hint.ForeColor = Color.FromArgb(120, 190, 255);
+ 			}
+ 		}
+@@ -1624,20 +1583,4 @@ public class MainForm : Form
+ 		Log.OnLine += OnLogLine;
+ 		FormClosing += OnFormClosing;
+-		split.Resize += (object param0, EventArgs param1) =>
+-		{
+-			ApplySplitRatio();
+-		};
+-		Layout += (object param0, LayoutEventArgs param1) =>
+-		{
+-			ApplySplitRatio();
+-		};
+-		Shown += (object param0, EventArgs param1) =>
+-		{
+-			DarkenScrollbars();
+-			BeginInvoke((MethodInvoker)(() =>
+-			{
+-				ApplySplitRatio();
+-			}));
+-		};
+ 		list.ItemSelectionChanged += (object param0, ListViewItemSelectionChangedEventArgs param1) =>
+ 		{
+@@ -1677,5 +1620,5 @@ public class MainForm : Form
+ 			try
+ 			{
+-				mainForm.split.SplitterDistance = 380;
++				split.SplitterDistance = 380;
+ 			}
+ 			catch
+@@ -1900,44 +1843,4 @@ public class MainForm : Form
+ 	}
+ 
+-	private static string MonoName()
+-	{
+-		if (monoName != null)
+-		{
+-			return monoName;
+-		}
+-		string[] array = new string[6] { "Sarasa Mono SC", "Sarasa Term SC", "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas" };
+-		string[] array2 = array;
+-		foreach (string text in array2)
+-		{
+-			try
+-			{
+-				using Font font = new Font(text, 9f);
+-				if (string.Equals(font.Name, text, StringComparison.OrdinalIgnoreCase))
+-				{
+-					monoName = text;
+-					break;
+-				}
+-			}
+-			catch
+-			{
+-			}
+-		}
+-		if (monoName == null)
+-		{
+-			monoName = "Consolas";
+-		}
+-		return monoName;
+-	}
+-
+-	private static Font Mono(float size)
+-	{
+-		return new Font(MonoName(), size);
+-	}
+-
+-	private static Font Mono(float size, FontStyle st)
+-	{
+-		return new Font(MonoName(), size, st);
+-	}
+-
+ 	private Label MakeHudSectionTitle(string text, int width)
+ 	{
+@@ -1946,5 +1849,5 @@ public class MainForm : Form
+ 		label.AutoSize = true;
+ 		label.ForeColor = HudAccent;
+-		label.Font = Mono(9.5f, FontStyle.Bold);
++		label.Font = new Font("Consolas", 9.5f, FontStyle.Bold);
+ 		label.Margin = new Padding(0, 2, 0, 4);
+ 		if (width > 0)
+@@ -1955,140 +1858,27 @@ public class MainForm : Form
+ 	}
+ 
+-	private void FitLastColumn()
+-	{
+-		try
+-		{
+-			if (list != null && list.Columns.Count != 0)
+-			{
+-				int num = 0;
+-				for (int i = 0; i < list.Columns.Count - 1; i++)
+-				{
+-					num += list.Columns[i].Width;
+-				}
+-				int num2 = list.ClientSize.Width - num;
+-				if (num2 > 60 && list.Columns[list.Columns.Count - 1].Width != num2)
+-				{
+-					list.Columns[list.Columns.Count - 1].Width = num2;
+-				}
+-			}
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+-	private void ApplySplitRatio()
+-	{
+-		if (splitRatioLocked)
+-		{
+-			return;
+-		}
+-		try
+-		{
+-			int num = split.Height;
+-			if (num <= 0)
+-			{
+-				return;
+-			}
+-			int num2 = num - split.SplitterWidth;
+-			if (num2 > 0)
+-			{
+-				int num3 = (int)Math.Round((double)num2 * 3.0 / 5.0);
+-				int num4 = num2 - split.Panel2MinSize;
+-				if (num3 > num4)
+-				{
+-					num3 = num4;
+-				}
+-				if (num3 < split.Panel1MinSize)
+-				{
+-					num3 = split.Panel1MinSize;
+-				}
+-				if (num3 != split.SplitterDistance)
+-				{
+-					split.SplitterDistance = num3;
+-				}
+-				FitLastColumn();
+-			}
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+-	private Panel MakeFrame(string title)
+-	{
+-		if (hudFrameFont == null)
+-		{
+-			hudFrameFont = Mono(9.5f, FontStyle.Bold);
+-		}
+-		Panel p = new Panel();
+-		p.Tag = "hudframe";
+-		p.BackColor = HudPanel;
+-		p.Padding = new Padding(2, 24, 2, 2);
+-		p.Paint += (object s, PaintEventArgs pe) =>
+-		{
+-			Graphics graphics = pe.Graphics;
+-			Rectangle clientRectangle = p.ClientRectangle;
+-			using (Pen pen = new Pen(HudLine))
+-			{
+-				graphics.DrawRectangle(pen, 0, 0, clientRectangle.Width - 1, clientRectangle.Height - 1);
+-			}
+-			string text = "| " + title + " |";
+-			Size size = TextRenderer.MeasureText(graphics, text, hudFrameFont);
+-			using (SolidBrush brush = new SolidBrush(HudPanel))
+-			{
+-				graphics.FillRectangle(brush, 8, 0, size.Width + 4, 20);
+-			}
+-			TextRenderer.DrawText(graphics, text, hudFrameFont, new Point(10, 3), HudAccent);
+-			int num = 10 + size.Width + 8;
+-			if (num < clientRectangle.Width - 12)
+-			{
+-				using (Pen pen = new Pen(HudLineDim))
+-				{
+-					graphics.DrawLine(pen, num, 10, clientRectangle.Width - 10, 10);
+-				}
+-			}
+-		};
+-		return p;
+-	}
+-
+-	private static void HudSetToggle(Button b, bool on)
+-	{
+-		if (b != null)
+-		{
+-			b.BackColor = (on ? HudOn : HudOff);
+-			b.ForeColor = (on ? HudAccent2 : HudDim);
+-			b.FlatAppearance.BorderColor = (on ? HudAccent : HudLine);
+-			b.FlatStyle = FlatStyle.Flat;
+-		}
+-	}
+-
+ 	private static Color HudMapBack(Color c)
+ 	{
+ 		if (c == Color.FromArgb(0, 120, 60))
+ 		{
+-			return HudOn;
++			return HudGreen;
+ 		}
+ 		if (c == Color.FromArgb(160, 60, 60))
+ 		{
+-			return HudOff;
++			return HudRed;
+ 		}
+ 		if (c == Color.FromArgb(190, 60, 60))
+ 		{
+-			return HudOff;
++			return HudRed;
+ 		}
+ 		if (c == Color.FromArgb(120, 120, 120))
+ 		{
+-			return HudOff;
++			return HudGrey;
+ 		}
+ 		if (c == Color.FromArgb(180, 180, 180))
+ 		{
+-			return HudPanel2;
+-		}
+-		if (c == Color.FromArgb(255, 236, 179))
+-		{
+-			return HudPanel2;
++			return Color.FromArgb(28, 36, 58);
+ 		}
+-		return c;
++		return HudPanel;
+ 	}
+ 
+@@ -2105,6 +1895,6 @@ public class MainForm : Form
+ 					button.FlatAppearance.BorderColor = HudLine;
+ 					button.FlatAppearance.BorderSize = 1;
+-					button.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 68, 128);
+-					button.FlatAppearance.MouseDownBackColor = Color.FromArgb(24, 40, 76);
++					button.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 46, 84);
++					button.FlatAppearance.MouseDownBackColor = Color.FromArgb(20, 32, 60);
+ 					if (flag)
+ 					{
+@@ -2115,6 +1905,9 @@ public class MainForm : Form
+ 						button.BackColor = HudPanel;
+ 					}
+-					button.ForeColor = HudText;
+-					button.Font = Mono(9f);
++					if (button.ForeColor != Color.White && button.ForeColor != Color.DimGray)
++					{
++						button.ForeColor = HudText;
++					}
++					button.Font = new Font("Microsoft YaHei UI", 9f);
+ 				}
+ 				if (control is CheckBox checkBox)
+@@ -2123,12 +1916,12 @@ public class MainForm : Form
+ 					checkBox.BackColor = Color.Transparent;
+ 					checkBox.FlatStyle = FlatStyle.Flat;
+-					checkBox.Font = Mono(9f);
++					checkBox.Font = new Font("Microsoft YaHei UI", 9f);
+ 				}
+ 				if (control is ComboBox comboBox)
+ 				{
+ 					comboBox.FlatStyle = FlatStyle.Flat;
+-					comboBox.BackColor = HudPanel2;
++					comboBox.BackColor = Color.FromArgb(18, 26, 46);
+ 					comboBox.ForeColor = HudText;
+-					comboBox.Font = Mono(9f);
++					comboBox.Font = new Font("Microsoft YaHei UI", 9f);
+ 				}
+ 				if (control is Label label)
+@@ -2138,10 +1931,9 @@ public class MainForm : Form
+ 						label.BackColor = Color.Transparent;
+ 					}
+-					if (label.ForeColor != HudAccent)
++					if (label != hudLeftTitle && label.ForeColor != HudAccent)
+ 					{
+ 						bool flag2 = label.ForeColor == Color.DimGray;
+ 						label.ForeColor = (flag2 ? HudDim : HudText);
+ 					}
+-					label.Font = Mono(label.Font.Size);
+ 				}
+ 				if (control is FlowLayoutPanel flowLayoutPanel)
+@@ -2149,7 +1941,5 @@ public class MainForm : Form
+ 					flowLayoutPanel.BackColor = Color.Transparent;
+ 				}
+-				Panel panel = control as Panel;
+-				bool flag3 = panel != null && panel.Tag is string && (string)panel.Tag == "hudframe";
+-				if (panel != null && panel != hudTop && !flag3)
++				if (control is Panel panel && panel != hudTop)
+ 				{
+ 					panel.BackColor = HudBg;
+@@ -2163,18 +1953,4 @@ public class MainForm : Form
+ 	}
+ 
+-	[DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+-	private static extern int SetWindowTheme(IntPtr hWnd, string app, string idlist);
+-
+-	private void DarkenScrollbars()
+-	{
+-		try
+-		{
+-			SetWindowTheme(logBox.Handle, "DarkMode_Explorer", null);
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+ 	[DllImport("dwmapi.dll")]
+ 	private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+@@ -2208,28 +1984,26 @@ public class MainForm : Form
+ 	private void OnHudDrawItem(object sender, DrawListViewItemEventArgs e)
+ 	{
+-		bool flag = e.Item.BackColor == Color.FromArgb(214, 244, 214);
+ 		Color color;
+ 		if (e.Item.Selected)
+ 		{
+-			color = HudSel;
++			color = Color.FromArgb(30, 62, 124);
+ 		}
+-		else
++		else if (e.Item.BackColor == Color.Empty || e.Item.BackColor == Color.White)
+ 		{
+-			color = ((!flag) ? HudBg : HudMark);
++			color = HudBg;
+ 		}
+-		using (SolidBrush brush = new SolidBrush(color))
++		else
+ 		{
+-			e.Graphics.FillRectangle(brush, e.Bounds);
++			color = ((!(e.Item.BackColor == Color.FromArgb(214, 244, 214))) ? HudBg : Color.FromArgb(20, 68, 48));
+ 		}
+-		if (e.Item.Index % 2 == 1 && !e.Item.Selected && !flag)
++		using (SolidBrush brush = new SolidBrush(color))
+ 		{
+-			using SolidBrush brush = new SolidBrush(HudPanel);
+ 			e.Graphics.FillRectangle(brush, e.Bounds);
+ 		}
+-		if (flag && !e.Item.Selected)
++		if (e.Item.Index % 2 == 1 && !e.Item.Selected && color == HudBg)
+ 		{
+-			using (SolidBrush brush = new SolidBrush(HudAccent))
++			using (SolidBrush brush = new SolidBrush(Color.FromArgb(12, 18, 34)))
+ 			{
+-				e.Graphics.FillRectangle(brush, e.Bounds.Left, e.Bounds.Top, 2, e.Bounds.Height);
++				e.Graphics.FillRectangle(brush, e.Bounds);
+ 			}
+ 		}
+@@ -2245,17 +2019,13 @@ public class MainForm : Form
+ 		else if (color == Color.FromArgb(0, 120, 0))
+ 		{
+-			color = HudAccent2;
++			color = Color.FromArgb(110, 230, 160);
+ 		}
+ 		else if (color == Color.FromArgb(180, 0, 0))
+ 		{
+-			color = Color.White;
++			color = Color.FromArgb(255, 130, 130);
+ 		}
+ 		else if (color == Color.FromArgb(190, 120, 0))
+ 		{
+-			color = HudAccent;
+-		}
+-		if (e.Item.Selected)
+-		{
+-			color = Color.White;
++			color = Color.FromArgb(255, 200, 110);
+ 		}
+ 		Rectangle bounds = e.Bounds;
+@@ -2450,5 +2220,5 @@ public class MainForm : Form
+ 			try
+ 			{
+-				SetStatusText("就绪 · 本批 " + Math.Max(1, Math.Min(6, cfg.ParallelCount)) + " 个（列表里蓝色高亮的就是）");
++				SetStatusText("就绪 · 本批 " + Math.Max(1, Math.Min(6, cfg.ParallelCount)) + " 个（列表里浅绿高亮的就是）");
+ 			}
+ 			catch
+@@ -4049,152 +3819,4 @@ public class MainForm : Form
+ 	}
+ 
+-	private int SceneItemIdOf(string scene, string source)
+-	{
+-		try
+-		{
+-			Dictionary<string, object> dictionary = new Dictionary<string, object>();
+-			dictionary["sceneName"] = scene;
+-			List<object> list = ObsClient.ToList(obs.Request("GetSceneItemList", dictionary)["sceneItems"]);
+-			foreach (object item in list)
+-			{
+-				Dictionary<string, object> dictionary2 = (Dictionary<string, object>)item;
+-				if (Convert.ToString(dictionary2["sourceName"]) == source)
+-				{
+-					return Convert.ToInt32(dictionary2["sceneItemId"]);
+-				}
+-			}
+-		}
+-		catch
+-		{
+-		}
+-		return -1;
+-	}
+-
+-	private void SetCanvasToGameNative(Process game, Job job)
+-	{
+-		try
+-		{
+-			if (!cfg.AutoCanvas || game == null)
+-			{
+-				return;
+-			}
+-			game.Refresh();
+-			IntPtr mainWindowHandle = game.MainWindowHandle;
+-			if (mainWindowHandle == IntPtr.Zero || !GetClientRect(mainWindowHandle, out var r))
+-			{
+-				return;
+-			}
+-			int right = r.Right;
+-			int bottom = r.Bottom;
+-			if (right >= 320 && bottom >= 240 && (Math.Abs(right - cfg.CanvasWidth) >= 2 || Math.Abs(bottom - cfg.CanvasHeight) >= 2))
+-			{
+-				Dictionary<string, object> dictionary = new Dictionary<string, object>();
+-				dictionary["baseWidth"] = right;
+-				dictionary["baseHeight"] = bottom;
+-				dictionary["outputWidth"] = right;
+-				dictionary["outputHeight"] = bottom;
+-				obs.Request("SetVideoSettings", dictionary);
+-				job.NativeW = right;
+-				job.NativeH = bottom;
+-				Log.Write("单录清晰度：画布设为游戏窗口原生尺寸 " + right + "×" + bottom + "（不让 OBS 缩放，录完用 neighbor 放大到 " + cfg.CanvasWidth + "×" + cfg.CanvasHeight + "）");
+-				if (captureSource != null && captureSourceIsOurs && captureScene != null)
+-				{
+-					FitSourceToCanvas(captureScene, SceneItemIdOf(captureScene, captureSource));
+-				}
+-			}
+-		}
+-		catch (Exception ex)
+-		{
+-			Log.Write("设置原生画布失败（继续，画面可能偏软）：" + ex.Message);
+-		}
+-	}
+-
+-	private void PostScaleNeighbor(Job job)
+-	{
+-		string text = null;
+-		try
+-		{
+-			if (job.NativeW <= 0 || job.NativeH <= 0)
+-			{
+-				return;
+-			}
+-			int num = ((cfg.CanvasWidth > 0) ? cfg.CanvasWidth : 1440);
+-			int num2 = ((cfg.CanvasHeight > 0) ? cfg.CanvasHeight : 1080);
+-			if (job.NativeW >= num && job.NativeH >= num2)
+-			{
+-				return;
+-			}
+-			string output = job.Output;
+-			if (string.IsNullOrEmpty(output) || !File.Exists(output) || !output.ToLower().EndsWith(".mp4"))
+-			{
+-				return;
+-			}
+-			string text2 = FindFfmpeg();
+-			if (text2 == null)
+-			{
+-				return;
+-			}
+-			text = output + ".up.mp4";
+-			if (File.Exists(text))
+-			{
+-				File.Delete(text);
+-			}
+-			string text3 = "-vf scale=" + num + ":" + num2 + ":flags=neighbor,setsar=1";
+-			string[] array = new string[2]
+-			{
+-				"-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq " + cfg.ParallelSplitCQ + " -b:v 0",
+-				"-c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ
+-			};
+-			string[] array2 = array;
+-			foreach (string text4 in array2)
+-			{
+-				string arguments = "-hide_banner -y -i \"" + output + "\" " + text3 + " " + text4 + " -pix_fmt yuv420p -c:a copy -movflags +faststart \"" + text + "\"";
+-				ProcessStartInfo processStartInfo = new ProcessStartInfo(text2, arguments);
+-				processStartInfo.UseShellExecute = false;
+-				processStartInfo.CreateNoWindow = true;
+-				processStartInfo.WorkingDirectory = Path.GetDirectoryName(text2);
+-				Process process = Process.Start(processStartInfo);
+-				process.WaitForExit();
+-				if (process.ExitCode == 0 && File.Exists(text) && new FileInfo(text).Length > 4096 && HasMoov(text))
+-				{
+-					try
+-					{
+-						File.Replace(text, output, null);
+-					}
+-					catch
+-					{
+-						File.Delete(output);
+-						File.Move(text, output);
+-					}
+-					try
+-					{
+-						job.Size = new FileInfo(output).Length;
+-					}
+-					catch
+-					{
+-					}
+-					Log.Write("清晰度处理：已用 neighbor 从 " + job.NativeW + "×" + job.NativeH + " 放大到 " + num + "×" + num2 + "（" + text4.Split(' ')[1] + "）");
+-					return;
+-				}
+-				Log.Write("清晰度处理：" + text4.Split(' ')[1] + " 失败（退出码 " + process.ExitCode + "），换下一个编码器重试…");
+-			}
+-			Log.Write("清晰度处理：放大没成功，保留原来的 " + job.NativeW + "×" + job.NativeH + " 成品");
+-		}
+-		catch (Exception ex)
+-		{
+-			Log.Write("清晰度处理出错（已忽略，保留原文件）：" + ex.Message);
+-			try
+-			{
+-				if (text != null && File.Exists(text))
+-				{
+-					File.Delete(text);
+-				}
+-			}
+-			catch
+-			{
+-			}
+-		}
+-	}
+-
+ 	private void TrimTrailingBlack(Job job, double totalSec, double lastVisibleSec)
+ 	{
+@@ -4553,5 +4175,5 @@ public class MainForm : Form
+ 			text3 = ((text2 != null) ? (text3 + "    游戏：已就绪") : (text3 + "    游戏：未找到 th123.exe"));
+ 			obsState.Text = text3;
+-			obsState.ForeColor = ((text == null || text2 == null) ? Color.White : HudDim);
++			obsState.ForeColor = ((text == null || text2 == null) ? Color.Firebrick : Color.SeaGreen);
+ 		});
+ 	}
+@@ -4612,5 +4234,5 @@ public class MainForm : Form
+ 						HighlightBatchRows();
+ 						SyncParallelCountToSelection();
+-						Log.Write("你点在了列表空白处 —— 已把这 " + pinnedBatch.Count + " 个标记为「本批」（蓝色），数量也跟着改成 " + Math.Min(6, pinnedBatch.Count) + " 个");
++						Log.Write("你点在了列表空白处 —— 已把这 " + pinnedBatch.Count + " 个标记为「本批」（绿色），数量也跟着改成 " + Math.Min(6, pinnedBatch.Count) + " 个");
+ 					}
+ 					catch
+@@ -4863,5 +4485,5 @@ public class MainForm : Form
+ 		if (roundRecord)
+ 		{
+-			Log.Write("==== 轮录开始：从队列第一个 rep 开始数，共 " + list.Count + " 个待录，每批 " + num + " 个" + ((num == 1) ? "（每批 1 个 → 走单录，依次录）" : ("（最后不足 " + num + " 个的按实际数量录）")) + "  ※ 轮录模式下不看你的选中/蓝色标记，一律从队列最前面开始 ====");
++			Log.Write("==== 轮录开始：从队列第一个 rep 开始数，共 " + list.Count + " 个待录，每批 " + num + " 个" + ((num == 1) ? "（每批 1 个 → 走单录，依次录）" : ("（最后不足 " + num + " 个的按实际数量录）")) + "  ※ 轮录模式下不看你的选中/绿色标记，一律从队列最前面开始 ====");
+ 		}
+ 		if (cfg.AskSaveLocation)
+@@ -5292,7 +4914,6 @@ public class MainForm : Form
+ 				btnSound.Text = "声音：未知";
+ 				btnSound.Width = 124;
+-				btnSound.BackColor = HudOff;
+-				btnSound.ForeColor = HudDim;
+-				btnSound.FlatAppearance.BorderColor = HudLine;
++				btnSound.BackColor = Color.Gainsboro;
++				btnSound.ForeColor = Color.Black;
+ 			}
+ 			else if (muted)
+@@ -5300,5 +4921,6 @@ public class MainForm : Form
+ 				btnSound.Text = "声音：静音 ✕（录完自动恢复）";
+ 				btnSound.Width = 236;
+-				HudSetToggle(btnSound, on: false);
++				btnSound.BackColor = Color.FromArgb(190, 60, 60);
++				btnSound.ForeColor = Color.White;
+ 			}
+ 			else
+@@ -5306,5 +4928,6 @@ public class MainForm : Form
+ 				btnSound.Text = "声音：开 ✓";
+ 				btnSound.Width = 124;
+-				HudSetToggle(btnSound, on: true);
++				btnSound.BackColor = Color.FromArgb(0, 120, 60);
++				btnSound.ForeColor = Color.White;
+ 			}
+ 		}
+@@ -5433,10 +5056,12 @@ public class MainForm : Form
+ 		{
+ 			btnGameAudio.Text = "录打击音效：开 ✓";
+-			HudSetToggle(btnGameAudio, on: true);
++			btnGameAudio.BackColor = Color.FromArgb(0, 120, 60);
++			btnGameAudio.ForeColor = Color.White;
+ 		}
+ 		else
+ 		{
+ 			btnGameAudio.Text = "录打击音效：关 ✕";
+-			HudSetToggle(btnGameAudio, on: false);
++			btnGameAudio.BackColor = Color.FromArgb(120, 120, 120);
++			btnGameAudio.ForeColor = Color.White;
+ 		}
+ 		if (btnBgm != null)
+@@ -5576,11 +5201,12 @@ public class MainForm : Form
+ 			{
+ 				btnBgm.Text = "录BGM：开 ✓";
+-				HudSetToggle(btnBgm, on: true);
++				btnBgm.BackColor = Color.FromArgb(0, 120, 60);
+ 			}
+ 			else
+ 			{
+ 				btnBgm.Text = "录BGM：关 ✕";
+-				HudSetToggle(btnBgm, on: false);
++				btnBgm.BackColor = Color.FromArgb(120, 120, 120);
+ 			}
++			btnBgm.ForeColor = Color.White;
+ 		}
+ 	}
+@@ -8251,6 +7877,6 @@ internal interface IAudioSessionControl2
+ }
+ [ComImport]
+-[Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8")]
+ [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
++[Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8")]
+ internal interface ISimpleAudioVolume
+ {
+@@ -8264,6 +7890,6 @@ internal interface ISimpleAudioVolume
+ }
+ [ComImport]
+-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+ [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
++[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+ internal interface IAudioEndpointVolume
+ {

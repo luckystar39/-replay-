@@ -1,0 +1,490 @@
+﻿-	[Category("录制")]
+-	[Category("录制")]
+-	[Category("行为")]
+-	[Description("「准备 OBS」和每次开录时，是否把 OBS 的画布/输出分辨率与帧率设成下面三个值。\r\n非想天则原生是 4:3 的 640×480：用 1440×1080 这种 4:3 画布时画面正好铺满、左右没有黑边；\r\n关掉则不动 OBS 设置（若 OBS 画布是 1920×1080 的 16:9，4:3 画面会居中、左右各留黑边）。\r\n（原来主界面上的那个复选框就是这个开关，已合并到这里）")]
+-	[Category("行为")]
+-	[Description("gameOnly = 只录游戏声音（录制时自动静音麦克风）；gameAndMic = 游戏声音 + 麦克风（边录边解说）。")]
+-	[Category("录音")]
+-	[Category("录音")]
+-	[Description("每录完一个视频就弹窗问你：要放在哪里。")]
+-	public int NativeW;
+-
+-	public int NativeH;
+-
+-	private SplitContainer split;
+-	private static readonly Color HudBg = Color.FromArgb(8, 10, 18);
+-
+-	private static readonly Color HudPanel = Color.FromArgb(13, 18, 33);
+-
+-	private static readonly Color HudPanel2 = Color.FromArgb(18, 25, 45);
+-
+-	private static readonly Color HudLine = Color.FromArgb(48, 72, 126);
+-
+-	private static readonly Color HudLineDim = Color.FromArgb(30, 45, 80);
+-	private static readonly Color HudText = Color.FromArgb(200, 216, 252);
+-	private static readonly Color HudDim = Color.FromArgb(124, 154, 210);
+-	private static readonly Color HudAccent = Color.FromArgb(126, 163, 244);
+-	private static readonly Color HudAccent2 = Color.FromArgb(172, 199, 255);
+-	private static readonly Color HudSel = Color.FromArgb(36, 62, 120);
+-	private static readonly Color HudMark = Color.FromArgb(24, 42, 84);
+-	private static readonly Color HudOn = Color.FromArgb(32, 60, 118);
+-	private static readonly Color HudOff = Color.FromArgb(26, 34, 58);
+-
+-	private static string monoName = null;
+-
+-	private bool splitRatioLocked = false;
+-
+-	private static Font hudFrameFont;
+-		Font = Mono(9f);
+-		BackColor = HudBg;
+-		ForeColor = HudText;
+-		Opacity = 0.95;
+-		btnStart = MakeButton("开始录制", 116, OnStart, HudOn);
+-		btnStop = MakeButton("停止", 72, OnStop, HudOff);
+-		btnPrepare = MakeButton("准备 OBS（自动建源+绑窗口）", 294, OnPrepare, Color.Empty);
+-		hint.Font = Mono(10f, FontStyle.Bold);
+-		hint.ForeColor = HudAccent;
+-			ForeColor = HudAccent2,
+-			Font = Mono(9f, FontStyle.Bold)
+-		cbParallel.BackColor = HudSel;
+-		cbParallel.ForeColor = Color.White;
+-		cbParallel.Font = Mono(9f, FontStyle.Bold);
+-		lblParHint.ForeColor = HudAccent2;
+-		list.BackColor = HudBg;
+-		list.ForeColor = HudText;
+-		list.Font = Mono(9f);
+-		list.Columns.Add("文件", 290);
+-		list.Columns.Add("状态", 84);
+-		list.Columns.Add("用时", 78);
+-		list.Columns.Add("大小", 82);
+-		list.Columns.Add("说明", 200);
+-		logBox.BackColor = HudBg;
+-		logBox.ForeColor = HudAccent2;
+-		logBox.Font = Mono(9f);
+-		Panel panel = MakeFrame("队列 / QUEUE");
+-		panel.Dock = DockStyle.Fill;
+-		list.Dock = DockStyle.Fill;
+-		panel.Controls.Add(list);
+-		Panel panel2 = MakeFrame("终端 / STDOUT");
+-		panel2.Dock = DockStyle.Fill;
+-		logBox.Dock = DockStyle.Fill;
+-		panel2.Controls.Add(logBox);
+-		split = new SplitContainer();
+-		split.Panel1.Padding = new Padding(6, 6, 6, 3);
+-		split.Panel2.Padding = new Padding(6, 3, 6, 6);
+-		split.Panel1.Controls.Add(panel);
+-		split.Panel2.Controls.Add(panel2);
+-		split.BackColor = HudBg;
+-		split.SplitterWidth = 6;
+-		status.BackColor = HudPanel;
+-		status.ForeColor = HudDim;
+-		statusLabel.ForeColor = HudDim;
+-		status.Font = Mono(9f);
+-		hudTop.BackColor = HudPanel;
+-			ForeColor = HudAccent,
+-			Font = Mono(10f, FontStyle.Bold),
+-			pe.Graphics.Clear(HudPanel);
+-			using (Pen pen = new Pen(HudLine))
+-			{
+-				pe.Graphics.DrawLine(pen, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
+-			}
+-			using Pen pen2 = new Pen(HudLineDim);
+-			for (int i = hudTop.Width - 240; i < hudTop.Width - 12; i += 10)
+-			{
+-				pe.Graphics.DrawLine(pen2, i, 10, i, 20);
+-			}
+-		Panel panel3 = MakeFrame("控制面板 / CONTROL");
+-		panel3.Dock = DockStyle.Left;
+-		panel3.Width = 322;
+-		panel3.Margin = new Padding(0);
+-		flowLayoutPanel.Dock = DockStyle.Fill;
+-		panel3.Controls.Add(flowLayoutPanel);
+-		Controls.Add(panel3);
+-			cbParallel.BackColor = HudSel;
+-			cbParallel.ForeColor = Color.White;
+-			lblParHint.ForeColor = HudAccent2;
+-				hint.ForeColor = HudAccent;
+-		split.Resize += (object param0, EventArgs param1) =>
+-		{
+-			ApplySplitRatio();
+-		};
+-		Layout += (object param0, LayoutEventArgs param1) =>
+-		{
+-			ApplySplitRatio();
+-		};
+-		Shown += (object param0, EventArgs param1) =>
+-		{
+-			DarkenScrollbars();
+-			BeginInvoke((MethodInvoker)(() =>
+-			{
+-				ApplySplitRatio();
+-			}));
+-		};
+-				mainForm.split.SplitterDistance = 380;
+-	private static string MonoName()
+-	{
+-		if (monoName != null)
+-		{
+-			return monoName;
+-		}
+-		string[] array = new string[6] { "Sarasa Mono SC", "Sarasa Term SC", "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas" };
+-		string[] array2 = array;
+-		foreach (string text in array2)
+-		{
+-			try
+-			{
+-				using Font font = new Font(text, 9f);
+-				if (string.Equals(font.Name, text, StringComparison.OrdinalIgnoreCase))
+-				{
+-					monoName = text;
+-					break;
+-				}
+-			}
+-			catch
+-			{
+-			}
+-		}
+-		if (monoName == null)
+-		{
+-			monoName = "Consolas";
+-		}
+-		return monoName;
+-	}
+-
+-	private static Font Mono(float size)
+-	{
+-		return new Font(MonoName(), size);
+-	}
+-
+-	private static Font Mono(float size, FontStyle st)
+-	{
+-		return new Font(MonoName(), size, st);
+-	}
+-
+-		label.Font = Mono(9.5f, FontStyle.Bold);
+-	private void FitLastColumn()
+-	{
+-		try
+-		{
+-			if (list != null && list.Columns.Count != 0)
+-			{
+-				int num = 0;
+-				for (int i = 0; i < list.Columns.Count - 1; i++)
+-				{
+-					num += list.Columns[i].Width;
+-				}
+-				int num2 = list.ClientSize.Width - num;
+-				if (num2 > 60 && list.Columns[list.Columns.Count - 1].Width != num2)
+-				{
+-					list.Columns[list.Columns.Count - 1].Width = num2;
+-				}
+-			}
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+-	private void ApplySplitRatio()
+-	{
+-		if (splitRatioLocked)
+-		{
+-			return;
+-		}
+-		try
+-		{
+-			int num = split.Height;
+-			if (num <= 0)
+-			{
+-				return;
+-			}
+-			int num2 = num - split.SplitterWidth;
+-			if (num2 > 0)
+-			{
+-				int num3 = (int)Math.Round((double)num2 * 3.0 / 5.0);
+-				int num4 = num2 - split.Panel2MinSize;
+-				if (num3 > num4)
+-				{
+-					num3 = num4;
+-				}
+-				if (num3 < split.Panel1MinSize)
+-				{
+-					num3 = split.Panel1MinSize;
+-				}
+-				if (num3 != split.SplitterDistance)
+-				{
+-					split.SplitterDistance = num3;
+-				}
+-				FitLastColumn();
+-			}
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+-	private Panel MakeFrame(string title)
+-	{
+-		if (hudFrameFont == null)
+-		{
+-			hudFrameFont = Mono(9.5f, FontStyle.Bold);
+-		}
+-		Panel p = new Panel();
+-		p.Tag = "hudframe";
+-		p.BackColor = HudPanel;
+-		p.Padding = new Padding(2, 24, 2, 2);
+-		p.Paint += (object s, PaintEventArgs pe) =>
+-		{
+-			Graphics graphics = pe.Graphics;
+-			Rectangle clientRectangle = p.ClientRectangle;
+-			using (Pen pen = new Pen(HudLine))
+-			{
+-				graphics.DrawRectangle(pen, 0, 0, clientRectangle.Width - 1, clientRectangle.Height - 1);
+-			}
+-			string text = "| " + title + " |";
+-			Size size = TextRenderer.MeasureText(graphics, text, hudFrameFont);
+-			using (SolidBrush brush = new SolidBrush(HudPanel))
+-			{
+-				graphics.FillRectangle(brush, 8, 0, size.Width + 4, 20);
+-			}
+-			TextRenderer.DrawText(graphics, text, hudFrameFont, new Point(10, 3), HudAccent);
+-			int num = 10 + size.Width + 8;
+-			if (num < clientRectangle.Width - 12)
+-			{
+-				using (Pen pen = new Pen(HudLineDim))
+-				{
+-					graphics.DrawLine(pen, num, 10, clientRectangle.Width - 10, 10);
+-				}
+-			}
+-		};
+-		return p;
+-	}
+-
+-	private static void HudSetToggle(Button b, bool on)
+-	{
+-		if (b != null)
+-		{
+-			b.BackColor = (on ? HudOn : HudOff);
+-			b.ForeColor = (on ? HudAccent2 : HudDim);
+-			b.FlatAppearance.BorderColor = (on ? HudAccent : HudLine);
+-			b.FlatStyle = FlatStyle.Flat;
+-		}
+-	}
+-
+-			return HudOn;
+-			return HudOff;
+-			return HudOff;
+-			return HudOff;
+-			return HudPanel2;
+-		}
+-		if (c == Color.FromArgb(255, 236, 179))
+-		{
+-			return HudPanel2;
+-		return c;
+-					button.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 68, 128);
+-					button.FlatAppearance.MouseDownBackColor = Color.FromArgb(24, 40, 76);
+-					button.ForeColor = HudText;
+-					button.Font = Mono(9f);
+-					checkBox.Font = Mono(9f);
+-					comboBox.BackColor = HudPanel2;
+-					comboBox.Font = Mono(9f);
+-					if (label.ForeColor != HudAccent)
+-					label.Font = Mono(label.Font.Size);
+-				Panel panel = control as Panel;
+-				bool flag3 = panel != null && panel.Tag is string && (string)panel.Tag == "hudframe";
+-				if (panel != null && panel != hudTop && !flag3)
+-	[DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+-	private static extern int SetWindowTheme(IntPtr hWnd, string app, string idlist);
+-
+-	private void DarkenScrollbars()
+-	{
+-		try
+-		{
+-			SetWindowTheme(logBox.Handle, "DarkMode_Explorer", null);
+-		}
+-		catch
+-		{
+-		}
+-	}
+-
+-		bool flag = e.Item.BackColor == Color.FromArgb(214, 244, 214);
+-			color = HudSel;
+-		else
+-			color = ((!flag) ? HudBg : HudMark);
+-		using (SolidBrush brush = new SolidBrush(color))
+-			e.Graphics.FillRectangle(brush, e.Bounds);
+-		if (e.Item.Index % 2 == 1 && !e.Item.Selected && !flag)
+-			using SolidBrush brush = new SolidBrush(HudPanel);
+-		if (flag && !e.Item.Selected)
+-			using (SolidBrush brush = new SolidBrush(HudAccent))
+-				e.Graphics.FillRectangle(brush, e.Bounds.Left, e.Bounds.Top, 2, e.Bounds.Height);
+-			color = HudAccent2;
+-			color = Color.White;
+-			color = HudAccent;
+-		}
+-		if (e.Item.Selected)
+-		{
+-			color = Color.White;
+-				SetStatusText("就绪 · 本批 " + Math.Max(1, Math.Min(6, cfg.ParallelCount)) + " 个（列表里蓝色高亮的就是）");
+-	private int SceneItemIdOf(string scene, string source)
+-	{
+-		try
+-		{
+-			Dictionary<string, object> dictionary = new Dictionary<string, object>();
+-			dictionary["sceneName"] = scene;
+-			List<object> list = ObsClient.ToList(obs.Request("GetSceneItemList", dictionary)["sceneItems"]);
+-			foreach (object item in list)
+-			{
+-				Dictionary<string, object> dictionary2 = (Dictionary<string, object>)item;
+-				if (Convert.ToString(dictionary2["sourceName"]) == source)
+-				{
+-					return Convert.ToInt32(dictionary2["sceneItemId"]);
+-				}
+-			}
+-		}
+-		catch
+-		{
+-		}
+-		return -1;
+-	}
+-
+-	private void SetCanvasToGameNative(Process game, Job job)
+-	{
+-		try
+-		{
+-			if (!cfg.AutoCanvas || game == null)
+-			{
+-				return;
+-			}
+-			game.Refresh();
+-			IntPtr mainWindowHandle = game.MainWindowHandle;
+-			if (mainWindowHandle == IntPtr.Zero || !GetClientRect(mainWindowHandle, out var r))
+-			{
+-				return;
+-			}
+-			int right = r.Right;
+-			int bottom = r.Bottom;
+-			if (right >= 320 && bottom >= 240 && (Math.Abs(right - cfg.CanvasWidth) >= 2 || Math.Abs(bottom - cfg.CanvasHeight) >= 2))
+-			{
+-				Dictionary<string, object> dictionary = new Dictionary<string, object>();
+-				dictionary["baseWidth"] = right;
+-				dictionary["baseHeight"] = bottom;
+-				dictionary["outputWidth"] = right;
+-				dictionary["outputHeight"] = bottom;
+-				obs.Request("SetVideoSettings", dictionary);
+-				job.NativeW = right;
+-				job.NativeH = bottom;
+-				Log.Write("单录清晰度：画布设为游戏窗口原生尺寸 " + right + "×" + bottom + "（不让 OBS 缩放，录完用 neighbor 放大到 " + cfg.CanvasWidth + "×" + cfg.CanvasHeight + "）");
+-				if (captureSource != null && captureSourceIsOurs && captureScene != null)
+-				{
+-					FitSourceToCanvas(captureScene, SceneItemIdOf(captureScene, captureSource));
+-				}
+-			}
+-		}
+-		catch (Exception ex)
+-		{
+-			Log.Write("设置原生画布失败（继续，画面可能偏软）：" + ex.Message);
+-		}
+-	}
+-
+-	private void PostScaleNeighbor(Job job)
+-	{
+-		string text = null;
+-		try
+-		{
+-			if (job.NativeW <= 0 || job.NativeH <= 0)
+-			{
+-				return;
+-			}
+-			int num = ((cfg.CanvasWidth > 0) ? cfg.CanvasWidth : 1440);
+-			int num2 = ((cfg.CanvasHeight > 0) ? cfg.CanvasHeight : 1080);
+-			if (job.NativeW >= num && job.NativeH >= num2)
+-			{
+-				return;
+-			}
+-			string output = job.Output;
+-			if (string.IsNullOrEmpty(output) || !File.Exists(output) || !output.ToLower().EndsWith(".mp4"))
+-			{
+-				return;
+-			}
+-			string text2 = FindFfmpeg();
+-			if (text2 == null)
+-			{
+-				return;
+-			}
+-			text = output + ".up.mp4";
+-			if (File.Exists(text))
+-			{
+-				File.Delete(text);
+-			}
+-			string text3 = "-vf scale=" + num + ":" + num2 + ":flags=neighbor,setsar=1";
+-			string[] array = new string[2]
+-			{
+-				"-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq " + cfg.ParallelSplitCQ + " -b:v 0",
+-				"-c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ
+-			};
+-			string[] array2 = array;
+-			foreach (string text4 in array2)
+-			{
+-				string arguments = "-hide_banner -y -i \"" + output + "\" " + text3 + " " + text4 + " -pix_fmt yuv420p -c:a copy -movflags +faststart \"" + text + "\"";
+-				ProcessStartInfo processStartInfo = new ProcessStartInfo(text2, arguments);
+-				processStartInfo.UseShellExecute = false;
+-				processStartInfo.CreateNoWindow = true;
+-				processStartInfo.WorkingDirectory = Path.GetDirectoryName(text2);
+-				Process process = Process.Start(processStartInfo);
+-				process.WaitForExit();
+-				if (process.ExitCode == 0 && File.Exists(text) && new FileInfo(text).Length > 4096 && HasMoov(text))
+-				{
+-					try
+-					{
+-						File.Replace(text, output, null);
+-					}
+-					catch
+-					{
+-						File.Delete(output);
+-						File.Move(text, output);
+-					}
+-					try
+-					{
+-						job.Size = new FileInfo(output).Length;
+-					}
+-					catch
+-					{
+-					}
+-					Log.Write("清晰度处理：已用 neighbor 从 " + job.NativeW + "×" + job.NativeH + " 放大到 " + num + "×" + num2 + "（" + text4.Split(' ')[1] + "）");
+-					return;
+-				}
+-				Log.Write("清晰度处理：" + text4.Split(' ')[1] + " 失败（退出码 " + process.ExitCode + "），换下一个编码器重试…");
+-			}
+-			Log.Write("清晰度处理：放大没成功，保留原来的 " + job.NativeW + "×" + job.NativeH + " 成品");
+-		}
+-		catch (Exception ex)
+-		{
+-			Log.Write("清晰度处理出错（已忽略，保留原文件）：" + ex.Message);
+-			try
+-			{
+-				if (text != null && File.Exists(text))
+-				{
+-					File.Delete(text);
+-				}
+-			}
+-			catch
+-			{
+-			}
+-		}
+-	}
+-
+-			obsState.ForeColor = ((text == null || text2 == null) ? Color.White : HudDim);
+-						Log.Write("你点在了列表空白处 —— 已把这 " + pinnedBatch.Count + " 个标记为「本批」（蓝色），数量也跟着改成 " + Math.Min(6, pinnedBatch.Count) + " 个");
+-			Log.Write("==== 轮录开始：从队列第一个 rep 开始数，共 " + list.Count + " 个待录，每批 " + num + " 个" + ((num == 1) ? "（每批 1 个 → 走单录，依次录）" : ("（最后不足 " + num + " 个的按实际数量录）")) + "  ※ 轮录模式下不看你的选中/蓝色标记，一律从队列最前面开始 ====");
+-				btnSound.BackColor = HudOff;
+-				btnSound.ForeColor = HudDim;
+-				btnSound.FlatAppearance.BorderColor = HudLine;
+-				HudSetToggle(btnSound, on: false);
+-				HudSetToggle(btnSound, on: true);
+-			HudSetToggle(btnGameAudio, on: true);
+-			HudSetToggle(btnGameAudio, on: false);
+-				HudSetToggle(btnBgm, on: true);
+-				HudSetToggle(btnBgm, on: false);
+-[Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8")]
+-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
