@@ -2654,42 +2654,62 @@ namespace RepRecorder
                                   TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
 
-        // 行背景：整行画（本批=绿色底；选中=亮蓝底）
+        // ⚠ 行背景【不在这里画】—— 整行铺底会毁掉这一行的文字，见下面 PaintCellBack 的说明。
+        //   这里实现 OwnerDraw 的 DrawItem（.NET 靠它才会继续发 DrawSubItem），但不画任何东西。
         void OnHudDrawItem(object sender, DrawListViewItemEventArgs e)
         {
-            bool batch = e.Item.BackColor == Color.FromArgb(214, 244, 214);   // 被标记成"本批"的那几行
-            Graphics g = e.Graphics;
+        }
+
+        // 单元格背景：这一格的那块底由这一格自己铺（本批=绿底；选中=亮蓝底；隔行条纹；有背景图就贴图）
+        // ⚠ 必须**一格一格**铺，绝不能在这里替整行铺底 —— 用户报的"rep 放进队列后文件名/状态空白、
+        //   只剩个序号，点一下才回来"就是这么来的（实测埋点复现）：
+        //     · 列表开了 LVS_EX_DOUBLEBUFFER（BgListView 的 DoubleBuffered），comctl32 某些趟
+        //       （改焦点/选中状态那几笔）是拿**裁剪区=整个客户区**的内存 DC 重画某几行的
+        //       （实测 e.Graphics 的 clip 是 0,0,784x374，整行都在裁剪区里，铺底不受限）；
+        //     · 而那一趟 WinForms 只发 DrawItem + **第 0 列**的 DrawSubItem（实测每个条目只有 1 个 SUB）；
+        //     · 以前在这里整行铺底 → 刚画好的文件名/状态被整行抹平，只补回一个序号。
+        //   一格一格铺之后，那种"只重画第 0 列"的一趟顶多把序号列重画一遍，别的列原样不动。
+        void PaintCellBack(Graphics g, ListViewItem item, Rectangle cell, int colIndex)
+        {
+            if (cell.Width <= 0 || cell.Height <= 0) return;
+            // 最后一列顺手把右边剩下的那截（列宽之外、行宽之内）也铺上，否则会露出 ListView 自己的底色
+            if (list.Columns.Count > 0 && colIndex == list.Columns.Count - 1)
+            {
+                int right = item.Bounds.Right;
+                if (right > cell.Right) cell.Width = right - cell.Left;
+            }
+            bool batch = item.BackColor == Color.FromArgb(214, 244, 214);   // 被标记成"本批"的那几行
             if (Bg.Cache == null)
             {
                 Color bg;
-                if (e.Item.Selected) bg = HudSel;
+                if (item.Selected) bg = HudSel;
                 else if (batch) bg = HudBatch;
                 else bg = HudBg;
-                using (SolidBrush bb = new SolidBrush(bg)) g.FillRectangle(bb, e.Bounds);
+                using (SolidBrush bb = new SolidBrush(bg)) g.FillRectangle(bb, cell);
                 // 隔行稍微深一点，长列表更好扫
-                if (e.Item.Index % 2 == 1 && !e.Item.Selected && !batch)
+                if (item.Index % 2 == 1 && !item.Selected && !batch)
                 {
                     using (SolidBrush bb = new SolidBrush(HudPanel))
-                        g.FillRectangle(bb, e.Bounds);
+                        g.FillRectangle(bb, cell);
                 }
             }
             else
             {
-                // 有背景图：控件不会替我们铺背景（owner-draw + Opaque），所以每一行自己把
+                // 有背景图：控件不会替我们铺背景（owner-draw + Opaque），所以每一格自己把
                 // 对应区域的那块图画上去，然后再叠一层半透明强调色（不透明色会把图盖死）
-                Bg.PaintRect(list, g, e.Bounds);
+                Bg.PaintRect(list, g, cell);
                 Color tint = Color.Empty;
-                if (e.Item.Selected) tint = Color.FromArgb(120, HudSel);
+                if (item.Selected) tint = Color.FromArgb(120, HudSel);
                 else if (batch) tint = Color.FromArgb(110, HudBatch);
-                else if (e.Item.Index % 2 == 1) tint = Color.FromArgb(40, 0, 0, 0);
+                else if (item.Index % 2 == 1) tint = Color.FromArgb(40, 0, 0, 0);
                 if (tint != Color.Empty)
-                    using (SolidBrush bb = new SolidBrush(tint)) g.FillRectangle(bb, e.Bounds);
+                    using (SolidBrush bb = new SolidBrush(tint)) g.FillRectangle(bb, cell);
             }
             // "本批"那几行左边再压一条绿条，一眼能认出来
-            if (batch && !e.Item.Selected)
+            if (batch && !item.Selected && colIndex == 0)
             {
                 using (SolidBrush bb = new SolidBrush(HudBatchBar))
-                    g.FillRectangle(bb, e.Bounds.Left, e.Bounds.Top, 2, e.Bounds.Height);
+                    g.FillRectangle(bb, item.Bounds.Left, cell.Top, 2, cell.Height);
             }
         }
 
@@ -2701,6 +2721,7 @@ namespace RepRecorder
             else if (fg == Color.FromArgb(0, 120, 0)) fg = HudAccent2;      // 完成 / 已录制
             else if (fg == Color.FromArgb(180, 0, 0)) fg = HudRed;          // 失败
             else if (fg == Color.FromArgb(190, 120, 0)) fg = HudOrange;     // 注意
+            PaintCellBack(e.Graphics, e.Item, e.Bounds, e.ColumnIndex);     // 先铺这一格的底，再写字
             Rectangle r = e.Bounds;
             if (e.ColumnIndex == 0) r = new Rectangle(r.Left + 6, r.Top, r.Width - 6, r.Height);
             TextRenderer.DrawText(e.Graphics, e.SubItem.Text, list.Font, r, fg,
@@ -2761,6 +2782,14 @@ namespace RepRecorder
             List<Job> already = new List<Job>();
             Ui(delegate
             {
+                // ⚠ 必须用 BeginUpdate/EndUpdate 把"加条目"整个包起来。
+                //   这是 owner-draw 的 ListView：每 Items.Add 一次它就自己重画一次，而重画的时候
+                //   后面的条目还没排好版 —— 结果就是"一部分行画出来了、后面的行只有序号是空的，
+                //   再点一下才补上"（用户报的"放进来一开始不显示，点一下才出来"）。
+                //   顺带也解决了性能问题：放几百个 rep 时不再逐条重画。
+                list.BeginUpdate();
+                try
+                {
                 lock (jobsLock)
                 {
                     foreach (string r in reps)
@@ -2788,6 +2817,12 @@ namespace RepRecorder
                         list.Items.Add(job.Item);
                         added++;
                     }
+                }
+                }
+                finally
+                {
+                    list.EndUpdate();     // 到这里才统一重画一次
+                    list.Invalidate();    // 保险：再失效一遍，确保所有新行都补上
                 }
             });
             SyncListScroll();     // 条目数变了，自绘滚动条要跟着更新
@@ -2877,6 +2912,11 @@ namespace RepRecorder
                     if (sj != null && !sel.Contains(sj)) sel.Add(sj);
                 }
                 int marked = 0;
+                // ⚠ 同样要 BeginUpdate/EndUpdate：下面每改一次 BackColor/Font，ListView 就重画一次，
+                //   几百个条目时会卡，而且分批重画容易画出"半截"的状态。
+                list.BeginUpdate();
+                try
+                {
                 lock (jobsLock)
                 {
                     foreach (Job j in jobs)
@@ -2892,6 +2932,8 @@ namespace RepRecorder
                         j.Item.Font = on ? batchFont : list.Font;
                     }
                 }
+                }
+                finally { list.EndUpdate(); list.Invalidate(); }
             }
             catch { }
         }
@@ -4599,7 +4641,14 @@ namespace RepRecorder
         {
             if (worker != null && worker.IsAlive) { Log.Write("队列运行中，先停止再清空"); return; }
             lock (jobsLock) { jobs.Clear(); }
-            list.Items.Clear();
+            // ⚠ 「钉住的本批」（pinnedBatch）存的是 Job 对象，队列清空后它们已经不在 jobs 里了。
+            //   不同步清掉的话，下次放进新 rep 时 HighlightBatchRows 会拿这批**已经不存在的 job**
+            //   去比对（pinnedBatch 非空就只认它），结果一行都不高亮 —— 用户实测：清空队列后
+            //   再拖进来，状态栏写着「本批 6 个」，列表里却一条绿的都没有。
+            pinnedBatch.Clear();
+            list.BeginUpdate();
+            try { list.Items.Clear(); }
+            finally { list.EndUpdate(); list.Invalidate(); }   // 清空同样要统一重画，别留下残影
             SyncListScroll();
             Log.Write("队列已清空");
         }
