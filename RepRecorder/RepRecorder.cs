@@ -746,32 +746,10 @@ namespace RepRecorder
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder s, int n);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-        [DllImport("shell32.dll")] static extern void DragAcceptFiles(IntPtr hWnd, bool fAccept);
-        [StructLayout(LayoutKind.Sequential)]
-        struct DROPFILES { public uint pFiles; public int x; public int y; public int fNC; public int fWide; }
-        const uint WM_DROPFILES = 0x0233;
-
-        // 把文件"拖"进某个窗口。
-        // ⚠ 2026-09-26 实测：合成 WM_DROPFILES 对当前这版 ReplayDnD-old / ReplayDnD **完全无效**
-        //   （投递后游戏一直停在标题画面，既不开始播也不退出），mod 多半走的是 OLE 拖放，只有真人鼠标拖才有用。
-        //   所以并行录制已经改成"把 rep 当命令行参数重启实例"（见 RunParallel 第 6 步），这个函数仅留作参考。
-        static void DropFileOnWindow(IntPtr hwnd, string file)
-        {
-            int size = Marshal.SizeOf(typeof(DROPFILES));
-            IntPtr p = Marshal.AllocHGlobal(size + (file.Length + 2) * 2);
-            try
-            {
-                DROPFILES df = new DROPFILES();
-                df.pFiles = (uint)size;
-                df.fWide = 1;
-                Marshal.StructureToPtr(df, p, false);
-                byte[] bytes = Encoding.Unicode.GetBytes(file + "\0\0");
-                Marshal.Copy(bytes, 0, (IntPtr)((long)p + size), bytes.Length);
-                SendMessage(hwnd, WM_DROPFILES, p, IntPtr.Zero);
-            }
-            finally { Marshal.FreeHGlobal(p); }
-        }
+        // ⚠ 2026-09-26 实测：合成 WM_DROPFILES 把 rep 投给游戏窗口 **完全无效**（游戏一直停在标题画面，
+        //   既不开始播也不退出）—— 这版 ReplayDnD / ReplayDnD-old 走的应该是 OLE 拖放，只有真人鼠标拖才有用。
+        //   所以并行录制改成了「把 rep 当命令行参数重启实例」（见 RunParallel 第 6 步）。
+        //   当年为此写的那套 SendMessage + DROPFILES + DropFileOnWindow 已经删掉；这条结论留着，别再试一遍。
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowText(IntPtr hWnd, string text);
         [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hWnd, out RECT r);
         [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
@@ -810,7 +788,6 @@ namespace RepRecorder
         const string RecSceneName = "RepRecorder 录制场景";
         const string RecSourceName = "RepRecorder 游戏窗口";
         const string AudioSourceName = "RepRecorder 游戏声音";
-        readonly List<string> mutedInputs = new List<string>();
         readonly Dictionary<string, bool> micOriginalMute = new Dictionary<string, bool>();
         readonly Dictionary<string, bool> deskOriginalMute = new Dictionary<string, bool>();
 
@@ -822,6 +799,10 @@ namespace RepRecorder
         SplitContainer split;      // 上下分栏（列表 / 终端），做成字段才能按 3:5 比例摆
         SplitContainer mainSplit;  // 左右分栏（控制面板 | 内容区），拖分隔条可调宽
         Button btnPanel;           // 顶栏上的「收起 / 展开面板」
+        HudCapButton btnMin;       // 顶栏右边：最小化
+        HudCapButton btnMax;       // 顶栏右边：最大化 / 还原
+        HudCapButton btnClose;     // 顶栏右边：关闭
+        const int CAPBTN_W = 46;   // 窗口按钮宽度（三个并排贴在右上角）
         Panel activityBar;         // 收起之后左边那条窄竖条（学 VS Code 的活动栏）
         Button btnExpand;          // 竖条上的「▶」展开按钮
         static Font barFont;       // 竖排文字用的字体
@@ -864,9 +845,21 @@ namespace RepRecorder
 
         public MainForm(string[] args)
         {
+            // ⚠ 这行必须是构造函数的第一句。
+            //   实测（埋点打的 CreateParams）：句柄是在构造过程中就被创建的，而且**第一次创建时
+            //   FormBorderStyle 还是默认的 Sizable** —— 也就是窗口先带着 WS_CAPTION 生出来，
+            //   之后再靠 UpdateStyles/SetWindowLong 把标题栏样式抠掉。多数情况下看不出来，
+            //   但在某些渲染路径下框架不会重算非客户区，系统标题栏就留在那儿了。
+            //   放到最前面，第一次创建就是无边框的。
+            FormBorderStyle = FormBorderStyle.None;
+
             cfg = Settings.Load();
             Text = "Rep → MP4 录制器（OBS）";
             Font = Ui(9F);                                  // 中文控件走雅黑（等宽字体没有中文字形）
+            // 无边框：系统标题栏在深色模式下渲成 #202020，压在 #3C3E45 的界面上就是那条突兀的黑带。
+            // 直接不要它，顶栏和最小化/最大化/关闭全部自绘（学 Folia）。
+            // ⚠ FormBorderStyle.None 会连窗口样式里的 WS_THICKFRAME 一起拿掉 —— 那样就没了拖边缩放、
+            //   Aero Snap、双击最大化、从最大化拖下来还原。所以下面 CreateParams 里单独把它加回来。
             ClientSize = new Size(1180, 780);   // 左侧控制面板竖排要够高，不然会被裁
             MinimumSize = new Size(760, 520);
             BackColor = HudBg;                              // 蓝黑主题：窗体底色
@@ -1205,11 +1198,35 @@ namespace RepRecorder
                 pe.Graphics.Clear(HudPanel);
                 using (Pen hudPen1 = new Pen(HudLine))
                     pe.Graphics.DrawLine(hudPen1, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
-                // 右边一小段刻度装饰线（参考图顶栏那个细节）
+                // 右边一小段刻度装饰线（参考图顶栏那个细节）。⚠ 要让开右边的窗口按钮，
+                // 否则那条线会从按钮底下穿过去。
                 using (Pen hudPen2 = new Pen(HudLineDim))
-                    for (int hx = hudTop.Width - 240; hx < hudTop.Width - 12; hx += 10)
+                    for (int hx = hudTop.Width - 240; hx < hudTop.Width - CAPBTN_W * 3 - 12; hx += 10)
                         pe.Graphics.DrawLine(hudPen2, hx, 10, hx, 20);
             };
+
+            // 顶栏右边的窗口按钮。无边框窗口没有系统标题栏，这三个得自己画。
+            btnMin = new HudCapButton(HudCapButton.KindMin);
+            btnMax = new HudCapButton(HudCapButton.KindMax);
+            btnClose = new HudCapButton(HudCapButton.KindClose);
+            btnMin.Click += delegate { try { WindowState = FormWindowState.Minimized; } catch { } };
+            btnMax.Click += delegate
+            {
+                try
+                {
+                    WindowState = (WindowState == FormWindowState.Maximized)
+                        ? FormWindowState.Normal : FormWindowState.Maximized;
+                }
+                catch { }
+            };
+            btnClose.Click += delegate { try { Close(); } catch { } };
+            // ⚠ 加的顺序决定 z 序：后加的在上层，所以要 关闭 → 最大化 → 最小化 这样倒着加，
+            //   最终呈现才是「最小化 | 最大化 | 关闭」从左到右。
+            hudTop.Controls.Add(btnClose);
+            hudTop.Controls.Add(btnMax);
+            hudTop.Controls.Add(btnMin);
+            hudTop.Resize += delegate { LayoutCaptionButtons(); };
+            Resize += delegate { SyncCaptionButtons(); };   // 最大化/还原 → 换中间那个按钮的图标
 
             // 左侧控制面板也装进带边框的面板（| 控制面板 / CONTROL |）
             Panel frameCtrl = MakeFrame("控制面板 / CONTROL");
@@ -1244,7 +1261,11 @@ namespace RepRecorder
             //   SplitContainer 会校验 SplitterDistance 落不落在两者之间，直接抛异常。放到 Shown 里初始化。
             mainSplit.SplitterMoved += delegate { OnPanelSplitterMoved(); };
             mainSplit.SplitterMoving += delegate { splitterDragging = true; };
-            mainSplit.SizeChanged += delegate { ScheduleBgRebuild(); };   // 内容区变了，背景图要重排
+            mainSplit.SizeChanged += delegate { OnContentGeometryChanged(); };   // 内容区变了，背景图要重排
+            // ⚠ 只挂 mainSplit.SizeChanged 是不够的 —— 这正是"图片不跟随分割线"的根因：
+            //   拖分隔条时 SplitContainer 自己的尺寸【不变】，变的只有 Panel2。收起/展开同理。
+            //   挂 Panel2 的 SizeChanged 才能覆盖所有让内容区变形的路径。
+            mainSplit.Panel2.SizeChanged += delegate { OnContentGeometryChanged(); };
 
             // Ctrl+B：收起 / 展开左边的控制面板
             KeyPreview = true;                       // 焦点在子控件上时也先给窗体处理
@@ -1317,8 +1338,17 @@ namespace RepRecorder
                 // 三处滚动条现在都是自绘的，不再需要给系统控件换主题了
                 SyncLeftScroll(false);
                 SyncListScroll();
-                RebuildBackground();     // 背景图要在窗口尺寸定下来之后才建
-                BeginInvoke((MethodInvoker)delegate { ApplySplitRatio(); InitPanelLayout(); });
+                SyncCaptionButtons();    // 顶栏宽度此刻才定下来，窗口按钮要现在才摆得对
+                // ⚠ 背景图【不能】在这里建：此刻 InitPanelLayout 还没跑，SplitterDistance 还是
+                //   默认的 50，算出来的内容区是错的 —— 实测这张图建在 X=54、宽 1126，
+                //   而面板归位后正确值是 X=380、宽 800。图上画的东西全错位（用户报的
+                //   "图片不跟随分割线"根因之一）。交给 InitPanelLayout 末尾统一建。
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    ApplySplitRatio();
+                    InitPanelLayout();
+                    InstallChromeHooks();    // 布局定下来才知道哪些子窗口压在了四条边/顶栏上
+                });
             };
 
             Log.OnLine += OnLogLine;
@@ -1349,7 +1379,7 @@ namespace RepRecorder
             bgTimer = new System.Windows.Forms.Timer();
             bgTimer.Interval = 200;
             bgTimer.Tick += delegate { bgTimer.Stop(); RebuildBackground(); };
-            SizeChanged += delegate { ScheduleBgRebuild(); };
+            SizeChanged += delegate { OnContentGeometryChanged(); };
 
             // 滚轮转发：WinForms 只把滚轮发给"有焦点的控件"，鼠标停在终端/列表上但焦点在别处时它们收不到。
             // 事件会从焦点控件冒泡到窗体，这里按光标位置判断该让谁滚。
@@ -1545,10 +1575,12 @@ namespace RepRecorder
         internal static readonly Color HudLineDim = Color.FromArgb(96, 99, 108); // #60636C  暗边框 / 刻度线
         internal static readonly Color HudText = Color.FromArgb(226, 230, 240);  // #E2E6F0  正文
         internal static readonly Color HudDim = Color.FromArgb(166, 170, 182);   // #A6AAB6  次要文字
-        internal static readonly Color HudAccent = Color.FromArgb(0xA2, 0x77, 0xFF);  // #a277ff  紫：边框标题 / 表头 / 强调
+        // 强调色：边框标题 / 表头 / 顶栏标题 / 勾选框 / 滚动条拖动中。
+        // ⚠ 用户要求去掉 Aura 那套紫（#a277ff），换回他自己老版本的亮蓝。
+        //   全程序只有这一处定义，改这里所有紫色元素一起变。
+        internal static readonly Color HudAccent = Color.FromArgb(90, 170, 255);      // #5AAAFF  亮蓝（老版本的强调蓝）
         internal static readonly Color HudAccent2 = Color.FromArgb(0x61, 0xFF, 0xCA); // #61ffca  薄荷绿：成功 / 开
         internal static readonly Color HudSel = Color.FromArgb(88, 98, 140);     // #58628C  选中行
-        internal static readonly Color HudMark = Color.FromArgb(70, 72, 82);     // #464852
         internal static readonly Color HudOn = Color.FromArgb(82, 96, 148);      // #526094  开关按钮「开」
         internal static readonly Color HudOff = Color.FromArgb(68, 70, 78);      // #44464E  开关按钮「关」
         internal static readonly Color HudBatch = Color.FromArgb(52, 96, 76);    // 列表里"本批"那几行的绿底
@@ -1701,6 +1733,299 @@ namespace RepRecorder
             catch { }
         }
 
+        // 无边框但仍然是"可缩放窗口"。
+        // 只把 WS_THICKFRAME 加回来，【不加 WS_CAPTION】—— 有了 WS_CAPTION 系统就又去画标题栏了，
+        // 白改。有 WS_THICKFRAME 才有：拖边缘缩放、贴边分屏（Aero Snap）、双击顶栏最大化、
+        // 从最大化状态往下拖自动还原。这几样自己实现又脆又难测，交给系统更稳。
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                // ⚠ 这里要【保留】WS_CAPTION，不能清掉。
+                //   DWM 只把"带框窗口"当正常窗口看 —— 最小化/最大化的过渡动画、投影、圆角
+                //   都靠这个样式。清掉它（或者用 FormBorderStyle.None）窗口就变成"无框"的，
+                //   动画就没了（实测：老版本过渡帧 5 个，清掉 WS_CAPTION 的版本只有 2 个）。
+                //   标题栏之所以看不见，是靠 WM_NCCALCSIZE 把客户区撑满整个窗口实现的 ——
+                //   非客户区是零，系统根本没地方画标题栏。VS Code 那类自定义标题栏也是这么做的。
+                cp.Style |= 0x00C00000;    // WS_CAPTION = WS_BORDER | WS_DLGFRAME
+                cp.Style |= 0x00040000;    // WS_THICKFRAME   可缩放边框
+                cp.Style |= 0x00080000;    // WS_SYSMENU      顶栏右键出系统菜单
+                cp.Style |= 0x00020000;    // WS_MINIMIZEBOX
+                cp.Style |= 0x00010000;    // WS_MAXIMIZEBOX
+                return cp;
+            }
+        }
+
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+        const int SM_CXSIZEFRAME = 32, SM_CYSIZEFRAME = 33, SM_CXPADDEDBORDER = 92;
+        [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO mi);
+        const uint MONITOR_DEFAULTTONEAREST = 2;
+        [StructLayout(LayoutKind.Sequential)]
+        struct MINMAXINFO
+        {
+            public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct NCCALCSIZE_PARAMS
+        {
+            public RECT rgrc0, rgrc1, rgrc2;
+            public IntPtr lppos;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor, rcWork;
+            public uint dwFlags;
+        }
+
+        const int WM_GETMINMAXINFO = 0x0024;
+        const int WM_NCCALCSIZE = 0x0083;
+        const int WM_NCHITTEST = 0x0084;
+        const int HTCLIENT = 1, HTCAPTION = 2;
+        const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14,
+                  HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
+        const int GRIP = 6;        // 缩放热区宽度（客户区坐标；这台机器 300% 缩放，物理上是 18px）
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
+            {
+                // 客户区 = 整个窗口 —— 系统标题栏就没地方画了（WS_CAPTION 虽然留着，
+                // 但非客户区是零，一条 1px 的边框都留不下）。
+                // ⚠ 不处理这段的话，窗口顶部会留一条 7px 的 #202020 深色带（实测真实屏幕和
+                //   PrintWindow 都有），正是用户要去掉的那条东西。
+                // 代价：系统自带的缩放热区没了，改由下面的 WM_NCHITTEST 自己报。
+                //
+                // 例外：最大化的时候要减掉那一圈边框。
+                //   保留了 WS_CAPTION 之后，系统给最大化窗口的矩形会比工作区大一圈
+                //   （实测 1296x688 vs 工作区 1280x672，四边各多 8px，那圈是给"拖下来还原"用的）。
+                //   客户区不跟着缩的话，内容会被屏幕四边各切掉 8px。窗口本身大一点无所谓 ——
+                //   它整个在屏幕外，看不见。
+                if (IsZoomed(Handle))
+                {
+                    NCCALCSIZE_PARAMS ncp = (NCCALCSIZE_PARAMS)Marshal.PtrToStructure(m.LParam, typeof(NCCALCSIZE_PARAMS));
+                    int fx = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    int fy = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    ncp.rgrc0.Left += fx;
+                    ncp.rgrc0.Top += fy;
+                    ncp.rgrc0.Right -= fx;
+                    ncp.rgrc0.Bottom -= fy;
+                    Marshal.StructureToPtr(ncp, m.LParam, false);
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                // ⚠ 必须先调 base：WinForms 在这里把 MinimumSize / MaximumSize 写进 ptMinTrackSize/
+                //   ptMaxTrackSize。拦下来不调 base 的话最小尺寸限制就没了（还能拖到比 760x520 更小）。
+                base.WndProc(ref m);
+                // 无边框窗口最大化时默认会连任务栏一起盖住（无边框窗口的通病）。
+                // 把"最大化"的尺寸改写成显示器【工作区】，行为就和普通窗口一模一样。
+                try
+                {
+                    IntPtr mon = MonitorFromWindow(Handle, MONITOR_DEFAULTTONEAREST);
+                    MONITORINFO mi = new MONITORINFO();
+                    mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+                    if (GetMonitorInfo(mon, ref mi))
+                    {
+                        MINMAXINFO mmi = (MINMAXINFO)Marshal.PtrToStructure(m.LParam, typeof(MINMAXINFO));
+                        mmi.ptMaxPosition.X = mi.rcWork.Left - mi.rcMonitor.Left;
+                        mmi.ptMaxPosition.Y = mi.rcWork.Top - mi.rcMonitor.Top;
+                        mmi.ptMaxSize.X = mi.rcWork.Right - mi.rcWork.Left;
+                        mmi.ptMaxSize.Y = mi.rcWork.Bottom - mi.rcWork.Top;
+                        Marshal.StructureToPtr(mmi, m.LParam, false);
+                        m.Result = IntPtr.Zero;
+                    }
+                }
+                catch { }
+                return;
+            }
+            if (m.Msg == WM_NCHITTEST)
+            {
+                // ⚠ lParam 是【屏幕坐标】，x 在低 16 位、y 在高 16 位；必须按 short 取，
+                //   否则副屏/负坐标会被解成很大的正数。
+                int lp = m.LParam.ToInt32();
+                Point cp = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+
+                // 1) 四条边 + 四个角 = 缩放热区。
+                //    WM_NCCALCSIZE 把系统那圈边框去掉了，热区只能自己报，否则窗口拖不动大小。
+                //    最大化时不许缩放（和系统行为一致）。
+                if (!IsZoomed(Handle))
+                {
+                    bool l = cp.X < GRIP, r = cp.X >= ClientSize.Width - GRIP;
+                    bool t = cp.Y < GRIP, b = cp.Y >= ClientSize.Height - GRIP;
+                    if (t && l) { m.Result = (IntPtr)HTTOPLEFT; return; }
+                    if (t && r) { m.Result = (IntPtr)HTTOPRIGHT; return; }
+                    if (b && l) { m.Result = (IntPtr)HTBOTTOMLEFT; return; }
+                    if (b && r) { m.Result = (IntPtr)HTBOTTOMRIGHT; return; }
+                    if (l) { m.Result = (IntPtr)HTLEFT; return; }
+                    if (r) { m.Result = (IntPtr)HTRIGHT; return; }
+                    if (t) { m.Result = (IntPtr)HTTOP; return; }
+                    if (b) { m.Result = (IntPtr)HTBOTTOM; return; }
+                }
+
+                // 2) 顶栏空白处当"标题栏"用：能按住拖窗口、双击最大化、右键出系统菜单。
+                //    落在顶栏上的按钮上就不返回 HTCAPTION，否则按钮点不动。
+                if (hudTop != null && cp.Y >= 0 && cp.Y < hudTop.Height && !OverTopBarButton(cp))
+                {
+                    m.Result = (IntPtr)HTCAPTION;
+                    return;
+                }
+
+                base.WndProc(ref m);
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        // 这个点（窗体客户区坐标）是不是落在顶栏的某个按钮上。
+        // 落在按钮上的必须放行给按钮自己处理，不能当成"拖标题栏"。
+        bool OverTopBarButton(Point clientPt)
+        {
+            try
+            {
+                if (hudTop == null) return false;
+                Point inTop = hudTop.PointToClient(PointToScreen(clientPt));
+                foreach (Control c in hudTop.Controls)
+                    if ((c is ButtonBase || c is HudCapButton) && c.Bounds.Contains(inTop)) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        // ---------------------------------------------------------------- 无边框窗口：子窗口协作
+        // ⚠ 这是这次改造最难的一处，踩坑记录：
+        //   WM_NCHITTEST 不是发给顶层窗口的，而是发给【光标底下那个子窗口】的。
+        //   顶栏是个 Panel、四条边上盖着 SplitContainer 的子面板、还有状态栏和活动栏 ——
+        //   实测每个"装饰区"坐标底下都是子窗口。子窗口自己回 HTCLIENT，点击当场被吃掉，
+        //   顶层 WndProc 根本轮不到（真实拖动期间一条 NCHITTEST 日志都没有）。
+        //   办法：给落在装饰区里的子窗口装钩子，命中装饰区时一律回 HTTRANSPARENT。
+        //   HTTRANSPARENT 的文档语义正是我们要的 ——"消息继续交给同线程底下那层窗口，
+        //   直到某个窗口返回别的值"，最终就落到窗体自己的 WndProc 上，
+        //   于是移动/缩放的还是系统原生那套循环（Aero Snap、双击最大化、拖下来还原都还在）。
+        class ChromeHook : NativeWindow
+        {
+            readonly MainForm form;
+            public ChromeHook(MainForm f) { form = f; }
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == WM_NCHITTEST)
+                {
+                    try
+                    {
+                        if (form.ChromeHit(m.LParam) != 0) { m.Result = (IntPtr)(-1); return; }   // HTTRANSPARENT
+                    }
+                    catch { }
+                }
+                base.WndProc(ref m);
+            }
+        }
+
+        readonly List<ChromeHook> chromeHooks = new List<ChromeHook>();
+
+        // 这条屏幕坐标算哪种"窗口装饰"：顶栏空白 = HTCAPTION，四条边/四角 = 缩放，其它 = 0。
+        // 窗体和子窗口的钩子共用同一套判断，保证两边结论一致。
+        int ChromeHit(IntPtr lParam)
+        {
+            try
+            {
+                int lp = lParam.ToInt32();
+                Point cp = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                if (!IsZoomed(Handle))
+                {
+                    bool l = cp.X < GRIP, r = cp.X >= ClientSize.Width - GRIP;
+                    bool t = cp.Y < GRIP, b = cp.Y >= ClientSize.Height - GRIP;
+                    if (t && l) return HTTOPLEFT;
+                    if (t && r) return HTTOPRIGHT;
+                    if (b && l) return HTBOTTOMLEFT;
+                    if (b && r) return HTBOTTOMRIGHT;
+                    if (l) return HTLEFT;
+                    if (r) return HTRIGHT;
+                    if (t) return HTTOP;
+                    if (b) return HTBOTTOM;
+                }
+                if (hudTop != null && cp.Y >= 0 && cp.Y < hudTop.Height && !OverTopBarButton(cp)) return HTCAPTION;
+            }
+            catch { }
+            return 0;
+        }
+
+        // 重装所有钩子。布局定下来之后调用；重复调用没关系（先摘再装）。
+        void InstallChromeHooks()
+        {
+            foreach (ChromeHook hk in chromeHooks) { try { hk.ReleaseHandle(); } catch { } }
+            chromeHooks.Clear();
+            try { InstallChromeHooks(this); } catch { }
+        }
+
+        void InstallChromeHooks(Control root)
+        {
+            foreach (Control c in root.Controls)
+            {
+                try
+                {
+                    if (c.IsHandleCreated && TouchesChrome(c))
+                    {
+                        ChromeHook hk = new ChromeHook(this);
+                        hk.AssignHandle(c.Handle);
+                        chromeHooks.Add(hk);
+                    }
+                }
+                catch { }
+                InstallChromeHooks(c);
+            }
+        }
+
+        // 这个控件的矩形有没有碰到"装饰区"（四条边的热区 + 整条顶栏）。
+        // 只给碰到的装钩子，省得给几百个控件都套一层。
+        bool TouchesChrome(Control c)
+        {
+            try
+            {
+                Rectangle b = RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
+                int w = ClientSize.Width, h = ClientSize.Height;
+                if (hudTop != null && b.IntersectsWith(new Rectangle(0, 0, w, hudTop.Height))) return true;
+                if (b.IntersectsWith(new Rectangle(0, 0, w, GRIP))) return true;              // 上边
+                if (b.IntersectsWith(new Rectangle(0, h - GRIP, w, GRIP))) return true;      // 下边
+                if (b.IntersectsWith(new Rectangle(0, 0, GRIP, h))) return true;             // 左边
+                if (b.IntersectsWith(new Rectangle(w - GRIP, 0, GRIP, h))) return true;      // 右边
+            }
+            catch { }
+            return false;
+        }
+
+        // 三个窗口按钮贴在顶栏右上角，整条顶栏高
+        void LayoutCaptionButtons()
+        {
+            try
+            {
+                if (hudTop == null || btnMin == null) return;
+                int h = hudTop.Height;
+                btnClose.SetBounds(hudTop.Width - CAPBTN_W, 0, CAPBTN_W, h);
+                btnMax.SetBounds(hudTop.Width - CAPBTN_W * 2, 0, CAPBTN_W, h);
+                btnMin.SetBounds(hudTop.Width - CAPBTN_W * 3, 0, CAPBTN_W, h);
+            }
+            catch { }
+        }
+
+        // 最大化状态变了 → 中间那个按钮在「最大化」和「还原」两种图标之间切换
+        void SyncCaptionButtons()
+        {
+            try
+            {
+                if (btnMax == null) return;
+                bool max = (WindowState == FormWindowState.Maximized);
+                if (btnMax.Maximized != max) { btnMax.Maximized = max; btnMax.Invalidate(); }
+                LayoutCaptionButtons();
+            }
+            catch { }
+        }
+
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
         // 让 Windows 把标题栏也画成深色（Win10 1809+）
         void EnableDarkTitleBar()
@@ -1710,16 +2035,13 @@ namespace RepRecorder
                 int on = 1;
                 DwmSetWindowAttribute(Handle, 20, ref on, sizeof(int));
                 DwmSetWindowAttribute(Handle, 19, ref on, sizeof(int));
+                // 现在没有系统标题栏了，但 WS_THICKFRAME 还会让 DWM 在窗口外围留 1px 边框，
+                // 默认跟着深色模式渲成近黑 —— 在 #4A4C54 的顶栏边上照样扎眼。直接染成顶栏色。
+                int border = ColorTranslator.ToWin32(HudPanel);   // COLORREF 是 0x00BBGGRR
+                DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));   // DWMWA_BORDER_COLOR
+                int round = 2;                                                 // DWMWCP_ROUND
+                DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));    // DWMWA_WINDOW_CORNER_PREFERENCE
             }
-            catch { }
-        }
-
-        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
-        static extern int SetWindowTheme(IntPtr hWnd, string app, string idlist);
-        // 滚动条换深色 —— 默认那套是浅色的，在蓝黑底上很扎眼
-        static void ThemeScrollbars(Control c)
-        {
-            try { if (c != null) SetWindowTheme(c.Handle, "DarkMode_Explorer", null); }
             catch { }
         }
 
@@ -1891,12 +2213,47 @@ namespace RepRecorder
             catch { }
         }
 
+        // 右侧内容区几何变了：拖分割线、收起/展开面板、窗口缩放都会走到这里。
+        // 两件事都要做，缺一不可：
+        //   1) **立刻**刷新 Bg.Clip —— 图绝不越出内容区，哪怕缓存还是旧的那张；
+        //   2) 防抖后重建缓存 —— 修正图的缩放与位移。拖动时每帧重建一张上千像素的位图太慢，所以延后。
+        void OnContentGeometryChanged()
+        {
+            try
+            {
+                // ⚠ 最小化的时候 mainSplit.Panel2 的屏幕矩形是 (-32000,-32000) 那一套，
+                //   ContentRect() 换算出来是垃圾值。不加判断就写进 Bg.Clip 的话，
+                //   从任务栏恢复的那一瞬间图会被整块裁掉 —— 又是一次闪。
+                //   所以这里挡住两种坏值：最小化状态，和算出来根本不在窗口范围内的矩形。
+                if (WindowState != FormWindowState.Minimized)
+                {
+                    Rectangle cr = ContentRect();
+                    if (cr.Width > 0 && cr.Height > 0 &&
+                        cr.Right <= ClientSize.Width + 8 && cr.Bottom <= ClientSize.Height + 8)
+                        Bg.Clip = cr;
+                }
+                // 左栏在 FixedPanel.Panel1 下不会因为拖分割线改尺寸（变的只有右栏），
+                // 所以刚才渗上去的旧图不会自己消失 —— 得主动让它重画一遍。
+                if (mainSplit != null) mainSplit.Panel1.Invalidate(true);
+            }
+            catch { }
+            ScheduleBgRebuild();
+        }
+
         // 重建整张背景（窗口大小变了、或者设置改了，都要重建）
         void RebuildBackground()
         {
             try
             {
-                if (Bg.Cache != null) { Bg.Cache.Dispose(); Bg.Cache = null; }
+                // 最小化时不重建：这时候算出来的内容区是垃圾值（窗口被挪到 -32000,-32000），
+                // 重建出来只会是错的。恢复的时候会再触发一次。
+                if (WindowState == FormWindowState.Minimized) return;
+                // ⚠ 不能像以前那样先把 Bg.Cache 置空再重建。
+                //   重建要做双三次缩放 + 模糊 + alpha 合成，这几十~一百多毫秒里所有面板
+                //   都只能画纯色 —— 用户报的"从任务栏恢复时背景图一闪"就是这么来的
+                //   （实测：恢复后 0~100ms 内容是纯底色，150ms 才回来）。
+                //   改成先建好新的、整体换上去，最后才释放旧的：任何一帧都有图可画。
+                Bitmap oldCache = Bg.Cache;
                 BackgroundImage = null;                       // 图不再铺在窗体上，只铺在右侧内容区
                 BackgroundImageLayout = ImageLayout.None;
                 // 图只覆盖【右侧内容区】（队列 + 终端），左栏控制面板不画
@@ -1904,7 +2261,14 @@ namespace RepRecorder
                 int w = cr.Width, h = cr.Height;
                 if (w <= 0 || h <= 0) return;
                 Bg.CacheOrigin = cr.Location;
-                if (string.IsNullOrEmpty(cfg.BgImage) || !File.Exists(cfg.BgImage)) { RefreshAllBg(); return; }
+                Bg.Clip = cr;                                 // 裁剪区和缓存同源，任何时候都不会互相打架
+                if (string.IsNullOrEmpty(cfg.BgImage) || !File.Exists(cfg.BgImage))
+                {
+                    Bg.Cache = null;
+                    if (oldCache != null) { try { oldCache.Dispose(); } catch { } }
+                    RefreshAllBg();
+                    return;
+                }
 
                 // 原图只在换路径时读一次
                 if (bgSource == null || bgSourcePath != cfg.BgImage)
@@ -1947,13 +2311,14 @@ namespace RepRecorder
                     }
                 }
                 laid.Dispose();
-                Bg.Cache = mixed;
+                Bg.Cache = mixed;                       // 新图就位
+                if (oldCache != null) { try { oldCache.Dispose(); } catch { } }   // 旧图现在才能扔
                 RefreshAllBg();
             }
             catch (Exception ex)
             {
                 Log.Write("背景图加载失败：" + ex.Message);
-                Bg.Cache = null;
+                // 出错了就留着旧的那张 —— 总比整片变成纯色好
                 RefreshAllBg();
             }
         }
@@ -2204,7 +2569,16 @@ namespace RepRecorder
                 else SetPanelWidthRaw(panelWidth);
             }
             catch { }
-            finally { suppressSplitterEvent = false; panelStateReady = true; }
+            finally
+            {
+                suppressSplitterEvent = false; panelStateReady = true;
+                // 面板宽度到这里才最终定下来，背景图现在建才是对的。
+                // 布局过程中排下的那些防抖重建（SetPanelCollapsed / Panel2.SizeChanged 触发的）
+                // 全都作废，这里直接建一张准的。
+                try { if (bgTimer != null) bgTimer.Stop(); } catch { }
+                try { Bg.Clip = ContentRect(); } catch { }
+                RebuildBackground();
+            }
         }
 
         // 面板宽度 / 收起状态变化后写盘，下次启动还原
@@ -2243,7 +2617,8 @@ namespace RepRecorder
                     btnPanel.Text = "◀  收起面板";
                 }
                 activityBar.Visible = collapsed;    // 收起时左边那条窄竖条才出现
-                ScheduleBgRebuild();                // 内容区宽度变了，背景图跟着重排
+                OnContentGeometryChanged();         // 内容区宽度变了：先裁好，再重排
+                InstallChromeHooks();               // 活动栏出现/消失会改变"谁压在左边热区上"，钩子要重装
             }
             catch { }
             finally { suppressSplitterEvent = prevSuppress; SavePanelState(); }
@@ -2260,6 +2635,7 @@ namespace RepRecorder
                 if (mainSplit.Panel1Collapsed) return;
                 if (mainSplit.SplitterDistance < 110) { SetPanelCollapsed(true); return; }
                 panelWidth = mainSplit.SplitterDistance;    // 记住新宽度，下次收起/展开还用它
+                OnContentGeometryChanged();                 // 内容区宽度变了：先裁好，再重排
                 // ⚠ 只有用户真的拖过才写盘：窗口布局过程中的程序性变化也会触发 SplitterMoved，
                 //   那时宽度可能正被约束夹着（实测把 322 夹成 303 存进了设置）。
                 if (byMouse) SavePanelState();
@@ -2907,6 +3283,25 @@ namespace RepRecorder
             Log.Write("已还原 OBS 录像目录：" + originalRecordDir);
         }
 
+        // 把录制前记下的一批 OBS 输入静音状态还回去。
+        // 麦克风和桌面音频原来各抄了一份一模一样的循环（只有日志文案不同），合并到这里。
+        void RestoreInputMutes(Dictionary<string, bool> saved, string logMessage)
+        {
+            foreach (KeyValuePair<string, bool> kv in saved)
+            {
+                try
+                {
+                    Dictionary<string, object> s = new Dictionary<string, object>();
+                    s["inputName"] = kv.Key;
+                    s["inputMuted"] = kv.Value;
+                    obs.Request("SetInputMute", s);
+                }
+                catch { }
+            }
+            if (saved.Count > 0) Log.Write(logMessage);
+            saved.Clear();
+        }
+
         // 录制期间临时静音麦克风（全局音频会被一起录进去）
         // 录音模式：gameOnly = 录制时静音麦克风；gameAndMic = 录制时保持/开启麦克风（解说）
         // 无论哪种模式，录制结束后都会把麦克风恢复成原来的状态。
@@ -2949,19 +3344,7 @@ namespace RepRecorder
                 }
                 else
                 {
-                    foreach (KeyValuePair<string, bool> kv in micOriginalMute)
-                    {
-                        try
-                        {
-                            Dictionary<string, object> s = new Dictionary<string, object>();
-                            s["inputName"] = kv.Key;
-                            s["inputMuted"] = kv.Value;
-                            obs.Request("SetInputMute", s);
-                        }
-                        catch { }
-                    }
-                    if (micOriginalMute.Count > 0) Log.Write("已把麦克风恢复成录制前的状态");
-                    micOriginalMute.Clear();
+                    RestoreInputMutes(micOriginalMute, "已把麦克风恢复成录制前的状态");
                 }
             }
             catch (Exception ex) { Log.Write("处理麦克风失败（可忽略）：" + ex.Message); }
@@ -2999,19 +3382,7 @@ namespace RepRecorder
                 }
                 else
                 {
-                    foreach (KeyValuePair<string, bool> kv in deskOriginalMute)
-                    {
-                        try
-                        {
-                            Dictionary<string, object> s = new Dictionary<string, object>();
-                            s["inputName"] = kv.Key;
-                            s["inputMuted"] = kv.Value;
-                            obs.Request("SetInputMute", s);
-                        }
-                        catch { }
-                    }
-                    if (deskOriginalMute.Count > 0) Log.Write("已恢复 OBS 桌面音频");
-                    deskOriginalMute.Clear();
+                    RestoreInputMutes(deskOriginalMute, "已恢复 OBS 桌面音频");
                 }
             }
             catch (Exception ex) { Log.Write("处理音频路由失败（可忽略）：" + ex.Message); }
@@ -3798,23 +4169,12 @@ namespace RepRecorder
 
                         if (dr == DialogResult.Yes)
                         {
-                            using (FolderBrowserDialog fb = new FolderBrowserDialog())
+                            string picked = PickSaveFolder(dlg);
+                            if (picked != null)
                             {
-                                fb.Description = "选择保存视频的文件夹";
-                                fb.ShowNewFolderButton = true;
-                                try
-                                {
-                                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
-                                        fb.SelectedPath = cfg.LastSaveFolder;
-                                }
-                                catch { }
-                                if (fb.ShowDialog(dlg) == DialogResult.OK)
-                                {
-                                    cfg.LastSaveFolder = fb.SelectedPath;
-                                    cfg.Save();
-                                    if (chkAll.Checked) queueSaveFolder = fb.SelectedPath;
-                                    result = fb.SelectedPath;
-                                }
+                                cfg.Save();
+                                if (chkAll.Checked) queueSaveFolder = picked;
+                                result = picked;
                             }
                         }
                         else if (dr == DialogResult.No)
@@ -4109,23 +4469,9 @@ namespace RepRecorder
                         DialogResult dr = dlg.ShowDialog(this);
                         if (dr == DialogResult.Yes)
                         {
-                            using (FolderBrowserDialog fb = new FolderBrowserDialog())
-                            {
-                                fb.Description = "选择保存视频的文件夹";
-                                fb.ShowNewFolderButton = true;
-                                try
-                                {
-                                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
-                                        fb.SelectedPath = cfg.LastSaveFolder;
-                                }
-                                catch { }
-                                if (fb.ShowDialog(dlg) == DialogResult.OK)
-                                {
-                                    queueSaveFolder = fb.SelectedPath;
-                                    cfg.LastSaveFolder = fb.SelectedPath;
-                                }
-                                else dr = DialogResult.OK;   // 没挑文件夹 → 当作"和 rep 放在一起"
-                            }
+                            string picked = PickSaveFolder(dlg);
+                            if (picked != null) queueSaveFolder = picked;
+                            else dr = DialogResult.OK;   // 没挑文件夹 → 当作"和 rep 放在一起"
                         }
                         if (dr == DialogResult.Cancel) { go = false; return; }
                         if (chkRemember.Checked)
@@ -4667,26 +5013,6 @@ namespace RepRecorder
             }
         }
 
-        // 提醒：ReplayDnD.ini 里 MuteMusic=1 时，游戏播放 rep 根本不放 BGM，
-        // 这时「录打击音效：开」也只能录到音效 —— 想连 BGM 一起录必须点「录BGM」把它改成 0。
-        void WarnIfBgmMuted()
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(cfg.GameDir)) return;
-                foreach (string sub in new string[] { @"modules\ReplayDnD\ReplayDnD.ini", @"modules\ReplayDnD-old\ReplayDnD.ini" })
-                {
-                    string p = Path.Combine(cfg.GameDir, sub);
-                    if (!File.Exists(p)) continue;
-                    string t = File.ReadAllText(p);
-                    if (System.Text.RegularExpressions.Regex.IsMatch(t, @"(?im)^\s*MuteMusic\s*=\s*1\s*$"))
-                        Log.Write("提醒：" + sub + " 里 MuteMusic=1 —— 游戏播放 rep 时不放背景音乐，" +
-                                  "所以录像里只有音效、没有 BGM。想连 BGM 一起录就点界面上的「录BGM」按钮。");
-                }
-            }
-            catch { }
-        }
-
         // ==================== 「录BGM」开关 ====================
         // 游戏播 rep 时放不放背景音乐，由 ReplayDnD.ini 里的 MuteMusic 决定：
         //   MuteMusic=1（整合包默认）→ 不放 BGM，只有音效；=0 → 放 BGM。
@@ -4805,27 +5131,25 @@ namespace RepRecorder
             }
         }
 
-        // 旧方式（按进程静音，会让录像也没声音），只留给命令行诊断用
-        void SetGameAudioMute(bool mute)
+        // 「另存到文件夹…」——两处"问视频放哪里"的对话框共用这一段，原来是各抄一份。
+        // 返回 null 表示用户没挑文件夹（调用方各自决定怎么处理：一个当作"留在 rep 旁边"，
+        // 一个当作"和 rep 放在一起"）。挑到了就把路径记进设置里，下次直接用。
+        string PickSaveFolder(IWin32Window owner)
         {
-            try
+            using (FolderBrowserDialog fb = new FolderBrowserDialog())
             {
-                Process[] ps = Process.GetProcessesByName("th123");
-                if (ps.Length == 0)
+                fb.Description = "选择保存视频的文件夹";
+                fb.ShowNewFolderButton = true;
+                try
                 {
-                    Log.Write("游戏没在运行，无法" + (mute ? "静音" : "打开") + "游戏声音");
-                    return;
+                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
+                        fb.SelectedPath = cfg.LastSaveFolder;
                 }
-                foreach (Process p in ps)
-                {
-                    string msg;
-                    bool ok = GameAudio.SetProcessMute(p.Id, mute, out msg);
-                    Log.Write("游戏声音（PID " + p.Id + "）：" + msg + (ok ? "" : "（失败）"));
-                }
-                if (mute) Log.Write("已静音游戏声音：你自己听不到，但录像里仍会录到游戏原声");
-                else Log.Write("已恢复游戏声音");
+                catch { }
+                if (fb.ShowDialog(owner) != DialogResult.OK) return null;
+                cfg.LastSaveFolder = fb.SelectedPath;
+                return fb.SelectedPath;
             }
-            catch (Exception ex) { Log.Write("切换游戏声音失败：" + ex.Message); }
         }
 
         void OnOpenLog(object sender, EventArgs e)
@@ -4845,12 +5169,6 @@ namespace RepRecorder
         bool obsStuckRetried = false;      // 这一批是否已经因为「OBS 没真正开录」自动重启过 OBS（只重试一次）
         List<Job> pinnedBatch = new List<Job>();   // 点空白处"钉"下来的本批（绿色标记），当作手动选中用
         bool suppressSelSync = false;      // 恢复列表选择期间抑制"数量跟随选择"（否则会连锁乱跳）
-
-        // 只录界面上选中的那些 rep（逻辑已并进「开始录制」按钮，这里保留给将来的命令行/脚本用）
-        void OnRecordSelected(object sender, EventArgs e)
-        {
-            OnStart(sender, e);
-        }
 
         IntPtr WaitForMainWindow(Process p, int seconds)
         {
@@ -4934,34 +5252,6 @@ namespace RepRecorder
         static string MakeWindowString(string title, string cls)
         {
             return (title == null ? "" : title) + ":" + (cls == null ? "" : cls) + ":th123.exe";
-        }
-
-        string BuildWindowStringForProcess(Process p)
-        {
-            string title = null, cls = null;
-            int pid = 0;
-            try { pid = p.Id; } catch { return null; }
-            EnumWindows(delegate(IntPtr h, IntPtr l)
-            {
-                uint wp;
-                GetWindowThreadProcessId(h, out wp);
-                if (wp == (uint)pid && IsWindowVisible(h))
-                {
-                    StringBuilder sb = new StringBuilder(512);
-                    GetWindowText(h, sb, 512);
-                    if (sb.Length > 0)
-                    {
-                        StringBuilder cb = new StringBuilder(256);
-                        GetClassName(h, cb, 256);
-                        title = sb.ToString();
-                        cls = cb.ToString();
-                        return false;
-                    }
-                }
-                return true;
-            }, IntPtr.Zero);
-            if (title == null) return null;
-            return MakeWindowString(title, cls);
         }
 
         void EnsureInput(string name, string kind, Dictionary<string, object> settings)
@@ -6296,8 +6586,9 @@ namespace RepRecorder
             return result;
         }
 
-        // 收集所有"麦克风类"目标：可枚举的输入 + 全局麦克风设备
-        public static List<string> FindMicTargets(ObsClient obs)
+        // 收集"麦克风类"或"桌面音频类"目标：可枚举的对应 kind 输入 + 全局音频设备。
+        // 这两件事原来各写了一份，只有 kind 字符串和设备类别不同，合并成一个。
+        static List<string> FindAudioTargets(ObsClient obs, string kindA, string kindB, bool wantMic)
         {
             List<string> names = new List<string>();
             try
@@ -6306,37 +6597,28 @@ namespace RepRecorder
                 {
                     Dictionary<string, object> m = (Dictionary<string, object>)o;
                     string kind = Convert.ToString(m["unversionedInputKind"]);
-                    if (kind != "wasapi_input_capture" && kind != "coreaudio_input_capture") continue;
+                    if (kind != kindA && kind != kindB) continue;
                     string n = Convert.ToString(m["inputName"]);
                     if (!names.Contains(n)) names.Add(n);
                 }
             }
             catch { }
-            foreach (string n in FindGlobalAudioNames(true))
-                if (!names.Contains(n)) names.Add(n);
+            // ⚠ 找桌面音频时必须排掉"已经被当成麦克风加进来"的那些名字：全局设备可能两边都出现，
+            //   只按 kind 过滤是不够的（原版就是靠这个 Contains 挡住的，合并时别丢）。
+            List<string> mics = wantMic ? null : FindGlobalAudioNames(true);
+            foreach (string n in FindGlobalAudioNames(wantMic))
+                if ((mics == null || !mics.Contains(n)) && !names.Contains(n)) names.Add(n);
             return names;
         }
 
-        // 收集所有"桌面音频"目标：可枚举的输出采集输入 + 全局桌面音频设备
+        public static List<string> FindMicTargets(ObsClient obs)
+        {
+            return FindAudioTargets(obs, "wasapi_input_capture", "coreaudio_input_capture", true);
+        }
+
         public static List<string> FindDesktopTargets(ObsClient obs)
         {
-            List<string> names = new List<string>();
-            try
-            {
-                foreach (object o in ObsClient.ToList(obs.Request("GetInputList", null)["inputs"]))
-                {
-                    Dictionary<string, object> m = (Dictionary<string, object>)o;
-                    string kind = Convert.ToString(m["unversionedInputKind"]);
-                    if (kind != "wasapi_output_capture" && kind != "coreaudio_output_capture") continue;
-                    string n = Convert.ToString(m["inputName"]);
-                    if (!names.Contains(n)) names.Add(n);
-                }
-            }
-            catch { }
-            List<string> mics = FindGlobalAudioNames(true);
-            foreach (string n in FindGlobalAudioNames(false))
-                if (!mics.Contains(n) && !names.Contains(n)) names.Add(n);
-            return names;
+            return FindAudioTargets(obs, "wasapi_output_capture", "coreaudio_output_capture", false);
         }
 
         static void AudioMeterCli(string secArg)
@@ -6619,6 +6901,14 @@ namespace RepRecorder
         public static Bitmap Cache;
         public static Point CacheOrigin = Point.Empty;
 
+        // 图像允许出现的范围（"窗体客户区"坐标系）= 右侧内容区。
+        // ⚠ 这是**权威裁剪区**，几何一变就由窗体同步刷新。
+        //   CacheOrigin 只是建图那一刻的快照，天生会落后于布局（拖分割线 / 收起面板 / 启动时
+        //   InitPanelLayout 还没跑）。只拿它裁剪的话，陈旧的那张宽图会一直画到左边控制面板上
+        //   —— 用户报的"图片不跟随分割线"就是这么来的（实测 CacheOrigin.X=54，而面板归位后是 380）。
+        //   Width<=0 表示"还没有内容区"，此时不裁剪。
+        public static Rectangle Clip = Rectangle.Empty;
+
         // 控件左上角在"窗体客户区"坐标系里的位置
         public static Point OffsetIn(Control c)
         {
@@ -6637,6 +6927,13 @@ namespace RepRecorder
             Rectangle cacheInCtl = new Rectangle(CacheOrigin.X - o.X, CacheOrigin.Y - o.Y, Cache.Width, Cache.Height);
             Rectangle inter = Rectangle.Intersect(r, cacheInCtl);
             if (inter.Width <= 0 || inter.Height <= 0) return;
+            // 再跟"权威裁剪区"取交集：这一道保证了不管缓存多陈旧，图都出不了右侧内容区
+            if (Clip.Width > 0 && Clip.Height > 0)
+            {
+                Rectangle clipInCtl = new Rectangle(Clip.X - o.X, Clip.Y - o.Y, Clip.Width, Clip.Height);
+                inter = Rectangle.Intersect(inter, clipInCtl);
+                if (inter.Width <= 0 || inter.Height <= 0) return;
+            }
             // 显式给源/目标矩形，避免 DrawImage 按图片 DPI 缩放
             g.DrawImage(Cache, inter,
                         inter.X - cacheInCtl.X, inter.Y - cacheInCtl.Y, inter.Width, inter.Height,
@@ -6667,6 +6964,91 @@ namespace RepRecorder
         {
             using (SolidBrush b = new SolidBrush(EffectiveBack(c)))
                 g.FillRectangle(b, c.ClientRectangle);
+        }
+    }
+
+    // 顶栏右边的窗口按钮（最小化 / 最大化-还原 / 关闭）。
+    // 窗口是无边框的，系统标题栏连按钮一起没了 —— 这三个得自己画。
+    // 字形用线画，不用「─ ☐ ✕」这类字符：字体里到底有没有这个字形、基线在哪、大小对不对，
+    // 得看机器说话（这软件已经踩过 TextRenderer 不吃旋转变换的坑）；画线是确定的。
+    public class HudCapButton : Control
+    {
+        public const int KindMin = 0, KindMax = 1, KindClose = 2;
+
+        readonly int kind;
+        bool hover = false;
+
+        public bool Maximized;      // 只有「最大化」按钮用：最大化时改画"还原"那个双层方框
+
+        public HudCapButton(int kind)
+        {
+            this.kind = kind;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            // ⚠ 不能写 Color.Transparent：Control 基类没开 SupportsTransparentBackColor，
+            //   设透明会直接抛 ArgumentException（实测，整个程序起不来）。反正 OnPaintBackground
+            //   是整块填的，给个实色就行。
+            BackColor = MainForm.HudPanel;
+            TabStop = false;                    // 别把键盘焦点从主界面抢走
+            Cursor = Cursors.Default;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        // 按钮底色（悬停时会变），顺便给 OnPaint 填"还原"图标那个遮挡用
+        Color Face()
+        {
+            if (!hover) return MainForm.HudPanel;
+            return (kind == KindClose) ? MainForm.HudRed : MainForm.HudPanel2;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            using (SolidBrush b = new SolidBrush(Face()))
+                e.Graphics.FillRectangle(b, ClientRectangle);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            int cx = Width / 2, cy = Height / 2;
+            Color ink = hover ? (kind == KindClose ? Color.White : MainForm.HudText) : MainForm.HudDim;
+
+            if (kind == KindMin)
+            {
+                // 减号：画实心 1px 矩形比 DrawLine 更稳，永远是干净的一像素
+                using (SolidBrush b = new SolidBrush(ink)) g.FillRectangle(b, cx - 5, cy, 10, 1);
+                return;
+            }
+            if (kind == KindClose)
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;   // 斜线不抗锯齿会有台阶
+                using (Pen p = new Pen(ink, 1.4f))
+                {
+                    g.DrawLine(p, cx - 5, cy - 5, cx + 5, cy + 5);
+                    g.DrawLine(p, cx + 5, cy - 5, cx - 5, cy + 5);
+                }
+                return;
+            }
+            // 最大化 / 还原：直角方框，不抗锯齿，1px 线最清晰
+            g.SmoothingMode = SmoothingMode.None;
+            using (Pen p = new Pen(ink, 1f))
+            {
+                if (!Maximized)
+                {
+                    g.DrawRectangle(p, cx - 5, cy - 5, 10, 10);
+                }
+                else
+                {
+                    // 后面那个框
+                    g.DrawRectangle(p, cx - 5, cy - 5, 8, 8);
+                    // 前面那个框：先用按钮底色盖掉重叠部分，再描边（标准"还原"图标就这么画）
+                    using (SolidBrush b = new SolidBrush(Face()))
+                        g.FillRectangle(b, cx - 1, cy - 1, 8, 8);
+                    g.DrawRectangle(p, cx - 2, cy - 2, 8, 8);
+                }
+            }
         }
     }
 
@@ -6913,6 +7295,7 @@ namespace RepRecorder
             bar.ValueChanged += delegate { Invalidate(); };
             Controls.Add(bar);
             lineH = Math.Max(8, Font.Height);
+            UpdateBar(false);            // 一开始日志是空的 → 先判断一次，把滚动条藏好
             // 原来的 TextBox 能选中复制，自绘控件不行 → 至少给个"复制全部"
             ContextMenuStrip menu = new ContextMenuStrip();
             menu.Items.Add("复制全部日志", null, delegate
@@ -6922,8 +7305,6 @@ namespace RepRecorder
             });
             ContextMenuStrip = menu;
         }
-
-        public HudScrollBar ScrollBar { get { return bar; } }
 
         protected override void OnFontChanged(EventArgs e)
         {
@@ -6938,7 +7319,18 @@ namespace RepRecorder
         {
             base.OnSizeChanged(e);
             int w = TextWidth();
-            if (w != lastWrapWidth) { RewrapAll(); Invalidate(); }
+            if (w != lastWrapWidth)
+            {
+                RewrapAll();                    // 宽度变了才需要重新折行
+                return;
+            }
+            // ⚠ 只改了高度的情况（最典型的就是拖「队列 / 终端」那条分割线）：
+            //   不用重新折行，但"一屏能显示几行"变了，滚动范围必须跟着重算。
+            //   原来这里什么都不做 —— 面板拖矮之后就滚不到最后几行，拖高反而能滚出一片空白。
+            bool wasBottom = IsAtBottom();
+            UpdateBar(false);
+            if (wasBottom) bar.Value = bar.Maximum;   // 本来就贴着底部 → 继续贴着
+            Invalidate();
         }
 
         int TextWidth()
@@ -6985,11 +7377,19 @@ namespace RepRecorder
 
         void RewrapAll()
         {
+            // ⚠ 重排【不能】强行拉到底。原来这里写死 UpdateBar(true)，结果：
+            //   横向改一下窗口尺寸、或者日志超过 MaxRaw 被裁剪，都会把正在往上翻看的用户
+            //   一把拽回最底下（用户报的）。改成：只有原本就贴在底部（在跟日志尾巴）时才跟着走，
+            //   否则停在原来的位置（Value 的 setter 会自己把越界夹回去）。
+            bool wasBottom = IsAtBottom();
+            int oldVal = bar.Value;
             lastWrapWidth = TextWidth();
             disp.Clear();
             foreach (string s in raw)
                 foreach (string w in WrapLine(s)) disp.Add(w);
-            UpdateBar(true);
+            UpdateBar(false);
+            bar.Value = wasBottom ? bar.Maximum : oldVal;
+            Invalidate();                       // 重排后一定要重画，否则画面还是旧的
         }
 
         bool IsAtBottom()
@@ -7003,6 +7403,11 @@ namespace RepRecorder
             bar.Minimum = 0;
             bar.Maximum = Math.Max(0, disp.Count - visible);   // 第一行最多能滚到"最后 N 行刚好填满"
             bar.LargeChange = visible;
+            // 不够长就藏起来 —— 和列表、左栏那两处保持一致（那两个也是不够长就 Visible=false）。
+            // ⚠ TextWidth() 里始终扣掉了 bar.Width，所以藏起来不会改变文字宽度 →
+            //   不会触发 OnSizeChanged → 不会来回重排（重排 2000 行很贵）。
+            bool need = bar.Maximum > 0;
+            if (bar.Visible != need) bar.Visible = need;
             if (goBottom) bar.Value = bar.Maximum;
         }
 
@@ -7014,7 +7419,10 @@ namespace RepRecorder
             {
                 int lines = SystemInformation.MouseWheelScrollLines;
                 if (lines <= 0) lines = 3;
-                bar.Value = bar.Value + wheelClicks * lines;   // 越界由 Value 自己夹
+                // ⚠ 方向：Windows 里"滚轮向上滚"给的是【正】delta，而向上滚应该让内容往下走、
+                //   Value 减小 —— 所以是【减】。这里原来写的是加，整个滚动方向是反的（用户报的）。
+                //   列表和左栏那两处转发、以及 HudScrollBar.OnMouseWheel 都是减，只有这里是加 —— 就是它错了。
+                bar.Value = bar.Value - wheelClicks * lines;   // 越界由 Value 自己夹
             }
             catch { }
         }
