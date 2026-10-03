@@ -1,9 +1,12 @@
 @echo off
 chcp 65001 >nul
 rem ============================================================
-rem  双击本文件 = 用【新的 WPF 界面】启动
-rem  把 rep 文件/文件夹拖到本文件上 = 启动并把它们加进队列
-rem  （不带 --wpf 的那个 RepRecorderWPF.exe 还是旧界面）
+rem  双击本文件 = 启动 RepRecorder（新 WPF 界面）
+rem  把 rep 文件 / 文件夹拖到本文件上 = 启动并把它们加进队列
+rem
+rem  2026-10-03 起，新界面已经【是默认】的了 —— 直接双击 RepRecorder.exe 就是这个。
+rem  本文件留着是为了「拖 rep 上去启动」这个用法。
+rem  想跑旧的 WinForms 界面：双击 启动旧界面-退路.bat
 rem ============================================================
-start "" "%~dp0RepRecorderWPF.exe" --wpf %*
+start "" "%~dp0RepRecorderWPF.exe" %*
 exit

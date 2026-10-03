@@ -344,6 +344,9 @@ namespace RepRecorder
                           + (cfg.ParallelCount * 550 / 1024.0).ToString("0.0") + " GB）");
                 if (lblMemHint != null) lblMemHint.Text = MemHintText();
             };
+            // 旧版 cbParallel.MouseWheel 里把 Handled 置 true —— 用户要求「滚轮滚过数量下拉不要改它」。
+            // 移植时漏了，靠 验证WPF-10 抓出来。
+            cbParallel.PreviewMouseWheel += delegate(object s, MouseWheelEventArgs me) { me.Handled = true; };
             StackPanel parRow = Ui.Row(0, lblPar, cbParallel);
             parRow.Children.Add(new Border { Width = 8 });
             par.Children.Add(parRow);
@@ -982,6 +985,10 @@ namespace RepRecorder
             if (btnStop != null) btnStop.IsEnabled = recording;
         }
 
+        // 调试接口用：「在不在录」= 「停止」按钮可不可点（SetRecordingLook 是唯一改它的地方）
+        public bool StopEnabledNow { get { return btnStop != null && btnStop.IsEnabled; } }
+        public bool StartEnabledNow { get { return btnStart != null && btnStart.IsEnabled; } }
+
         public void SetToggleText(string id, string text, bool on)
         {
             Ui.SetButtonText(id, text);
@@ -1125,6 +1132,9 @@ namespace RepRecorder
             if (btnGameAudio != null) btnGameAudio.Click += delegate { rec.UiToggleGameAudio(); };
             if (btnBgm != null) btnBgm.Click += delegate { rec.UiToggleBgm(); };
             if (btnBg != null) btnBg.Click += delegate { Ui.ShowBackgroundDialog(); };
+
+            // 旧版 MainForm 里 list.ItemSelectionChanged 那根线（选中几个 → 「同时录制数量」跟着变）
+            if (queueList != null) queueList.SelectionChanged += delegate { rec.UiOnSelectionChanged(); };
 
             if (chkAuto != null) chkAuto.Click += delegate { if (cfg != null) { cfg.AutoStartOnDrop = chkAuto.IsChecked == true; cfg.Save(); } };
             if (chkPrepare != null) chkPrepare.Click += delegate { if (cfg != null) { cfg.AutoPrepareObs = chkPrepare.IsChecked == true; cfg.Save(); } };

@@ -1,5 +1,5 @@
 before: BgOpacity=25 BgScope=global
-OK   app alive  pid=30816 waited=0s
+OK   app alive  pid=19368 waited=0s
 OK   bgstate answers  
 OK   background image loaded  pixels=640x480
 OK   layer opacity matches settings  layer=25 cfg=25

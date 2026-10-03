@@ -1,0 +1,19 @@
+OK  process alive, pid=14380
+OK  window found by AutomationId=win, name="Rep → MP4 录制器（OBS）"
+OK  btnPanel -> ControlType.Button
+OK  btnBg -> ControlType.Button
+OK  capMin -> ControlType.Button
+OK  capMax -> ControlType.Button
+OK  capClose -> ControlType.Button
+OK  panelLeft -> ControlType.Pane
+OK  splitterV -> ControlType.Thumb
+OK  splitterH -> ControlType.Thumb
+OK  logBox -> ControlType.List
+OK  statusText -> ControlType.Text
+OK  statusEnv -> ControlType.Text
+     window 3540x1944 px, dpi=288
+OK  DPI aware (window is really that many physical pixels)
+     resize step: CPU 1.0 ms  wall 16.4 ms   (WinForms old: 47 ms wall)
+OK  resize is fast
+     screenshot -> D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\_shot-01-shell.png
+PASS

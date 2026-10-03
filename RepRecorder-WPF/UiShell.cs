@@ -228,6 +228,13 @@ namespace RepRecorder
                 if (cmd.StartsWith("find:")) return Find(cmd.Substring(5));
                 if (cmd.StartsWith("press:")) return Press(cmd.Substring(6));
                 if (cmd.StartsWith("set:")) return Set(cmd.Substring(4));
+                if (cmd == "selcount") return SelCount();
+                if (cmd == "clearselect") { Ui.OnUi<int>(delegate { ShellWindow w2 = win as ShellWindow; if (w2 != null) w2.ClearSelection(); return 0; }); return "{\"ok\":true}"; }
+                if (cmd.StartsWith("selectrange:")) return SelectRows(cmd.Substring(12));
+                if (cmd.StartsWith("select:")) return SelectRows(cmd.Substring(7));
+                if (cmd.StartsWith("enabled:")) return EnabledOf(cmd.Substring(8));
+                if (cmd == "sysmute") return SysMuteRead();
+                if (cmd.StartsWith("sysmute:")) return SysMuteWrite(cmd.Substring(8));
                 return "{\"error\":\"unknown command\"}";
             }
             catch (Exception ex)
@@ -243,7 +250,10 @@ namespace RepRecorder
                 ShellWindow sw = win as ShellWindow;
                 if (sw == null) return "{\"wpf\":true,\"stage\":\"5-wired\"}";
                 Settings c = sw.CfgPublic;
-                return "{\"wpf\":true,\"stage\":\"5-wired\",\"recording\":false,"
+                // recording 从「停止」按钮的可用状态推出来 —— SetRecordingLook() 是唯一改它的地方，
+                // 以前这里硬编码 false，脚本按它判「在不在录」会一律误判。
+                bool rec = sw.StopEnabledNow;
+                return "{\"wpf\":true,\"stage\":\"7-switched\",\"recording\":" + (rec ? "true" : "false") + ","
                      + "\"queue\":" + sw.Rows.Count + ","
                      + "\"statusText\":" + Json(sw.StatusText == null ? "" : sw.StatusText.Text) + ","
                      + "\"env\":" + Json(sw.StatusEnv == null ? "" : sw.StatusEnv.Text) + ","
@@ -417,7 +427,18 @@ namespace RepRecorder
                     return "{\"ok\":true}";
                 }
                 CheckBox cb2 = fe as CheckBox;
-                if (cb2 != null) { Ui.PostAsync(delegate { cb2.IsChecked = !(cb2.IsChecked == true); }); return "{\"ok\":true}"; }
+                if (cb2 != null)
+                {
+                    // ⚠ 光改 IsChecked 不等于「用户点了一下」：本程序所有勾选框都是挂在 Click 上
+                    //   （保存设置、改 ini 那些），程序化改 IsChecked 根本不触发 Click ——
+                    //   以前这条命令就是这样，勾选框看着翻了、设置却没落盘。翻完再把 Click 补上。
+                    Ui.PostAsync(delegate
+                    {
+                        cb2.IsChecked = !(cb2.IsChecked == true);
+                        cb2.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    });
+                    return "{\"ok\":true}";
+                }
                 return "{\"error\":" + Json("not pressable: " + fe.GetType().Name) + "}";
             });
         }
@@ -433,7 +454,16 @@ namespace RepRecorder
                 FrameworkElement fe = Ui.FindAnywhere(id);
                 if (fe == null) return "{\"error\":" + Json("not found: " + id) + "}";
                 CheckBox cb = fe as CheckBox;
-                if (cb != null) { Ui.PostAsync(delegate { cb.IsChecked = (val == "true" || val == "1"); }); return "{\"ok\":true}"; }
+                if (cb != null)
+                {
+                    // 同 press：设完值要补一次 Click，否则挂在 Click 上的保存逻辑不跑
+                    Ui.PostAsync(delegate
+                    {
+                        cb.IsChecked = (val == "true" || val == "1");
+                        cb.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    });
+                    return "{\"ok\":true}";
+                }
                 ComboBox combo = fe as ComboBox;
                 if (combo != null) { Ui.PostAsync(delegate { int i; if (int.TryParse(val, out i)) combo.SelectedIndex = i; }); return "{\"ok\":true}"; }
                 TextBox tb = fe as TextBox;
@@ -442,6 +472,91 @@ namespace RepRecorder
                 if (sl != null) { Ui.PostAsync(delegate { double d; if (double.TryParse(val, out d)) sl.Value = d; }); return "{\"ok\":true}"; }
                 return "{\"error\":" + Json("cannot set: " + fe.GetType().Name) + "}";
             });
+        }
+
+        // ---------------------------------------------------------------- 队列选中
+        // 旧脚本用 LVM_GETSELECTEDCOUNT(0x1032) / LVM_SETITEMSTATE 跨进程读写列表选中，
+        // WPF 没有 ListView 句柄，这几条命令就是那两个消息的替代品。
+        // 「标记本批」「选择保持与滚轮」「轮录从队首」「录制选中的」全靠它。
+        static string SelCount()
+        {
+            return Ui.OnUi<string>(delegate
+            {
+                ShellWindow sw = win as ShellWindow;
+                int n = (sw == null || sw.QueueList == null) ? 0 : sw.QueueList.SelectedItems.Count;
+                return "{\"sel\":" + n + ",\"batch\":" + Ui.ParallelCount + "}";
+            });
+        }
+
+        // spec 用界面上那个行号（1 起，跟列表左列显示的一致）：
+        //   select:3        选中第 3 行
+        //   selectrange:3-7 选中第 3~7 行
+        //   select:-1       等同 clearselect
+        static string SelectRows(string spec)
+        {
+            ShellWindow sw = win as ShellWindow;
+            if (sw == null || sw.QueueList == null) return "{\"error\":\"no window\"}";
+            int a, b;
+            int dash = spec.IndexOf('-');
+            if (dash > 0)
+            {
+                if (!int.TryParse(spec.Substring(0, dash), out a) ||
+                    !int.TryParse(spec.Substring(dash + 1), out b)) return "{\"error\":\"bad range: " + spec + "\"}";
+            }
+            else
+            {
+                if (!int.TryParse(spec, out a)) return "{\"error\":\"bad index: " + spec + "\"}";
+                b = a;
+            }
+            if (a < 0) { Ui.PostAsync(delegate { sw.ClearSelection(); }); return "{\"ok\":true,\"cleared\":true}"; }
+            int lo = a - 1, hi = b - 1;
+            Ui.PostAsync(delegate
+            {
+                ListBox lb = sw.QueueList;
+                for (int i = lo; i <= hi; i++)
+                {
+                    if (i < 0 || i >= lb.Items.Count) continue;
+                    if (!lb.SelectedItems.Contains(lb.Items[i])) lb.SelectedItems.Add(lb.Items[i]);
+                }
+            });
+            return "{\"ok\":true}";
+        }
+
+        static string EnabledOf(string id)
+        {
+            return Ui.OnUi<string>(delegate
+            {
+                FrameworkElement fe = Ui.FindAnywhere(id);
+                if (fe == null) return "{\"error\":" + Json("not found: " + id) + "}";
+                return "{\"enabled\":" + (fe.IsEnabled ? "true" : "false") + "}";
+            });
+        }
+
+        // 系统静音：旧脚本用反射调 exe 里的 GameAudio.GetSystemMute/SetSystemMute，
+        // 现在直接在进程里读/写端点静音（就是「录制时自动静音」用的那套）。
+        static string SysMuteRead()
+        {
+            try
+            {
+                bool muted; string msg;
+                GameAudio.GetSystemMute(out muted, out msg);
+                return "{\"muted\":" + (muted ? "true" : "false") + ",\"msg\":" + Json(msg) + "}";
+            }
+            catch (Exception ex) { return "{\"error\":" + Json(ex.Message) + "}"; }
+        }
+
+        static string SysMuteWrite(string v)
+        {
+            try
+            {
+                string msg;
+                bool on = (v == "on" || v == "true" || v == "1");
+                GameAudio.SetSystemMute(on, out msg);
+                bool now; string msg2;
+                GameAudio.GetSystemMute(out now, out msg2);
+                return "{\"ok\":true,\"muted\":" + (now ? "true" : "false") + ",\"msg\":" + Json(msg) + "}";
+            }
+            catch (Exception ex) { return "{\"error\":" + Json(ex.Message) + "}"; }
         }
 
         // 按 AutomationId 在可视树里找（Grid/Border 这类没有 automation peer 的元素，

@@ -1,0 +1,6 @@
+OK  exe exists: 386048 bytes
+OK  main window appeared
+OK  log contains 'Rep'
+OK  log contains 'OBS'
+OK  log contains 'BGM'
+PASS

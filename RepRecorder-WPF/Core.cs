@@ -7567,13 +7567,15 @@ namespace RepRecorder
                 return;
             }
 
-            // ---- 新界面（WPF）走这条：RepRecorderWPF.exe --wpf ----
-            // 迁移期间两套界面并存：不带 --wpf 就是原来那套 WinForms（行为、脚本全都不变），
-            // 带上 --wpf 进 WPF 版。等阶段 6 验收完再把默认切过来、把上面那段删掉。
+            // ---- 界面选择（2026-10-03 阶段 7 切换：默认已经是新界面）----
+            // 不带参数 = WPF 新界面；加 --old 才是下面那套 WinForms（留作退路，行为一字未改）。
+            // --wpf 仍然认（当同义词忽略），这样 Desktop 上那个旧快捷方式和 启动WPF.bat 不会失效。
             // ⚠ 必须在 Application.EnableVisualStyles 之后、创建任何窗口之前返回，两个栈别混着起。
+            bool useOldUi = false;
             if (args != null)
                 foreach (string a in args)
-                    if (a == "--wpf") { Ui.Start(args); return; }
+                    if (a == "--old" || a == "--winforms") { useOldUi = true; break; }
+            if (!useOldUi) { Ui.Start(args); return; }
 
             try
             {

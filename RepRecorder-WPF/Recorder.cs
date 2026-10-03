@@ -208,6 +208,19 @@ namespace RepRecorder
         public void UiAddPaths(string[] paths) { if (paths != null && paths.Length > 0) AddPaths(paths); }
         public void UiRefreshSoundButtons() { RefreshSoundButtons(); }
 
+        // 旧版是挂在 list.ItemSelectionChanged 上的那句「列表里选中几个 rep，「同时录制数量」就跟着变（用户要求）」。
+        // 移植时这根线漏接了（WPF 的 ListBox 没有原生句柄，没人提醒），靠 验证WPF-10 抓出来 —— 补在 HookRecorder 里。
+        public void UiOnSelectionChanged()
+        {
+            try
+            {
+                if (suppressSelSync) return;
+                if (Ui.SelectedJobCount > 0) pinnedBatch.Clear();   // 用户重新选了 → 之前的绿色标记作废
+                SyncParallelCountToSelection();
+            }
+            catch { }
+        }
+
         // 启动那一段（旧版写在 MainForm 的 Shown 里，顺序照搬）
         public void UiOnShown(string[] args)
         {
@@ -222,7 +235,7 @@ namespace RepRecorder
                 RestoreSoundIfLeftMuted();
                 Log.RotateOnStart();
                 Log.Write("==== Rep → MP4 录制器启动 ====");
-                Log.Write("界面：WPF 版（旧界面仍可用：不带 --wpf 启动）");   // 日志轮转之后写，这一行才留得住
+                Log.Write("界面：WPF 版（旧界面仍可用：加 --old 启动）");   // 日志轮转之后写，这一行才留得住
                 Log.Write("游戏目录：" + (string.IsNullOrEmpty(cfg.GameDir) ? "<未找到>" : cfg.GameDir));
                 Log.Write("OBS     ：" + (string.IsNullOrEmpty(cfg.ObsExe) ? "<未找到>" : cfg.ObsExe));
                 SyncBgmFromIni();

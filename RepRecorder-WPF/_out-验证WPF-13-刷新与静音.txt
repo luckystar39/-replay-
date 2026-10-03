@@ -1,0 +1,17 @@
+OK   app alive  pid=30608 waited=0s
+OK   sysmute reads the current state  muted=False
+OK   sysmute:on reports success  ok=True
+OK   the endpoint is now muted  muted=True
+OK   sysmute:off reports success  ok=True
+OK   the endpoint is unmuted again  muted=False
+restored: unmuted
+OK   two reps queued  count=2
+OK   neither is marked recorded yet  status=µÈ´ý
+OK   refresh is logged  
+OK   refresh found the new video  recorded=1 of 2
+OK   it is the right row  file=r1.rep
+OK   refresh did not drop any row  count=2
+OK   app alive after refresh  pid=30608
+OK   no exception in log  
+settings restored
+PASS
