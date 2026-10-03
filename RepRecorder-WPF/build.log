@@ -1,0 +1,2 @@
+Recorder.cs(257,14): warning CS0414: 字段“RepRecorder.Recorder.closing”已赋值，但是其值从未使用过
+Recorder.cs(3751,14): warning CS0414: 字段“RepRecorder.Recorder.suppressSelSync”已赋值，但是其值从未使用过

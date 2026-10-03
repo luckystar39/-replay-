@@ -1,0 +1,97 @@
+[
+    {
+        "what":  "app alive",
+        "ok":  true,
+        "detail":  "pid=36608"
+    },
+    {
+        "what":  "all left-panel controls present",
+        "ok":  true,
+        "detail":  "missing="
+    },
+    {
+        "what":  "btnStart has a playlist glyph + CJK",
+        "ok":  true,
+        "detail":  "raw=▶  开始录制"
+    },
+    {
+        "what":  "mem hint looks like \"\u003cn.n\u003e GB\"",
+        "ok":  true,
+        "detail":  "raw=约 0.5 GB"
+    },
+    {
+        "what":  "cbParallel shows the saved value",
+        "ok":  true,
+        "detail":  "raw=1 expect=1"
+    },
+    {
+        "what":  "cbMic has a selection",
+        "ok":  true,
+        "detail":  "raw=只录游戏声音"
+    },
+    {
+        "what":  "set cbParallel=2",
+        "ok":  true,
+        "detail":  "ok=True"
+    },
+    {
+        "what":  "settings ParallelCount==3",
+        "ok":  true,
+        "detail":  "file=3"
+    },
+    {
+        "what":  "mem hint follows (1.6 GB)",
+        "ok":  true,
+        "detail":  "raw=约 1.6 GB"
+    },
+    {
+        "what":  "panel width \u003e 120",
+        "ok":  true,
+        "detail":  "panel=321"
+    },
+    {
+        "what":  "not collapsed",
+        "ok":  true,
+        "detail":  "collapsed=False"
+    },
+    {
+        "what":  "collapsed after press",
+        "ok":  true,
+        "detail":  "collapsed=True"
+    },
+    {
+        "what":  "panel width 0 when collapsed",
+        "ok":  true,
+        "detail":  "panel=0"
+    },
+    {
+        "what":  "settings PanelCollapsed==true",
+        "ok":  true,
+        "detail":  "file=True"
+    },
+    {
+        "what":  "top button shows the expand arrow (U+25B6)",
+        "ok":  true,
+        "detail":  "raw=▶  展开面板"
+    },
+    {
+        "what":  "expanded again",
+        "ok":  true,
+        "detail":  "collapsed=False"
+    },
+    {
+        "what":  "panel width restored",
+        "ok":  true,
+        "detail":  "panel=321"
+    },
+    {
+        "what":  "top button back to the collapse arrow (U+25C0)",
+        "ok":  true,
+        "detail":  "raw=◀  收起面板"
+    },
+    {
+        "what":  "no crash in log",
+        "ok":  true,
+        "detail":  ""
+    }
+]

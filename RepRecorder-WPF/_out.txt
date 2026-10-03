@@ -1,0 +1,30 @@
+before: BgOpacity=25 BgScope=global
+OK   app alive  pid=30816 waited=0s
+OK   bgstate answers  
+OK   background image loaded  pixels=640x480
+OK   layer opacity matches settings  layer=25 cfg=25
+OK   press:btnBg ok  ok=True
+OK   dialog is open  
+OK   control bgImage  type=TextBox
+OK   control bgBrowse  type=Button
+OK   control bgClear  type=Button
+OK   control bgOpacity  type=Slider
+OK   control bgBlur  type=Slider
+OK   control bgOffX  type=Slider
+OK   control bgOffY  type=Slider
+OK   control bgLayout  type=ComboBox
+OK   control bgScope  type=ComboBox
+OK   control bgOk  type=Button
+OK   control bgCancel  type=Button
+OK   opacity 60 reaches the layer  layer=60
+OK   scope switches to global  scope=global
+OK   layout switches to stretch  stretch=Fill
+OK   cancel restores opacity  layer=25 before=25
+OK   cancel restores scope  scope=global before=global
+OK   cancel restores layout  stretch=UniformToFill
+OK   settings file untouched by cancel  file=25
+OK   OK writes the settings file  file=42
+OK   log records the background change  
+OK   no exception in log  
+settings restored
+PASS
