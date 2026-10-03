@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
@@ -105,6 +107,26 @@ namespace RepRecorder
         public bool AskSaveLocation { get; set; }
         [Category("行为"), Description("“另存到文件夹…”上次用过的文件夹。")]
         public string LastSaveFolder { get; set; }
+        [Category("界面"), Description("左侧控制面板的宽度（像素）。拖分隔条或收起/展开时会自动记住，下次启动还原。")]
+        public int PanelWidth { get; set; }
+        [Category("界面"), Description("上次退出时左侧控制面板是不是收起状态。下次启动按这个还原。")]
+        public bool PanelCollapsed { get; set; }
+        [Category("界面"), Description("背景图片路径。留空 = 不用背景图。")]
+        public string BgImage { get; set; }
+        [Category("界面"), Description("背景图的不透明度（0~100）。越大图越清楚，越小越只剩底色。默认 60。")]
+        public int BgOpacity { get; set; }
+        [Category("界面"), Description("背景图的摆放方式：fill=等比填满并裁掉多余；fit=等比完整显示（可能留边）；\r\nstretch=拉伸铺满（会变形）；tile=原图平铺；center=原始大小居中。")]
+        public string BgLayout { get; set; }
+        [Category("界面"), Description("背景图的模糊程度（0~60）。模糊一点能让上面的文字更好读。默认 0。")]
+        public int BgBlur { get; set; }
+        [Category("界面"), Description("背景图的水平偏移（-100~100，按窗口宽度的百分比算）。0 = 居中，负=往左，正=往右。")]
+        public int BgOffsetX { get; set; }
+        [Category("界面"), Description("背景图的垂直偏移（-100~100，按窗口高度的百分比算）。0 = 居中，负=往上，正=往下。")]
+        public int BgOffsetY { get; set; }
+        [Category("界面"), Description("背景图的范围：content=只铺右侧内容区（队列+终端，默认）；global=全局铺满整个窗口（控制面板也透出背景图）。")]
+        public string BgScope { get; set; }
+        [Category("界面"), Description("【已停用】整窗不透明度。窗口现在固定 100% 不透明（让文字永远实心）；\r\n想调背景的浓淡请用「背景…」对话框里的「图片不透明度」。")]
+        public int WindowOpacity { get; set; }
         [Browsable(false)]
         public int SettingsVersion { get; set; }   // 老设置文件里没有这一项（=0），用它判断要不要补默认值
 
@@ -151,6 +173,16 @@ namespace RepRecorder
             SkipExisting = true;
             AskSaveLocation = true;
             LastSaveFolder = "";
+            PanelWidth = 322;          // 左侧控制面板默认宽度
+            PanelCollapsed = false;    // 默认展开
+            BgImage = "";
+            BgOpacity = 60;
+            BgLayout = "fill";
+            BgBlur = 0;
+            BgOffsetX = 0;
+            BgOffsetY = 0;
+            BgScope = "content";       // 默认只铺右侧内容区；"global" = 全局铺满整个窗口
+            WindowOpacity = 85;
             SettingsVersion = 2;
         }
 
@@ -171,6 +203,8 @@ namespace RepRecorder
             // 会出现"录出来没声音"的视频（老设置文件里如果存着 7~10，这里也一并夹回来）
             if (s.ParallelCount < 1) s.ParallelCount = 1;
             if (s.ParallelCount > 6) s.ParallelCount = 6;
+            // 老设置文件里没有 BgScope → 反序列化出来是 null，给默认"只铺内容区"
+            if (string.IsNullOrEmpty(s.BgScope)) s.BgScope = "content";
             // 老设置文件（没有 SettingsVersion）里没有"显示计分板 / 边缘裁切"这些项，反序列化出来会是 false/0，
             // 那样老用户就看不到计分板、边缘也不会裁（等于修复没生效）。所以给老文件补上默认值。
             if (s.SettingsVersion < 2)
@@ -188,6 +222,27 @@ namespace RepRecorder
                 if (s.RecordVolume <= 0) s.RecordVolume = 1.0;   // 老设置文件里没有"录像音量" → 给个默认 1.0
                 if (s.SplitParallel <= 0) s.SplitParallel = 3;   // 老设置文件里没有"并发切分数" → 给个默认 3
                 s.SettingsVersion = 4;
+            }
+            if (s.SettingsVersion < 5)
+            {
+                // 老设置文件里没有"面板宽度" → 给个默认值，别让面板窄成 0
+                if (s.PanelWidth < 160) s.PanelWidth = 322;
+                s.SettingsVersion = 5;
+            }
+            if (s.SettingsVersion < 6)
+            {
+                // 老设置文件里没有"背景图"这套 → 补默认值
+                if (s.BgImage == null) s.BgImage = "";
+                if (string.IsNullOrEmpty(s.BgLayout)) s.BgLayout = "fill";
+                if (s.BgOpacity <= 0) s.BgOpacity = 60;
+                if (s.BgBlur < 0) s.BgBlur = 0;
+                if (s.WindowOpacity <= 0) s.WindowOpacity = 85;
+                s.SettingsVersion = 6;
+            }
+            if (s.SettingsVersion < 7)
+            {
+                // 老设置文件里没有"背景图位移" → 默认居中
+                s.SettingsVersion = 7;
             }
             s.FillDefaults();
             return s;
@@ -696,32 +751,10 @@ namespace RepRecorder
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder s, int n);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder s, int n);
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-        [DllImport("shell32.dll")] static extern void DragAcceptFiles(IntPtr hWnd, bool fAccept);
-        [StructLayout(LayoutKind.Sequential)]
-        struct DROPFILES { public uint pFiles; public int x; public int y; public int fNC; public int fWide; }
-        const uint WM_DROPFILES = 0x0233;
-
-        // 把文件"拖"进某个窗口。
-        // ⚠ 2026-09-26 实测：合成 WM_DROPFILES 对当前这版 ReplayDnD-old / ReplayDnD **完全无效**
-        //   （投递后游戏一直停在标题画面，既不开始播也不退出），mod 多半走的是 OLE 拖放，只有真人鼠标拖才有用。
-        //   所以并行录制已经改成"把 rep 当命令行参数重启实例"（见 RunParallel 第 6 步），这个函数仅留作参考。
-        static void DropFileOnWindow(IntPtr hwnd, string file)
-        {
-            int size = Marshal.SizeOf(typeof(DROPFILES));
-            IntPtr p = Marshal.AllocHGlobal(size + (file.Length + 2) * 2);
-            try
-            {
-                DROPFILES df = new DROPFILES();
-                df.pFiles = (uint)size;
-                df.fWide = 1;
-                Marshal.StructureToPtr(df, p, false);
-                byte[] bytes = Encoding.Unicode.GetBytes(file + "\0\0");
-                Marshal.Copy(bytes, 0, (IntPtr)((long)p + size), bytes.Length);
-                SendMessage(hwnd, WM_DROPFILES, p, IntPtr.Zero);
-            }
-            finally { Marshal.FreeHGlobal(p); }
-        }
+        // ⚠ 2026-09-26 实测：合成 WM_DROPFILES 把 rep 投给游戏窗口 **完全无效**（游戏一直停在标题画面，
+        //   既不开始播也不退出）—— 这版 ReplayDnD / ReplayDnD-old 走的应该是 OLE 拖放，只有真人鼠标拖才有用。
+        //   所以并行录制改成了「把 rep 当命令行参数重启实例」（见 RunParallel 第 6 步）。
+        //   当年为此写的那套 SendMessage + DROPFILES + DropFileOnWindow 已经删掉；这条结论留着，别再试一遍。
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetWindowText(IntPtr hWnd, string text);
         [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hWnd, out RECT r);
         [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
@@ -760,19 +793,45 @@ namespace RepRecorder
         const string RecSceneName = "RepRecorder 录制场景";
         const string RecSourceName = "RepRecorder 游戏窗口";
         const string AudioSourceName = "RepRecorder 游戏声音";
-        readonly List<string> mutedInputs = new List<string>();
         readonly Dictionary<string, bool> micOriginalMute = new Dictionary<string, bool>();
         readonly Dictionary<string, bool> deskOriginalMute = new Dictionary<string, bool>();
 
-        ListView list;
-        TextBox logBox;
+        BgListView list;   // 用 BgListView 类型：空态提示要访问 EmptyHint（见 BgListView.WndProc）
+        BgLogView logBox;
         Label hint;
         Label obsState;
         Panel hudTop;              // 顶部状态条
-        Label hudLeftTitle;        // 左侧面板的小标题
+        SplitContainer split;      // 上下分栏（列表 / 终端），做成字段才能按 3:5 比例摆
+        SplitContainer mainSplit;  // 左右分栏（控制面板 | 内容区），拖分隔条可调宽
+        Button btnPanel;           // 顶栏上的「收起 / 展开面板」
+        HudCapButton btnMin;       // 顶栏右边：最小化
+        HudCapButton btnMax;       // 顶栏右边：最大化 / 还原
+        HudCapButton btnClose;     // 顶栏右边：关闭
+        const int CAPBTN_W = 46;   // 窗口按钮宽度（三个并排贴在右上角）
+        Panel activityBar;         // 收起之后左边那条窄竖条（学 VS Code 的活动栏）
+        Button btnExpand;          // 竖条上的「▶」展开按钮
+        static Font barFont;       // 竖排文字用的字体
+        static Image bgSource;     // 背景原图（缓存，避免每次重建都读盘）
+        static string bgSourcePath = "";
+        System.Windows.Forms.Timer bgTimer;   // 窗口缩放时给重建做防抖
+        Button btnBg;              // 顶栏上的「背景…」
+        BgFlowPanel top;           // 左栏那一整列控件（内容）
+        BgPanel leftView;          // 左栏的视口（裁剪 top）
+        HudScrollBar leftScroll;   // 左栏的自绘滚动条
+        HudScrollBar listScroll;   // 队列列表的自绘滚动条
+        bool syncingLeft = false;
+        bool syncingList = false;
+        bool panelStateReady = false;   // InitPanelLayout 跑完之前不往设置里写盘
+        int panelWidth = 322;      // 收起前记住的面板宽度，展开时还原
+        // ⚠ 初值必须是 true：构造期间控件停靠/缩放也会触发 SplitterMoved，
+        //   不屏蔽的话会把 panelWidth 记成布局过程中的中间值（实测记成了 ~390）。
+        //   InitPanelLayout() 跑完后才放开。
+        bool suppressSplitterEvent = true;
+        bool splitterDragging = false;   // 分隔条是不是真的被鼠标拖着
+        bool isResizing = false;         // 正在拖窗口边框/标题栏（WM_ENTERSIZEMOVE ~ WM_EXITSIZEMOVE）
+        bool splitterHover = false;      // 光标是不是压在分隔条上（压在才把它画出来）
         Label lblParHint;
-        Button btnStart, btnStop, btnClear, btnRemove, btnCheck, btnPrepare, btnSet, btnOpenLog;
-        Label lblSoundNote;
+        Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnCheck, btnPrepare, btnSet, btnOpenLog;
         Button btnSound;
         Button btnGameAudio;
         Button btnBgm;
@@ -785,54 +844,102 @@ namespace RepRecorder
         System.Windows.Forms.Timer soundTimer;
         StatusStrip status;
         ToolStripStatusLabel statusLabel;
+        ToolStripStatusLabel statusEnv;     // OBS/游戏环境状态（底部状态栏右侧，替代顶栏绿字）
+        Label lblMemHint;           // 「并行」组里的内存估算小字
+        Panel logHeader;            // 终端区顶部的折叠条
+        bool logCollapsed = false;
+        string lastLogLine = "终端 STDOUT";
+        // 自适应布局：左栏被拖宽时，卡片跟着拉伸、按钮行均分行宽（见 LayoutCardWidth）
+        List<FlowLayoutPanel> hudCards = new List<FlowLayoutPanel>();   // 需要随左栏宽度拉伸的卡片
+        List<Panel> hudTitles = new List<Panel>();                      // 卡片标题条（分隔线要跟着拉宽）
+        List<FlowLayoutPanel> hudRows = new List<FlowLayoutPanel>();    // 需要均分按钮宽度的按钮行（队列/环境）
+        List<Control> hudFull = new List<Control>();                    // 需要拉伸到整行宽的大按钮
+        Panel recIndicator;         // 顶栏左侧的 REC 状态点（自绘）
+        Label recLabel;             // "REC" 字样
+        System.Windows.Forms.Timer recTimer;   // 录制中呼吸闪烁
+
+        WheelRouter wheelRouter;           // 滚轮分流（装在消息泵上，见构造函数里那段说明）
+
+        static string monoName = null;     // 自动挑出来的等宽字体名（挑不到就 Consolas）
+        bool splitRatioLocked = false;     // 防止 ApplySplitRatio 改 SplitterDistance 时又触发 Layout 递归进来
+        static Font hudFrameFont;          // "| 队列 / QUEUE |" 这种边框标题用的字体
 
         public MainForm(string[] args)
         {
+            // ⚠ 这行必须是构造函数的第一句。
+            //   实测（埋点打的 CreateParams）：句柄是在构造过程中就被创建的，而且**第一次创建时
+            //   FormBorderStyle 还是默认的 Sizable** —— 也就是窗口先带着 WS_CAPTION 生出来，
+            //   之后再靠 UpdateStyles/SetWindowLong 把标题栏样式抠掉。多数情况下看不出来，
+            //   但在某些渲染路径下框架不会重算非客户区，系统标题栏就留在那儿了。
+            //   放到最前面，第一次创建就是无边框的。
+            FormBorderStyle = FormBorderStyle.None;
+            DoubleBuffered = true;              // 窗体自身双缓冲：拖分割线/缩放时背景图不闪（用户实测的闪烁）
+
             cfg = Settings.Load();
             Text = "Rep → MP4 录制器（OBS）";
-            Font = new Font("Microsoft YaHei UI", 9F);
-            ClientSize = new Size(1180, 780);   // 左侧控制面板竖排要够高，不然会被裁
-            MinimumSize = new Size(760, 520);
-            BackColor = Color.FromArgb(9, 13, 26);          // 蓝黑主题：窗体底色
-            ForeColor = Color.FromArgb(198, 216, 255);
+            Font = Ui(9F);                                  // 中文控件走雅黑（等宽字体没有中文字形）
+            // 无边框：系统标题栏在深色模式下渲成 #202020，压在 #3C3E45 的界面上就是那条突兀的黑带。
+            // 直接不要它，顶栏和最小化/最大化/关闭全部自绘（学 Folia）。
+            // ⚠ FormBorderStyle.None 会连窗口样式里的 WS_THICKFRAME 一起拿掉 —— 那样就没了拖边缩放、
+            //   Aero Snap、双击最大化、从最大化拖下来还原。所以下面 CreateParams 里单独把它加回来。
+            MinimumSize = new Size(760, 520);   // 先定最小尺寸，下面的"按屏幕收口"要用到它
+            // ⚠ 默认尺寸不能超过屏幕工作区：小屏（1280×720）上窗口会被顶出去，底部的状态栏和左栏
+            //   最后一张卡片整个落到屏幕外，用户根本看不到「就绪」那一条（实测：740 高的窗口压在
+            //   720 高的屏幕上）。这里按工作区收口，保证窗口一定整块可见。
+            Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
+            ClientSize = new Size(
+                Math.Max(MinimumSize.Width, Math.Min(1180, workArea.Width - 24)),
+                Math.Max(MinimumSize.Height, Math.Min(780, workArea.Height - 24)));
+            BackColor = HudBg;                              // 蓝黑主题：窗体底色
+            ForeColor = HudText;
+            ApplyWindowOpacity();                           // 整窗不透明度（设置里可调，默认 85 = 15% 透明）
             AllowDrop = true;
             DragEnter += OnDragEnter;
             DragDrop += OnDragDrop;
             StartPosition = FormStartPosition.CenterScreen;
 
             // ---- 蓝黑 HUD 风格：左边控制面板 / 右边 rep 列表 / 下面终端 ----
-            FlowLayoutPanel top = new FlowLayoutPanel();
-            top.Dock = DockStyle.Left;            // 左边一整列：所有按钮和选项
-            top.Width = 312;
+            top = new BgFlowPanel();              // 左边一整列：所有按钮和选项
+            // ⚠ 不用 Dock，也不用 AutoScroll：位置要由自绘滚动条来控制（top.Top = -值）。
+            //   停靠过的控件位置由布局引擎接管，手动设 Top 不生效。
+            top.AutoSize = true;                  // 高度跟着内容走
+            top.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            top.Location = new Point(0, 0);
+            top.Width = 324;                      // 卡片 316 + 自绘滚动条 10 的余量
             top.FlowDirection = FlowDirection.TopDown;
             top.WrapContents = false;
-            top.AutoScroll = true;                // 窗口矮的时候可以滚
-            top.Padding = new Padding(10, 8, 8, 8);
+            top.Padding = new Padding(6, 8, 6, 8);
 
-            FlowLayoutPanel row1 = new FlowLayoutPanel();
-            row1.AutoSize = true;
-            row1.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            row1.FlowDirection = FlowDirection.TopDown;
-            row1.WrapContents = false;
-            row1.Margin = new Padding(0, 0, 0, 6);
-
-            btnStart = MakeButton("开始录制", 116, OnStart, Color.FromArgb(0, 120, 60));
-            btnStop = MakeButton("停止", 72, OnStop, Color.FromArgb(160, 60, 60));
-            btnClear = MakeButton("清空队列", 88, OnClear, Color.Empty);
-            btnRemove = MakeButton("移除选中", 88, OnRemove, Color.Empty);
-            btnRefresh = MakeButton("刷新", 60, OnRefreshQueue, Color.Empty);
-            btnCheck = MakeButton("检查环境", 88, OnCheck, Color.Empty);
-            btnPrepare = MakeButton("准备 OBS（自动建源+绑定窗口）", 208, OnPrepare, Color.Empty);
-            btnSet = MakeButton("设置…", 72, OnSettings, Color.Empty);
-            btnOpenLog = MakeButton("日志", 60, OnOpenLog, Color.Empty);
-            btnSound = MakeButton("声音：开 ✓", 124, OnSoundToggle, Color.Empty);
+            btnStart = MakeButton("▶  开始录制", 300, OnStart, HudOn);
+            btnStart.Height = 36;
+            btnStart.Font = Ui(10F);
+            btnStart.Font = new Font(btnStart.Font, FontStyle.Bold);
+            btnStop = MakeButton("■  停止", 300, OnStop, HudOff);
+            btnStop.Height = 28;
+            // ⚠ 按钮禁用时，WinForms 会把文字和背景混成一片暗灰（ControlPaint.DrawStringDisabled），
+            //   在浅色按钮上几乎看不见，看上去就像个"空按钮"。所以禁用状态自己补画一遍文字。
+            btnStop.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                if (btnStop.Enabled) return;    // 启用时让按钮自己画
+                TextRenderer.DrawText(pe.Graphics, btnStop.Text, btnStop.Font, btnStop.ClientRectangle, HudDim,
+                                      TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                                      TextFormatFlags.NoPrefix);
+            };
+            btnClear = MakeButton("清空队列", 146, OnClear, Color.Empty);
+            btnRemove = MakeButton("移除选中", 146, OnRemove, Color.Empty);
+            // 把当前蓝色选中的几行钉成"本批"（绿色）。以前只有"点列表下方空白处"这一条路，
+            // 队列塞满时根本没有空白处可点（用户实测），所以补一个一直能用的入口。
+            btnMark = MakeButton("标记本批", 146, OnMarkBatch, Color.Empty);
+            btnRefresh = MakeButton("刷新", 146, OnRefreshQueue, Color.Empty);
+            btnCheck = MakeButton("检查环境", 146, OnCheck, Color.Empty);
+            btnPrepare = MakeButton("准备 OBS", 146, OnPrepare, Color.Empty);
+            btnSet = MakeButton("设置…", 146, OnSettings, Color.Empty);
+            btnOpenLog = MakeButton("日志", 146, OnOpenLog, Color.Empty);
+            btnSound = MakeButton("🔊 声音：开 ✓", 148, OnSoundToggle, Color.Empty);
             btnSound.FlatStyle = FlatStyle.Flat;
-            lblSoundNote = new Label();
-            lblSoundNote.AutoSize = true;
-            lblSoundNote.ForeColor = Color.DimGray;
-            lblSoundNote.Margin = new Padding(4, 9, 12, 0);
-            lblSoundNote.Text = "（整个电脑静音，录出来的视频有声音）";
-            btnGameAudio = MakeButton("录打击音效：开 ✓", 168, OnGameAudioToggle, Color.Empty);
+            // 说明：旧的 lblSoundNote 已被卡片里的 lblAudioNote 取代且从未加入容器，这里删掉；
+            //   它的 tooltip 文案移到 lblAudioNote 上，不丢说明。
+            btnGameAudio = MakeButton("🔊 录打击音效：开 ✓", 192, OnGameAudioToggle, Color.Empty);
             btnGameAudio.FlatStyle = FlatStyle.Flat;
             btnBgm = MakeButton("录BGM：关 ✕", 116, OnBgmToggle, Color.Empty);
             btnBgm.FlatStyle = FlatStyle.Flat;
@@ -840,8 +947,6 @@ namespace RepRecorder
             tip = new ToolTip();
             tip.SetToolTip(btnSound, "点一下切换【整个电脑静音 / 恢复声音】：静音时你自己（以及整个电脑）都听不到声音，\r\n" +
                                      "但录出来的视频仍然有完整的游戏原声（OBS 抓的是游戏进程的音频流，端点静音掐不断它）。录完会自动恢复。");
-            tip.SetToolTip(lblSoundNote, "说明：这个按钮管的是【你自己听不听得到】——它静音的是整台电脑的默认输出设备；\r\n" +
-                                         "录像里照样有游戏声音（录不录声音由右边的「录打击音效」决定）。");
             tip.SetToolTip(btnGameAudio, "这个按钮只管一件事：【游戏声音（打击音效 / BGM）要不要录进视频】。\r\n" +
                                          "  开 = 游戏声音照实录进视频；\r\n" +
                                          "  关 = 录出来的视频完全没有声音，并且会自动把「录BGM」锁成关（连游戏里的 BGM 也不放）。\r\n" +
@@ -855,14 +960,14 @@ namespace RepRecorder
             tip.SetToolTip(btnRefresh, "重新检查队列里每个 rep 有没有已录好的视频；视频被你删掉的会变回「等待」，可以重新录");
             tip.SetToolTip(btnRefresh, "重新检查队列里每个 rep 有没有已录好的视频；视频被你删掉的会变回「等待」，可以重新录");
 
-            chkAuto = new CheckBox();
+            chkAuto = new HudCheck();
             chkAuto.Text = "拖入后自动开始";
             chkAuto.AutoSize = true;
             chkAuto.Margin = new Padding(6, 8, 12, 0);
             chkAuto.Checked = cfg.AutoStartOnDrop;
             chkAuto.CheckedChanged += delegate { cfg.AutoStartOnDrop = chkAuto.Checked; cfg.Save(); };
 
-            chkPrepare = new CheckBox();
+            chkPrepare = new HudCheck();
             chkPrepare.Text = "自动准备采集源并绑定游戏窗口";
             chkPrepare.AutoSize = true;
             chkPrepare.Margin = new Padding(6, 8, 12, 0);
@@ -870,7 +975,7 @@ namespace RepRecorder
             chkPrepare.CheckedChanged += delegate { cfg.AutoPrepareObs = chkPrepare.Checked; cfg.Save(); };
 
             // 画布选项已移到「设置…」里（分类「画布」→ AutoCanvas），主界面不再重复放一个复选框
-            chkCloseObs = new CheckBox();
+            chkCloseObs = new HudCheck();
             chkCloseObs.Text = "录完关闭 OBS";
             chkCloseObs.AutoSize = true;
             chkCloseObs.Margin = new Padding(6, 8, 12, 0);
@@ -878,7 +983,7 @@ namespace RepRecorder
             chkCloseObs.CheckedChanged += delegate { cfg.CloseObsAfter = chkCloseObs.Checked; cfg.Save(); };
 
             // 轮录：点一次「开始录制」就把队列里所有待录的 rep 一批接一批全部录完（不用守着电脑）
-            chkRound = new CheckBox();
+            chkRound = new HudCheck();
             chkRound.Text = "轮录（录完一批自动接着录下一批）";
             chkRound.AutoSize = true;
             chkRound.Margin = new Padding(6, 8, 12, 0);
@@ -902,8 +1007,7 @@ namespace RepRecorder
             lblMic.Text = "录音模式：";
             lblMic.AutoSize = true;
             lblMic.Margin = new Padding(6, 10, 2, 0);
-            cbMic = new ComboBox();
-            cbMic.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbMic = new HudCombo();
             cbMic.Width = 180;
             cbMic.Margin = new Padding(0, 5, 0, 0);
             cbMic.Items.Add("只录游戏声音");
@@ -925,40 +1029,108 @@ namespace RepRecorder
                     t.IsBackground = true;
                     t.Start();
                 }
+                ClearComboHighlight(cbMic);
             };
 
             hint = new Label();
             hint.AutoSize = true;
-            hint.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            hint.ForeColor = Color.FromArgb(30, 90, 170);
-            hint.Text = "把 .rep 文件（可多选，也可以整个文件夹）拖到这里  ↓";
+            hint.Font = new Font(Font, FontStyle.Bold);   // 中文提示 → 跟着窗体的雅黑
+            hint.ForeColor = HudAccent;
+            hint.Text = "";    // 默认不显示（只在拖文件进来时提示"松手即加入队列"）
             hint.Margin = new Padding(6, 8, 16, 0);
+            // 说明：hint 之前被删掉了父容器挂载（旧 row3），现已在左栏末尾补上 top.Controls.Add(hint)
 
-            row1.Controls.Add(btnStart); row1.Controls.Add(btnStop); row1.Controls.Add(btnClear);
-            row1.Controls.Add(btnRemove); row1.Controls.Add(btnRefresh); row1.Controls.Add(btnCheck);
-            // 「准备 OBS」和「仅打开 OBS」放在一起，方便对照
-            row1.Controls.Add(btnPrepare);
-            row1.Controls.Add(btnSet); row1.Controls.Add(btnOpenLog); row1.Controls.Add(btnSound); row1.Controls.Add(lblSoundNote); row1.Controls.Add(btnGameAudio); row1.Controls.Add(btnBgm);
+            // tooltip 要等控件建好之后再挂（早挂会 SetToolTip(null) 直接崩）
+            tip.SetToolTip(btnStart, "点一下就开始录：\r\n" +
+                                     "· 列表里选中了 rep → 只录选中的那些（不管之前有没有录过，一律重录）\r\n" +
+                                     "· 没选中 → 录队列里最靠前的待录 rep\r\n" +
+                                     "· 要录多个 → 按右边的「同时录制数量」并行，超过就自动分批；只有 1 个就按普通单录走\r\n" +
+                                     "（原来的「并行录制」「录制选中的」两个按钮已经并进这个按钮了）");
 
-            FlowLayoutPanel row2 = new FlowLayoutPanel();
-            row2.AutoSize = true;
-            row2.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            row2.FlowDirection = FlowDirection.TopDown;
-            row2.WrapContents = false;
-            row2.Margin = new Padding(0, 0, 0, 6);
-            // 同时录制数量：1~10 的下拉列表（取代以前只能进设置里改的数字）
+            // ============ 左栏分组卡片：录制 / 并行 / 队列 / 声音 / 环境 ============
+            // ⚠ 卡片必须用 FlowLayoutPanel（TopDown）不能用普通 Panel：
+            //   普通 Panel 里标题和内容都默认落在 (0,0) 会叠在一起，内容第一行被标题盖掉（实测）。
+            int cardW = 316;                    // 内容按钮 300 + 左右内边距 8+8
+            Color cardBack = HudBg;             // 设计图里卡片和窗口底色同色，靠分隔线分区
+
+            // 通用：组标题（图标 + 标题 + 分隔线）。icon 用 "▍" 就是原来的竖条；
+            // 录制/并行/声音 按参考图配了专属小图标（◉ / ≡ / 喇叭）
+            Func<string, string, Panel> MakeCardTitle = delegate(string icon, string t)
+            {
+                Panel p = new Panel();
+                p.Size = new Size(cardW, 22);
+                p.BackColor = Color.Transparent;
+                Label lb = new Label();
+                lb.Text = icon + " " + t;
+                lb.ForeColor = HudText;
+                lb.Font = Ui(9F);
+                lb.AutoSize = true;
+                lb.Location = new Point(2, 2);
+                p.Controls.Add(lb);
+                hudTitles.Add(p);               // 拉伸时分隔线跟着卡片走（见 LayoutCardWidth）
+                p.Paint += delegate(object s, PaintEventArgs pe)
+                {
+                    using (Pen pen = new Pen(HudLine))
+                        pe.Graphics.DrawLine(pen, 0, 20, p.Width - 1, 20);
+                };
+                return p;
+            };
+
+            // 通用：卡片容器（FlowLayoutPanel 自动把标题/内容从上往下排，不会重叠）
+            Func<FlowLayoutPanel> MakeCard = delegate()
+            {
+                FlowLayoutPanel c = new FlowLayoutPanel();
+                c.AutoSize = true;
+                c.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                c.FlowDirection = FlowDirection.TopDown;
+                c.WrapContents = false;
+                c.MinimumSize = new Size(cardW, 0);   // 宽度至少 cardW，窄内容也保持整宽
+                hudCards.Add(c);                // 左栏拖宽时这张卡片跟着拉伸（见 LayoutCardWidth）
+                c.BackColor = cardBack;
+                c.Tag = "card";                 // ApplyHudTheme 看到这个标记就跳过，不改它的底色
+                c.Margin = new Padding(0, 0, 0, 12);
+                c.Padding = new Padding(4, 6, 4, 8);
+                return c;
+            };
+
+            // 通用：卡片内内容面板（流式布局）
+            Func<FlowLayoutPanel> MakeCardContent = delegate()
+            {
+                FlowLayoutPanel f = new FlowLayoutPanel();
+                f.AutoSize = true;
+                f.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                f.FlowDirection = FlowDirection.TopDown;
+                f.WrapContents = false;
+                f.BackColor = Color.Transparent;
+                f.Margin = new Padding(0);
+                f.Padding = new Padding(4, 2, 4, 0);
+                return f;
+            };
+
+            // ---- ① 录制 ----
+            Panel cardRecord = MakeCard();
+            cardRecord.Controls.Add(MakeCardTitle("◉", "录 制"));
+            FlowLayoutPanel contentRecord = MakeCardContent();
+            contentRecord.Controls.Add(btnStart);
+            contentRecord.Controls.Add(btnStop);
+            cardRecord.Controls.Add(contentRecord);
+            top.Controls.Add(cardRecord);
+
+            // ---- ② 并行 ----
+            Panel cardParallel = MakeCard();
+            cardParallel.Controls.Add(MakeCardTitle("≡", "并 行"));
+            FlowLayoutPanel contentParallel = MakeCardContent();
+            // 同时录制数量：1~6 的下拉列表
             Label lblPar = new Label();
             lblPar.Text = "同时录制数量：";
             lblPar.AutoSize = true;
-            lblPar.Margin = new Padding(14, 10, 2, 0);
-            // 这个数量很关键（决定并行几格 / 分几批），做成醒目的琥珀色再加粗，别让人找不到
-            lblPar.ForeColor = Color.FromArgb(178, 92, 0);
+            lblPar.Margin = new Padding(0, 4, 2, 0);
+            lblPar.ForeColor = HudText;
             lblPar.Font = new Font(Font, FontStyle.Bold);
-            cbParallel = new ComboBox();
-            cbParallel.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbParallel = new HudCombo();
             cbParallel.Width = 96;
-            cbParallel.Margin = new Padding(0, 5, 0, 0);
-            cbParallel.BackColor = Color.FromArgb(255, 236, 179);   // 淡琥珀底，比周围控件显眼
+            cbParallel.Margin = new Padding(0, 0, 0, 0);
+            ((HudCombo)cbParallel).Face = HudLine;    // 设计图里这个下拉框是钢蓝底
             cbParallel.Font = new Font(Font, FontStyle.Bold);
             for (int n = 1; n <= 6; n++) cbParallel.Items.Add(n.ToString());
             int pn = cfg.ParallelCount;
@@ -971,135 +1143,551 @@ namespace RepRecorder
                 cfg.Save();
                 Log.Write("同时录制数量改为 " + cfg.ParallelCount + " 个（内存约 "
                           + (cfg.ParallelCount * 550 / 1024.0).ToString("0.0") + " GB）");
+                UpdateMemHint();
+                ClearComboHighlight(cbParallel);
             };
-
-            row2.Controls.Add(chkAuto); row2.Controls.Add(chkPrepare);
-            row2.Controls.Add(chkCloseObs); row2.Controls.Add(chkRound);
-            row2.Controls.Add(lblPar); row2.Controls.Add(cbParallel);
-            // 选中几个 rep 就自动把数量改成几个（省得每次去点下拉框），并在旁边说明
-            lblParHint = new Label();
-            lblParHint.AutoSize = true;
-            lblParHint.ForeColor = Color.FromArgb(178, 92, 0);
-            lblParHint.Margin = new Padding(4, 10, 0, 0);
-            row2.Controls.Add(lblParHint);
-            row2.Controls.Add(lblMic); row2.Controls.Add(cbMic);
-            // tooltip 要等控件建好之后再挂（早挂会 SetToolTip(null) 直接崩）
             tip.SetToolTip(cbParallel, "一次同时开几个游戏实例（1~6）。\r\n" +
                                        "1 = 相当于普通单录；3 个约 1.6 GB 内存；6 个约 3.3 GB。\r\n" +
                                        "上限锁在 6：OBS 只有 6 条音轨，再多就没法给每格单独放声音，会录出没声音的视频。");
-            tip.SetToolTip(btnStart, "点一下就开始录：\r\n" +
-                                     "· 列表里选中了 rep → 只录选中的那些（不管之前有没有录过，一律重录）\r\n" +
-                                     "· 没选中 → 录队列里最靠前的待录 rep\r\n" +
-                                     "· 要录多个 → 按右边的「同时录制数量」并行，超过就自动分批；只有 1 个就按普通单录走\r\n" +
-                                     "（原来的「并行录制」「录制选中的」两个按钮已经并进这个按钮了）");
+            FlowLayoutPanel parRow = new FlowLayoutPanel();
+            parRow.AutoSize = true;
+            parRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            parRow.FlowDirection = FlowDirection.LeftToRight;
+            parRow.WrapContents = false;
+            parRow.BackColor = Color.Transparent;
+            parRow.Margin = new Padding(0);
+            parRow.Controls.Add(lblPar);
+            parRow.Controls.Add(cbParallel);
+            contentParallel.Controls.Add(parRow);
+            lblMemHint = new Label();
+            lblMemHint.AutoSize = true;
+            lblMemHint.ForeColor = HudDim;
+            lblMemHint.Margin = new Padding(0, 2, 0, 4);
+            UpdateMemHint();
+            contentParallel.Controls.Add(lblMemHint);
+            contentParallel.Controls.Add(chkRound);
+            cardParallel.Controls.Add(contentParallel);
+            top.Controls.Add(cardParallel);
 
-            FlowLayoutPanel row3 = new FlowLayoutPanel();
-            row3.AutoSize = true;
-            row3.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            row3.FlowDirection = FlowDirection.TopDown;
-            row3.WrapContents = false;
-            row3.Margin = new Padding(0, 0, 0, 6);
-            row3.Controls.Add(hint); row3.Controls.Add(obsState);
+            // ---- ③ 队列 ----
+            Panel cardQueue = MakeCard();
+            cardQueue.Controls.Add(MakeCardTitle("▍", "队 列"));
+            FlowLayoutPanel contentQueue = MakeCardContent();
+            FlowLayoutPanel queueBtns = new FlowLayoutPanel();
+            queueBtns.AutoSize = true;
+            queueBtns.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            queueBtns.FlowDirection = FlowDirection.LeftToRight;
+            queueBtns.WrapContents = false;         // 不换行：拉伸时 4 枚按钮均分一行宽（见 LayoutCardWidth）
+            queueBtns.BackColor = Color.Transparent;
+            queueBtns.Margin = new Padding(0);
+            queueBtns.Controls.Add(btnClear);
+            queueBtns.Controls.Add(btnRemove);
+            queueBtns.Controls.Add(btnMark);
+            queueBtns.Controls.Add(btnRefresh);
+            hudRows.Add(queueBtns);
+            contentQueue.Controls.Add(queueBtns);
+            cardQueue.Controls.Add(contentQueue);
+            top.Controls.Add(cardQueue);
 
-            top.Controls.Add(row1);
-            top.Controls.Add(row2);
-            top.Controls.Add(row3);
+            // ---- ④ 声音 ----
+            Panel cardSound = MakeCard();
+            cardSound.Controls.Add(MakeCardTitle("🔊", "声 音"));
+            FlowLayoutPanel contentSound = MakeCardContent();
+            // 「声音」按钮独占一行，说明文字放下一行（同排会超出卡片宽度被截断）
+            FlowLayoutPanel soundRow1 = new FlowLayoutPanel();
+            soundRow1.AutoSize = true;
+            soundRow1.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            soundRow1.FlowDirection = FlowDirection.LeftToRight;
+            soundRow1.WrapContents = false;
+            soundRow1.BackColor = Color.Transparent;
+            soundRow1.Margin = new Padding(0);
+            soundRow1.Controls.Add(btnSound);
+            contentSound.Controls.Add(soundRow1);
+            Label lblAudioNote = new Label();
+            lblAudioNote.AutoSize = true;
+            lblAudioNote.ForeColor = HudDim;
+            lblAudioNote.Margin = new Padding(0, 2, 0, 4);
+            lblAudioNote.Text = "本机静音，录像里照样有声音";
+            // 原 lblSoundNote 的 tooltip 文案移到这里（那个标签已删）
+            tip.SetToolTip(lblAudioNote, "说明：这个按钮管的是【你自己听不听得到】——它静音的是整台电脑的默认输出设备；\r\n" +
+                                         "录像里照样有游戏声音（录不录声音由右边的「录打击音效」决定）。");
+            contentSound.Controls.Add(lblAudioNote);
+            contentSound.Controls.Add(btnGameAudio);
+            contentSound.Controls.Add(btnBgm);
+            FlowLayoutPanel micRow = new FlowLayoutPanel();
+            micRow.AutoSize = true;
+            micRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            micRow.FlowDirection = FlowDirection.LeftToRight;
+            micRow.WrapContents = false;
+            micRow.BackColor = Color.Transparent;
+            micRow.Margin = new Padding(0);
+            micRow.Controls.Add(lblMic);
+            micRow.Controls.Add(cbMic);
+            contentSound.Controls.Add(micRow);
+            cardSound.Controls.Add(contentSound);
+            top.Controls.Add(cardSound);
 
-            // ---- 列表 + 日志 ----
-            list = new ListView();
+            // ---- ⑤ 环境 ----
+            Panel cardEnv = MakeCard();
+            cardEnv.Controls.Add(MakeCardTitle("▍", "环 境"));
+            FlowLayoutPanel contentEnv = MakeCardContent();
+            FlowLayoutPanel envBtns = new FlowLayoutPanel();
+            envBtns.AutoSize = true;
+            envBtns.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            envBtns.FlowDirection = FlowDirection.LeftToRight;
+            envBtns.WrapContents = false;           // 不换行：拉伸时 4 枚按钮均分一行宽
+            envBtns.BackColor = Color.Transparent;
+            envBtns.Margin = new Padding(0);
+            envBtns.Controls.Add(btnPrepare);
+            envBtns.Controls.Add(btnCheck);
+            envBtns.Controls.Add(btnSet);
+            envBtns.Controls.Add(btnOpenLog);
+            hudRows.Add(envBtns);
+            contentEnv.Controls.Add(envBtns);
+            contentEnv.Controls.Add(chkAuto);
+            contentEnv.Controls.Add(chkPrepare);      // ⚠ 重构时漏加：不补回来「自动准备采集源」就再也点不到了
+            contentEnv.Controls.Add(chkCloseObs);
+            cardEnv.Controls.Add(contentEnv);
+            top.Controls.Add(cardEnv);
+            // ⚠ 拖拽提示标签：重构后旧 row3 被删、hint 忘了重新挂到父容器，拖文件时"松手即加入队列 ↓"
+            //   永远不显示。补回左栏末尾（和 lblParHint 一起）。
+            top.Controls.Add(hint);
+
+            // 自适应拉伸登记：左栏拖宽时这些大按钮铺满整行宽。
+            // ⚠ 三个声音开关（声音/录打击音效/录BGM）不放进来：它们跟着拉伸会一会儿宽一会儿窄（用户实测），
+            //   保持固定宽度 124/168/116 更稳。
+            hudFull.Add(btnStart);
+            hudFull.Add(btnStop);
+
+            // 选中几个 rep 就自动把数量改成几个（省得每次去点下拉框），并在旁边说明
+            lblParHint = new Label();
+            lblParHint.AutoSize = true;
+            lblParHint.ForeColor = HudDim;
+            lblParHint.Margin = new Padding(4, 10, 0, 0);
+            top.Controls.Add(lblParHint);
+
+            // ⚠ 左栏里的卡片 / 各行容器都是普通 FlowLayoutPanel，默认【没开双缓冲】。
+            //   它们一重排（改「同时录制数量」时 lblMemHint 文字变化、选中几行让 lblParHint 变化、
+            //   滚轮上下滑左栏）就会"先擦背景再画内容"，擦和画之间那一帧露出来就是整片闪
+            //   （用户报的"滚轮滑控制面板会闪 / 点队列区域会闪"）。
+            //   这里统一给左栏整棵树打开缓冲（和 SplitContainer 用的是同一招），行为一点没改。
+            foreach (Control bc in AllControls(top)) BufferSplitter(bc);
+            BufferSplitter(top);
+
+            // obsState 已挪到底部状态栏右侧（只当数据源）；hint 见上面，已挂回左栏末尾
+
+            // ---- 列表 + 日志（各自装进带边框的 HUD 面板里）----
+            list = new BgListView();
             list.Dock = DockStyle.Fill;
             list.View = View.Details;
             list.FullRowSelect = true;
             list.GridLines = false;
             list.HideSelection = false;
             list.BorderStyle = BorderStyle.None;
-            list.BackColor = Color.FromArgb(9, 13, 26);
-            list.ForeColor = Color.FromArgb(198, 216, 255);
-            list.Font = new Font("Microsoft YaHei UI", 9F);
+            list.BackColor = HudBg;
+            list.ForeColor = HudText;
+            list.Font = Mono(9F);                  // 列表用等宽：文件名 / 数字对齐
             list.OwnerDraw = true;                 // 自己画：表头/行都跟着蓝黑风格
             list.DrawColumnHeader += OnHudDrawColumnHeader;
             list.DrawItem += OnHudDrawItem;
             list.DrawSubItem += OnHudDrawSubItem;
             list.Columns.Add("#", 44);
-            list.Columns.Add("文件", 380);
-            list.Columns.Add("状态", 90);
-            list.Columns.Add("用时", 86);
-            list.Columns.Add("大小", 90);
-            list.Columns.Add("说明", 240);
+            list.Columns.Add("文件", 290);
+            list.Columns.Add("状态", 84);
+            list.Columns.Add("用时", 78);
+            list.Columns.Add("大小", 82);
+            list.Columns.Add("说明", 200);
             list.DoubleClick += OnListDoubleClick;
+            // 空队列提示：⚠ 不能在 list.Paint 里画 —— ListView 原生 WM_PAINT 会在之后把这里画的东西盖掉
+            //   （实测：空队列截图里提示文字完全不显示）。改由 BgListView 在自己的 WM_PAINT 末尾画，
+            //   这里只把文案交给它，见 BgListView.WndProc。
+            list.EmptyHint = "把 .rep 文件拖到这里（可多选/可拖文件夹）";
 
-            logBox = new TextBox();
+            // 终端：自定义控件（TextBox 的背景不支持透明，透不出背景图）
+            logBox = new BgLogView();
             logBox.Dock = DockStyle.Fill;
-            logBox.Multiline = true;
-            logBox.ReadOnly = true;
-            logBox.ScrollBars = ScrollBars.Vertical;
-            logBox.BorderStyle = BorderStyle.None;
-            logBox.BackColor = Color.FromArgb(7, 10, 20);
-            logBox.ForeColor = Color.FromArgb(150, 200, 255);
-            logBox.Font = new Font("Consolas", 9F);
+            logBox.BackColor = HudBg;              // 没有背景图时的底色
+            logBox.Font = Mono(9F);                // 终端也用等宽
 
-            SplitContainer split = new SplitContainer();
+            Panel frameQueue = MakeFrame("队列 / QUEUE");
+            frameQueue.Dock = DockStyle.Fill;
+            // 原生滚动条藏起来，改用自绘的（颜色才能跟主题走）。
+            // ⚠ 但**不能**用 Scrollable=false：那是给控件打 LVS_NOSCROLL，会让列表**彻底不能滚**，
+            //   连 TopItem / LVM_SCROLL 都变成空操作（实测：60 个条目时滚轮、拖自绘滚动条全无反应，
+            //   top index 一直 0）。正确做法是保留滚动能力，再用 ShowScrollBar 把原生那条藏掉
+            //   （见 HideNativeListScrollbar，comctl32 会自己再把它显出来，所以每次同步滚动条时都要再藏一遍）。
+            list.Scrollable = true;
+            listScroll = new HudScrollBar();
+            listScroll.Dock = DockStyle.Right;
+            listScroll.Width = 10;
+            listScroll.ValueChanged += delegate
+            {
+                if (syncingList) return;
+                try
+                {
+                    if (list.Items.Count == 0) return;
+                    int i = Math.Min(list.Items.Count - 1, Math.Max(0, listScroll.Value));
+                    list.TopItem = list.Items[i];   // 把这一行顶到最上面
+                    HideNativeListScrollbar();      // 滚动过程中 comctl32 会想把原生那条显出来
+                }
+                catch { }
+            };
+            frameQueue.Controls.Add(list);
+            frameQueue.Controls.Add(listScroll);   // 后加的排在更外层 → 先靠右
+            list.Resize += delegate { SyncListScroll(); };
+            Panel frameLog = MakeFrame("终端 / STDOUT");
+            frameLog.Dock = DockStyle.Fill;
+            // 终端区：和「队列」同款边框。折叠条放在框内标题下面一条，点它收起/展开
+            logHeader = new Panel();
+            logHeader.Dock = DockStyle.Top;
+            logHeader.Height = 22;
+            logHeader.BackColor = HudBg;
+            logHeader.Cursor = Cursors.Hand;
+            logHeader.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                pe.Graphics.Clear(HudBg);
+                using (Pen p = new Pen(HudLine))
+                    pe.Graphics.DrawLine(p, 0, logHeader.Height - 1, logHeader.Width, logHeader.Height - 1);
+                string arrow = logCollapsed ? "▶ 展开" : "▼ 收起";
+                TextRenderer.DrawText(pe.Graphics, arrow, Ui(8F), new Point(6, 3), HudDim);
+                if (logCollapsed && !string.IsNullOrEmpty(lastLogLine))
+                {
+                    Size sz = TextRenderer.MeasureText(lastLogLine, Ui(8F));
+                    int x = logHeader.Width - sz.Width - 12;
+                    if (x > 90)
+                        TextRenderer.DrawText(pe.Graphics, lastLogLine, Ui(8F), new Point(x, 3), HudDim);
+                }
+            };
+            logHeader.Click += delegate { ToggleLogCollapse(); };
+            frameLog.Controls.Add(logBox);         // 先加 Fill，再加 Top：Top 的折叠条先停靠，日志填剩下的
+            frameLog.Controls.Add(logHeader);
+
+            split = new SplitContainer();
             split.Dock = DockStyle.Fill;
             split.Orientation = Orientation.Horizontal;   // 上面列表、下面终端
-            split.Panel1.Controls.Add(list);
-            split.Panel2.Controls.Add(logBox);
-            split.BackColor = Color.FromArgb(38, 62, 110);
-            split.Panel1.BackColor = Color.FromArgb(9, 13, 26);
-            split.Panel2.BackColor = Color.FromArgb(7, 10, 20);
+            split.Panel1.Padding = new Padding(6, 6, 6, 3);
+            split.Panel2.Padding = new Padding(6, 3, 6, 6);
+            split.Panel1.Controls.Add(frameQueue);
+            split.Panel2.Controls.Add(frameLog);
+            split.BackColor = HudBg;
+            split.SplitterWidth = 6;                      // 上下比例由 ApplySplitRatio() 按 3:5 摆
+            // ⚠ 必须和主分隔条一样打 splitterDragging 标记：WndProc 里有条"保险丝"——
+            //   只要 !isResizing && !splitterDragging && paintFrozen 就强制解冻（防 WM_EXITSIZEMOVE 丢失）。
+            //   拖这条上下分隔条时若不打标记，定时器消息一到就把刚冻上的重绘解冻 → 拖队列/终端分隔条照旧闪。
+            split.SplitterMoving += delegate { splitterDragging = true; FreezePaint(true); };
+            split.SplitterMoved += delegate { splitterDragging = false; FreezePaint(false); };
+            BufferSplitter(split);
+            // 队列和终端之间的缝（分割条 6px + 上下面板各 3px Padding）不能露实色，
+            // 否则背景图会被这条横杠拦腰截断（用户实测）。让缝也透出背景图：
+            // 分割条、Panel1 底边、Panel2 顶边各补画一遍图 —— 大部分区域反正被子面板盖住，只有缝露出来。
+            split.Paint += delegate(object s, PaintEventArgs pe) { Bg.Paint(split, pe.Graphics); };
+            split.Panel1.Paint += delegate(object s, PaintEventArgs pe) { Bg.Paint(split.Panel1, pe.Graphics); };
+            split.Panel2.Paint += delegate(object s, PaintEventArgs pe) { Bg.Paint(split.Panel2, pe.Graphics); };
+            BufferSplitter(split.Panel1);
+            BufferSplitter(split.Panel2);
 
             status = new StatusStrip();
             statusLabel = new ToolStripStatusLabel("就绪");
+            statusLabel.Spring = true;               // 占满左侧，把环境状态顶到右边
+            statusLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             status.Items.Add(statusLabel);
-            status.BackColor = Color.FromArgb(11, 16, 32);
-            status.ForeColor = Color.FromArgb(150, 200, 255);
-            statusLabel.ForeColor = Color.FromArgb(150, 200, 255);
+            // OBS/游戏环境状态：从顶栏挪到状态栏右侧（用户要求去掉顶栏右边的绿字）
+            statusEnv = new ToolStripStatusLabel("");
+            statusEnv.ForeColor = HudDim;
+            status.Items.Add(statusEnv);
+            status.BackColor = HudBg;
+            status.ForeColor = HudDim;
+            statusLabel.ForeColor = HudDim;
+            status.Font = Mono(9F);
             status.SizingGrip = false;
+            obsState.TextChanged += delegate
+            {
+                statusEnv.Text = obsState.Text;          // 环境文字照搬到底栏
+                statusEnv.ForeColor = obsState.ForeColor;
+            };
+            obsState.Visible = false;                // 顶栏不再显示，只当数据源用
 
             // 顶部条：应用名 + 环境状态（像截图里那条状态栏）
-            hudTop = new Panel();
+            hudTop = new BgPanel();
             hudTop.Dock = DockStyle.Top;
             hudTop.Height = 30;
-            hudTop.BackColor = Color.FromArgb(11, 16, 32);
+            hudTop.BackColor = HudPanel;
+            // 录制状态指示（REC 呼吸点）：放在「背景…」按钮右边，不挤标题
+            recIndicator = new Panel();
+            recIndicator.SetBounds(520, 9, 12, 12);
+            recIndicator.BackColor = Color.Transparent;
+            recIndicator.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                bool recording = worker != null && worker.IsAlive;
+                Color c = recording ? Color.FromArgb(255, 80, 80) : HudDim;
+                using (SolidBrush b = new SolidBrush(c))
+                    pe.Graphics.FillEllipse(b, 0, 0, 11, 11);
+            };
+            recTimer = new System.Windows.Forms.Timer();
+            recTimer.Interval = 600;
+            recTimer.Tick += delegate
+            {
+                bool recording = worker != null && worker.IsAlive;
+                recIndicator.Visible = recording;
+                recLabel.Visible = recording;
+                recIndicator.Invalidate();
+            };
+            recLabel = new Label();
+            recLabel.Text = "REC";
+            recLabel.ForeColor = Color.FromArgb(255, 80, 80);
+            recLabel.Font = Tech(9F, FontStyle.Bold);
+            recLabel.AutoSize = true;
+            recLabel.Location = new Point(536, 8);
+            recLabel.BackColor = Color.Transparent;
+            recLabel.Visible = false;
+            recIndicator.Visible = false;
+            hudTop.Controls.Add(recIndicator);
+            hudTop.Controls.Add(recLabel);
+            recTimer.Start();
             Label hudTitle = new Label();
             hudTitle.Text = "REP → MP4  录制器   (OBS)";
             hudTitle.AutoSize = true;
-            hudTitle.ForeColor = Color.FromArgb(120, 190, 255);
-            hudTitle.Font = new Font("Consolas", 10F, FontStyle.Bold);
-            hudTitle.Location = new Point(12, 7);
+            hudTitle.ForeColor = HudText;                 // 参考图里标题是浅灰，亮蓝留给"强调"
+            hudTitle.Font = Tech(11F, FontStyle.Bold);
+            // x=22：和下面「控制面板 / CONTROL」标题的 | 起笔对齐（frame 左沿 6 + 框内 16）
+            hudTitle.Location = new Point(22, 6);
             hudTop.Controls.Add(hudTitle);
-            obsState.Location = new Point(280, 8);
-            obsState.BackColor = Color.Transparent;
-            hudTop.Controls.Add(obsState);
+            // 顶栏那两个按钮：收起/展开面板（学 VS Code 侧边栏）、背景设置。
+            // ⚠ x=310 起：标题 Tech 11F 加粗大约 250px 宽（22+250≈272），按钮放它后面，别压住标题
+            btnPanel = new Button();
+            btnPanel.Text = "◀  收起面板";
+            btnPanel.SetBounds(310, 3, 112, 24);
+            btnPanel.FlatStyle = FlatStyle.Flat;
+            btnPanel.BackColor = HudOn;
+            btnPanel.ForeColor = HudText;
+            btnPanel.FlatAppearance.BorderColor = HudLine;
+            btnPanel.Click += delegate { SetPanelCollapsed(!mainSplit.Panel1Collapsed); };
+            hudTop.Controls.Add(btnPanel);
+
+            btnBg = new Button();
+            btnBg.Text = "背景…";
+            btnBg.SetBounds(428, 3, 80, 24);
+            btnBg.FlatStyle = FlatStyle.Flat;
+            btnBg.BackColor = HudOn;
+            btnBg.ForeColor = HudText;
+            btnBg.FlatAppearance.BorderColor = HudLine;
+            btnBg.Click += delegate { OnBackgroundSettings(); };
+            hudTop.Controls.Add(btnBg);
+            // 环境状态（OBS/游戏）已挪到底部状态栏右侧，顶栏不再放绿字
             hudTop.Paint += delegate(object s, PaintEventArgs pe)
             {
+                pe.Graphics.Clear(HudPanel);
                 using (Pen hudPen1 = new Pen(HudLine))
                     pe.Graphics.DrawLine(hudPen1, 0, hudTop.Height - 1, hudTop.Width, hudTop.Height - 1);
+                // 右边一小段刻度装饰线（参考图顶栏那个细节）。⚠ 要让开右边的窗口按钮，
+                // 否则那条线会从按钮底下穿过去。
+                using (Pen hudPen2 = new Pen(HudLineDim))
+                    for (int hx = hudTop.Width - 240; hx < hudTop.Width - CAPBTN_W * 3 - 12; hx += 10)
+                        pe.Graphics.DrawLine(hudPen2, hx, 10, hx, 20);
             };
 
-            // 分区标题（截图里那种 | 名字 | 的框）
-            hudLeftTitle = MakeHudSectionTitle("控制面板 / CONTROL", 0);
-            top.Controls.Add(hudLeftTitle);
-            top.Controls.SetChildIndex(hudLeftTitle, 0);
+            // 顶栏右边的窗口按钮。无边框窗口没有系统标题栏，这三个得自己画。
+            btnMin = new HudCapButton(HudCapButton.KindMin);
+            btnMax = new HudCapButton(HudCapButton.KindMax);
+            btnClose = new HudCapButton(HudCapButton.KindClose);
+            btnMin.Click += delegate { try { WindowState = FormWindowState.Minimized; } catch { } };
+            btnMax.Click += delegate
+            {
+                try
+                {
+                    WindowState = (WindowState == FormWindowState.Maximized)
+                        ? FormWindowState.Normal : FormWindowState.Maximized;
+                }
+                catch { }
+            };
+            btnClose.Click += delegate { try { Close(); } catch { } };
+            // ⚠ 加的顺序决定 z 序：后加的在上层，所以要 关闭 → 最大化 → 最小化 这样倒着加，
+            //   最终呈现才是「最小化 | 最大化 | 关闭」从左到右。
+            hudTop.Controls.Add(btnClose);
+            hudTop.Controls.Add(btnMax);
+            hudTop.Controls.Add(btnMin);
+            hudTop.Resize += delegate { LayoutCaptionButtons(); };
+            Resize += delegate { SyncCaptionButtons(); };   // 最大化/还原 → 换中间那个按钮的图标
 
-            Controls.Add(split);
-            Controls.Add(top);
+            // 左侧控制面板也装进带边框的面板（| 控制面板 / CONTROL |）
+            Panel frameCtrl = MakeFrame("控制面板 / CONTROL");
+            frameCtrl.Dock = DockStyle.Fill;
+            frameCtrl.Margin = new Padding(0);
+
+            // 左栏 = 视口(leftView) + 自绘滚动条(leftScroll)；内容 top 在视口里上下滑
+            leftView = new BgPanel();
+            leftView.Dock = DockStyle.Fill;
+            leftView.Controls.Add(top);
+            leftScroll = new HudScrollBar();
+            leftScroll.Dock = DockStyle.Right;
+            leftScroll.Width = 10;
+            // 左栏这条平时不画出来（内容一直比视口高，常驻一条挺碍眼）；移上去/滚它/拖它才出现。
+            leftScroll.AutoHide = true;
+            // ⚠ 这里必须填【底色】不是面板色：这条 10px 的列紧挨着的是左栏内容区，
+            //   那里是 HudBg(#3C3E45)。填成 HudPanel(#4A4C54) 会比周围亮一档，
+            //   反倒露出一条"滚动条的轮廓"（用户第二次报的就是这个）。
+            leftScroll.IdleBack = HudBg;
+            leftScroll.ValueChanged += delegate { SyncLeftScroll(false); };
+            frameCtrl.Controls.Add(leftView);
+            frameCtrl.Controls.Add(leftScroll);   // 后加的排在更外层 → 先靠右
+            leftView.Resize += delegate { SyncLeftScroll(false); LayoutCardWidth(); };
+            top.SizeChanged += delegate { SyncLeftScroll(false); };
+
+            // 左右分栏：左控制面板 / 右内容区。拖中间那条能调宽，拖得够窄就自动收起（学 VS Code）
+            mainSplit = new SplitContainer();
+            mainSplit.Dock = DockStyle.Fill;
+            mainSplit.Orientation = Orientation.Vertical;
+            mainSplit.Panel1.Controls.Add(frameCtrl);
+            mainSplit.Panel2.Controls.Add(split);
+            // 分隔条平时【看不见】：涂成底色，跟左右两边的留白连成一条暗缝（学 VS Code / Folia）。
+            // 原来固定涂 HudLineDim，而左栏外框也是 HudLineDim、两者挨着 → 连成一根又长又直的亮条，
+            // 蓝色主题下特别显眼（用户报的"笔直的竖条，不好看"）。
+            // 拖拽功能一点没少：宽度反而从 4 加到 6，更好抓；光标压上去 / 正在拖时才亮一条细蓝线（见下面 Paint）。
+            mainSplit.BackColor = HudBg;
+            mainSplit.SplitterWidth = 6;
+            // 上下左右留白和右边两栏的外沿一致：左栏是通到底的，上沿对齐队列（6）、
+            // 下沿对齐终端（6）。⚠ 底部不能照抄队列的 3 —— 那是队列在右栏上半格的参数，
+            // 抄过来左栏底框会比终端底框低 3px（用户配图报的）。
+            mainSplit.Panel1.Padding = new Padding(6, 6, 6, 6);
+            // 改窗口大小时让左栏保持原宽、由右栏吸收（VS Code 侧边栏就是这个行为），
+            // 顺便避免 FixedPanel.None 下缩放把 SplitterDistance 一起缩放掉。
+            mainSplit.FixedPanel = FixedPanel.Panel1;
+            // ⚠ Panel1MinSize / Panel2MinSize 不能在这里设：此刻控件还没有真实尺寸，
+            //   SplitContainer 会校验 SplitterDistance 落不落在两者之间，直接抛异常。放到 Shown 里初始化。
+            mainSplit.SplitterMoved += delegate { OnPanelSplitterMoved(); FreezePaint(false); };
+            mainSplit.SplitterMoving += delegate { splitterDragging = true; FreezePaint(true); };
+            BufferSplitter(mainSplit);
+            // 全局背景模式：左栏四周的 Padding 缝和左右分割条也要透图（内容区模式画不出来，无害）
+            mainSplit.Panel1.Paint += delegate(object s, PaintEventArgs pe) { Bg.Paint(mainSplit.Panel1, pe.Graphics); };
+            BufferSplitter(mainSplit.Panel1);
+            // 拖动期间冻结重绘（FreezePaint），松手才整帧刷新 —— 否则背景图每帧重画会闪
+            // 分隔条自己画：平时只铺底色（暗缝），光标压上去或正在拖的时候中间亮一条 2px 强调蓝。
+            // 这样"看不看得见"和"能不能拖"分开了 —— 平时干净，要拖的时候它自己会提示你在这儿。
+            mainSplit.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                try
+                {
+                    int sw = mainSplit.SplitterWidth;
+                    int x = mainSplit.Panel1.Width;
+                    if (sw <= 0 || x <= 0) return;
+                    using (SolidBrush b = new SolidBrush(HudBg))
+                        pe.Graphics.FillRectangle(b, x, 0, sw, mainSplit.Height);
+                    // 全局背景模式：这条竖缝也透出图，别在整幅背景图上留一道实色竖杠
+                    if (cfg.BgScope == "global" && Bg.Cache != null)
+                        Bg.PaintRect(mainSplit, pe.Graphics, new Rectangle(x, 0, sw, mainSplit.Height));
+                    if (splitterHover || splitterDragging)
+                        using (SolidBrush b2 = new SolidBrush(HudAccent))
+                            pe.Graphics.FillRectangle(b2, x + (sw - 2) / 2, 0, 2, mainSplit.Height);
+                }
+                catch { }
+            };
+            // 光标压没压在分隔条上。分隔条那块地方不属于 Panel1/Panel2，鼠标消息直接落在
+            // SplitContainer 自己身上，所以这两个事件能收到。
+            mainSplit.MouseMove += delegate(object s, MouseEventArgs e)
+            {
+                int x = mainSplit.Panel1.Width;
+                bool on = (x > 0 && e.X >= x && e.X < x + mainSplit.SplitterWidth);
+                if (on != splitterHover) { splitterHover = on; mainSplit.Invalidate(); }
+            };
+            mainSplit.MouseLeave += delegate
+            {
+                if (splitterHover) { splitterHover = false; mainSplit.Invalidate(); }
+            };
+            mainSplit.SizeChanged += delegate { OnContentGeometryChanged(); };   // 内容区变了，背景图要重排
+            // ⚠ 只挂 mainSplit.SizeChanged 是不够的 —— 这正是"图片不跟随分割线"的根因：
+            //   拖分隔条时 SplitContainer 自己的尺寸【不变】，变的只有 Panel2。收起/展开同理。
+            //   挂 Panel2 的 SizeChanged 才能覆盖所有让内容区变形的路径。
+            mainSplit.Panel2.SizeChanged += delegate { OnContentGeometryChanged(); };
+
+            // Ctrl+B：收起 / 展开左边的控制面板
+            KeyPreview = true;                       // 焦点在子控件上时也先给窗体处理
+            KeyDown += delegate(object s, KeyEventArgs ke)
+            {
+                if (ke.Control && ke.KeyCode == Keys.B)
+                {
+                    SetPanelCollapsed(!mainSplit.Panel1Collapsed);
+                    ke.Handled = true;
+                    ke.SuppressKeyPress = true;
+                }
+            };
+
+            // 收起之后左边留一条窄竖条（学 VS Code 的活动栏），点一下就把面板拉回来
+            btnExpand = new Button();
+            btnExpand.Text = "▶";
+            btnExpand.SetBounds(4, 8, 28, 26);
+            btnExpand.FlatStyle = FlatStyle.Flat;
+            btnExpand.Click += delegate { SetPanelCollapsed(false); };
+            tip.SetToolTip(btnExpand, "展开左边的控制面板");
+
+            activityBar = new BgPanel();
+            activityBar.Dock = DockStyle.Left;
+            activityBar.Width = 36;
+            activityBar.Visible = false;            // 只在收起时出现
+            activityBar.Controls.Add(btnExpand);
+            activityBar.Paint += delegate(object s, PaintEventArgs pe)
+            {
+                pe.Graphics.Clear(HudPanel);
+                using (Pen pen = new Pen(HudLine))
+                    pe.Graphics.DrawLine(pen, activityBar.Width - 1, 0, activityBar.Width - 1, activityBar.Height);
+                // 竖排文字：TextRenderer 不吃 Graphics 的旋转变换，这里必须用 DrawString
+                if (barFont == null) barFont = Ui(9F);
+                Graphics g = pe.Graphics;
+                System.Drawing.Drawing2D.GraphicsState st = g.Save();
+                g.TranslateTransform(0, activityBar.Height);
+                g.RotateTransform(-90F);
+                using (SolidBrush br = new SolidBrush(HudDim))
+                    g.DrawString("控制面板 / CONTROL", barFont, br, 10F, 10F);
+                g.Restore(st);
+            };
+
+            // ⚠ 加的顺序决定停靠层次：后加的排在更外层。所以要 mainSplit → activityBar → status → hudTop，
+            //   结果才是「顶栏 / 底栏 / 左侧活动栏 / 中间内容」。
+            Controls.Add(mainSplit);
+            Controls.Add(activityBar);
             Controls.Add(status);
             Controls.Add(hudTop);
 
             // 整体套上蓝黑主题 + 窗口标题栏也变深色
             ApplyHudTheme(this);
             EnableDarkTitleBar();
-            // 主题之后再钉一次尺寸与强调色（FlowLayoutPanel 里下拉框容易被挤小/被主题改掉琥珀底）
+            // 主题之后再钉一次尺寸与强调色（FlowLayoutPanel 里下拉框容易被挤小/被主题改掉）
             try
             {
                 cbParallel.Width = 96;
-                cbParallel.BackColor = Color.FromArgb(52, 40, 12);
-                cbParallel.ForeColor = Color.FromArgb(255, 214, 120);
+                cbParallel.BackColor = HudSel;
+                cbParallel.ForeColor = Color.White;
                 cbMic.Width = 210;
-                lblParHint.ForeColor = Color.FromArgb(255, 196, 90);
-                if (hint != null) hint.ForeColor = Color.FromArgb(120, 190, 255);
+                lblParHint.ForeColor = HudDim;
+                if (hint != null) hint.ForeColor = HudAccent;
             }
             catch { }
+
+            // 上下分栏固定 3:5（列表 3 / 终端 2），窗口一改尺寸就重算
+            split.Resize += delegate { ApplySplitRatio(); };
+            Layout += delegate { ApplySplitRatio(); };
+            Shown += delegate
+            {
+                // 三处滚动条现在都是自绘的，不再需要给系统控件换主题了
+                SyncLeftScroll(false);
+                SyncListScroll();
+                SyncCaptionButtons();    // 顶栏宽度此刻才定下来，窗口按钮要现在才摆得对
+                // ⚠ 背景图【不能】在这里建：此刻 InitPanelLayout 还没跑，SplitterDistance 还是
+                //   默认的 50，算出来的内容区是错的 —— 实测这张图建在 X=54、宽 1126，
+                //   而面板归位后正确值是 X=380、宽 800。图上画的东西全错位（用户报的
+                //   "图片不跟随分割线"根因之一）。交给 InitPanelLayout 末尾统一建。
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    ApplySplitRatio();
+                    InitPanelLayout();
+                    LayoutCardWidth();       // 布局定下来后按实际视口宽铺一遍按钮
+                    // 顶栏两个按钮紧跟标题右缘（标题实际宽度要等布局出来才知道，写死会留大空隙）
+                    btnPanel.Left = hudTitle.Right + 16;
+                    btnBg.Left = btnPanel.Right + 6;
+                    recIndicator.Left = btnBg.Right + 14;
+                    recLabel.Left = recIndicator.Right + 4;
+                    InstallChromeHooks();    // 布局定下来才知道哪些子窗口压在了四条边/顶栏上
+                });
+            };
 
             Log.OnLine += OnLogLine;
             FormClosing += OnFormClosing;
@@ -1117,6 +1705,10 @@ namespace RepRecorder
             //   把"数量跟随选择"打得一路乱跳（用户实测日志里那串 5→4→3→2→1 就是这么来的）。
             list.MouseDown += delegate(object s, MouseEventArgs me) { KeepSelectionOnEmptyClick(me); };
             list.MouseUp += delegate(object s, MouseEventArgs me) { KeepSelectionOnEmptyClick(me); };
+            // 框选：在**行上**按住左键拖也能框（详见 MarqueeDown/Move/Up 那段注释）
+            list.MouseDown += delegate(object s, MouseEventArgs me) { MarqueeDown(me); };
+            list.MouseMove += delegate(object s, MouseEventArgs me) { MarqueeMove(me); };
+            list.MouseUp += delegate(object s, MouseEventArgs me) { MarqueeUp(me); };
             // 鼠标滚轮滚过「同时录制数量」时不要改它 —— WinForms 默认会一格格改，
             // 用户实测：滚动列表时顺手把数量从 6 滚成了 1（日志里那一串 5→4→3→2→1）。
             cbParallel.MouseWheel += delegate(object s, MouseEventArgs me)
@@ -1124,6 +1716,23 @@ namespace RepRecorder
                 HandledMouseEventArgs h = me as HandledMouseEventArgs;
                 if (h != null) h.Handled = true;
             };
+
+            // 改窗口大小时重建背景图。防抖 200ms —— 拖边框时每帧重建一张上千像素的位图太慢
+            bgTimer = new System.Windows.Forms.Timer();
+            bgTimer.Interval = 200;
+            bgTimer.Tick += delegate { bgTimer.Stop(); RebuildBackground(); };
+            SizeChanged += delegate { OnContentGeometryChanged(); };
+
+            // 滚轮分流：挂在【消息泵】那一层，不再靠窗体自己的 MouseWheel 事件。
+            // 为什么换掉原来那段"窗体收到滚轮再按光标位置转发"（实测过，不是猜的 —— 写了个独立探针量）：
+            //   · WinForms 只把 WM_MOUSEWHEEL 交给【有焦点】的那个控件；
+            //   · 光标停在队列列表上时，消息只到 ListView，【不会冒泡】到窗体
+            //     —— 原来挂在窗体上的那段转发代码根本不会执行（这就是"滚轮滚不动队列"的根因）；
+            //   · 三处自绘滚动条都是普通 Control（不是可选中的控件），永远拿不到焦点，
+            //     光标停在滚动条上时连 WM_MOUSEWHEEL 都到不了它自己身上。
+            // IMessageFilter 看得到所有发给本线程窗口的消息，按光标位置分流才不会漏。
+            wheelRouter = new WheelRouter(this);
+            Application.AddMessageFilter(wheelRouter);
 
             // 每 2 秒同步一次"系统声音是否静音"，让按钮颜色/文字始终反映真实状态
             soundTimer = new System.Windows.Forms.Timer();
@@ -1133,7 +1742,6 @@ namespace RepRecorder
 
             Shown += delegate
             {
-                try { split.SplitterDistance = 380; } catch { }
                 cfg.Save();
                 RefreshEnvLabel();
                 RefreshSoundButtons();
@@ -1284,40 +1892,151 @@ namespace RepRecorder
             return s + "秒";
         }
 
-        // ============================================================ 蓝黑 HUD 风格
-        // 取自用户给的参考图：深蓝黑底 + 蓝色描边 + 终端里的等宽字。
-        static readonly Color HudBg = Color.FromArgb(9, 13, 26);
-        static readonly Color HudPanel = Color.FromArgb(14, 20, 38);
-        static readonly Color HudLine = Color.FromArgb(38, 62, 110);
-        static readonly Color HudText = Color.FromArgb(198, 216, 255);
-        static readonly Color HudDim = Color.FromArgb(120, 158, 214);
-        static readonly Color HudAccent = Color.FromArgb(90, 170, 255);
-        static readonly Color HudGreen = Color.FromArgb(24, 120, 74);
-        static readonly Color HudRed = Color.FromArgb(140, 40, 52);
-        static readonly Color HudGrey = Color.FromArgb(40, 52, 80);
+        // ============================================================ 设计图那套深蓝灰（2026-10 按设计图取色重做）
+        // 设计图（图二）整体是一块**统一的深蓝灰**：窗口/卡片/按钮/队列/终端全是 #272E3A 上下，
+        // 结构全靠细的蓝灰描边撑，亮色几乎不用。所以：
+        //   · 底色 #272E3A；顶栏/状态栏亮一档 #2E3644；输入框再亮一档 #3A4557
+        //   · 边框 #475979（设计图里那圈蓝灰线）；暗线 #38425A
+        //   · 正文 #E6EBF4、次要 #93A0B4 —— 分区标题/表头/提示文字在设计图里都是浅色，不再是紫/蓝
+        //   · 按钮（开始录制/开关）在设计图里是"暗底 + 描边 + 白字"，不再用亮紫整块填色
+        //   · 强调蓝只留给勾选框/状态点；薄荷绿压暗，只用于"成功"状态字
+        // ⚠ 底色一动，HudDim/HudLineDim 的取值就得跟着重挑，别只改 HudBg。
+        internal static readonly Color HudBg = Color.FromArgb(39, 46, 58);       // #272E3A  底色（设计图主色：窗口/卡片/队列/终端统一）
+        internal static readonly Color HudPanel = Color.FromArgb(46, 54, 68);    // #2E3644  顶栏（比底色亮一点）
+        internal static readonly Color HudPanel2 = Color.FromArgb(58, 69, 87);   // #3A4557  下拉框/输入框底
+        internal static readonly Color HudLine = Color.FromArgb(71, 89, 121);    // #475979  边框（设计图那圈蓝灰线）
+        internal static readonly Color HudLineDim = Color.FromArgb(56, 66, 90);  // #38425A  暗线 / 刻度线 / 面板外框
+        internal static readonly Color HudCorner = Color.FromArgb(90, 110, 140); // #5A6E8C  面板四个角的角标（比外框亮一档）
+        internal static readonly Color HudText = Color.FromArgb(230, 235, 244);  // #E6EBF4  正文
+        internal static readonly Color HudDim = Color.FromArgb(147, 160, 180);   // #93A0B4  次要文字
+        // 强调色：勾选框 / 状态点 / 滚动条拖动中。设计图里亮色用得极少，别到处撒。
+        internal static readonly Color HudAccent = Color.FromArgb(79, 116, 216);      // #4F74D8  强调蓝（勾选框那处）
+        internal static readonly Color HudAccent2 = Color.FromArgb(55, 200, 160);     // #37C8A0  薄荷绿：成功状态字（压暗版）
+        internal static readonly Color HudSel = Color.FromArgb(58, 74, 107);     // #3A4A6B  选中行
+        internal static readonly Color HudOn = Color.FromArgb(46, 55, 70);       // #2E3746  按钮「开/主操作」底（设计图：暗底描边，不再亮紫）
+        internal static readonly Color HudOff = Color.FromArgb(42, 49, 64);      // #2A3140  开关按钮「关」
+        internal static readonly Color HudBatch = Color.FromArgb(46, 74, 62);    // #2E4A3E  列表里"本批"那几行的绿底
+        internal static readonly Color HudBatchBar = Color.FromArgb(55, 200, 160);    // 和 HudAccent2 同一个薄荷绿
+        internal static readonly Color HudHead = Color.FromArgb(51, 59, 74);     // #333B4A  列表表头底（设计图表头行）
+        internal static readonly Color HudLog = Color.FromArgb(169, 194, 232);   // #A9C2E8  终端文字（设计图浅蓝灰）
+        internal static readonly Color HudRed = Color.FromArgb(0xFF, 0x67, 0x67);     // #ff6767  失败
+        internal static readonly Color HudOrange = Color.FromArgb(0xFF, 0xCA, 0x85);  // #ffca85  注意
 
-        // 分区小标题：像参考图里 | 控制面板 | 那样的一条
-        Label MakeHudSectionTitle(string text, int width)
+        // ---- 字体：中文控件走雅黑，终端/表头/边框标题走等宽
+        // （等宽字体没有中文字形，硬套上去中文会回退成雅黑、和西文混排时字重基线都对不齐）
+        static string MonoName()
         {
-            Label l = new Label();
-            l.Text = "| " + text + " |";
-            l.AutoSize = true;
-            l.ForeColor = HudAccent;
-            l.Font = new Font("Consolas", 9.5F, FontStyle.Bold);
-            l.Margin = new Padding(0, 2, 0, 4);
-            if (width > 0) l.Width = width;
-            return l;
+            if (monoName != null) return monoName;
+            string[] want = new string[] { "Sarasa Mono SC", "Sarasa Term SC", "Cascadia Mono", "Cascadia Code", "JetBrains Mono", "Consolas" };
+            foreach (string n in want)
+            {
+                try
+                {
+                    using (Font f = new Font(n, 9F))
+                        if (string.Equals(f.Name, n, StringComparison.OrdinalIgnoreCase)) { monoName = n; break; }
+                }
+                catch { }
+            }
+            if (monoName == null) monoName = "Consolas";
+            return monoName;
+        }
+
+        static Font Mono(float size) { return new Font(MonoName(), size); }
+        static Font Mono(float size, FontStyle st) { return new Font(MonoName(), size, st); }
+        static Font Ui(float size) { return new Font("Microsoft YaHei UI", size); }
+
+        // 标题（顶栏大标题 / 面板框标题）用的"科技感"字体。
+        // ⚠ 参考图里那套是**点阵字体**，这台机器上没装、也没网下载，所以只能挑最接近的窄体工业字：
+        //   Bahnschrift SemiCondensed（Win10 自带，窄、正）→ Bahnschrift → OCR A Extended（仪表盘刻字感）
+        //   → 都没有就退回等宽字体。中文没有字形会回退雅黑，所以这个字体只用在标题上。
+        static string techName;
+        static string TechName()
+        {
+            if (techName != null) return techName;
+            string[] want = new string[] { "Bahnschrift SemiCondensed", "Bahnschrift Condensed", "Bahnschrift", "OCR A Extended" };
+            foreach (string n in want)
+            {
+                try
+                {
+                    using (Font f = new Font(n, 10F))
+                        if (string.Equals(f.Name, n, StringComparison.OrdinalIgnoreCase)) { techName = n; break; }
+                }
+                catch { }
+            }
+            if (techName == null) techName = MonoName();
+            return techName;
+        }
+        static Font Tech(float size) { return new Font(TechName(), size); }
+        static Font Tech(float size, FontStyle st) { return new Font(TechName(), size, st); }
+
+        // 带边框和标题的面板：参考图里 | 队列 / QUEUE | 那种框
+        Panel MakeFrame(string title)
+        {
+            if (hudFrameFont == null) hudFrameFont = Tech(10.5F, FontStyle.Bold);
+            Panel p = new BgPanel();
+            p.Tag = "hudframe";                 // ApplyHudTheme 看到这个标记就跳过，不改它的底色
+            p.BackColor = HudBg;                // 设计图：框内和窗口同色，只留描边
+            p.Padding = new Padding(2, 24, 2, 2);
+            p.Paint += delegate(object s, PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                Rectangle rc = p.ClientRectangle;
+                int r = rc.Width - 1, b = rc.Height - 1;
+                // 边框学参考图：整圈线压到几乎看不见（只当轮廓），真正看得出来的是四个角的角标
+                using (Pen pen = new Pen(HudLineDim))
+                    g.DrawRectangle(pen, 0, 0, r, b);
+                using (Pen penC = new Pen(HudCorner))
+                {
+                    const int arm = 12;                         // 角标每条臂的长度
+                    g.DrawLine(penC, 0, 0, arm, 0); g.DrawLine(penC, 0, 0, 0, arm);
+                    g.DrawLine(penC, r - arm, 0, r, 0); g.DrawLine(penC, r, 0, r, arm);
+                    g.DrawLine(penC, 0, b, arm, b); g.DrawLine(penC, 0, b, 0, b - arm);
+                    g.DrawLine(penC, r - arm, b, r, b); g.DrawLine(penC, r, b, r, b - arm);
+                }
+                // 标题：浅灰字 + 底下一块"擦掉框线"的底色，后面拖一条细线到右边
+                // ⚠ 左边要留出角标的 12px，不然标题底色会把左上角那笔擦掉
+                string text = "| " + title + " |";
+                Size sz = TextRenderer.MeasureText(g, text, hudFrameFont);
+                using (SolidBrush br = new SolidBrush(HudBg))
+                    g.FillRectangle(br, 14, 0, sz.Width + 4, 20);
+                TextRenderer.DrawText(g, text, hudFrameFont, new Point(16, 3), HudText);
+                int x = 16 + sz.Width + 8;
+                if (x < r - 14)
+                    using (Pen pen2 = new Pen(HudLine))
+                        g.DrawLine(pen2, x, 10, r - 12, 10);
+            };
+            return p;
+        }
+
+        // 开关按钮（声音 / 录打击音效 / 录BGM）统一的"开/关"外观
+        static void HudSetToggle(Button b, bool on)
+        {
+            if (b == null) return;
+            b.BackColor = on ? HudOn : HudOff;
+            b.ForeColor = on ? HudText : HudDim;
+            b.FlatAppearance.BorderColor = HudLine;
+            b.FlatStyle = FlatStyle.Flat;
+        }
+
+        // 下拉框现在整只自绘，见文件末尾的 HudCombo。这里只留字体，其余样式在 HudCombo 里。
+
+        // 有背景图时把不透明色压成半透明，让图透出来；没图时原样返回（保证观感不变）
+        static Color Alpha(Color c, int a)
+        {
+            if (Bg.Cache == null) return c;
+            return Color.FromArgb(a, c.R, c.G, c.B);
         }
 
         // 把"语义色"（绿=开 / 红=停 / 灰=关）换成蓝黑主题里的对应色
         static Color HudMapBack(Color c)
         {
-            if (c == Color.FromArgb(0, 120, 60)) return HudGreen;
-            if (c == Color.FromArgb(160, 60, 60)) return HudRed;
-            if (c == Color.FromArgb(190, 60, 60)) return HudRed;
-            if (c == Color.FromArgb(120, 120, 120)) return HudGrey;
-            if (c == Color.FromArgb(180, 180, 180)) return Color.FromArgb(28, 36, 58);
-            return HudPanel;
+            if (c == Color.FromArgb(0, 120, 60)) return HudOn;
+            if (c == Color.FromArgb(160, 60, 60)) return HudOff;
+            if (c == Color.FromArgb(190, 60, 60)) return HudOff;
+            if (c == Color.FromArgb(120, 120, 120)) return HudOff;
+            if (c == Color.FromArgb(180, 180, 180)) return HudPanel2;
+            if (c == Color.FromArgb(255, 236, 179)) return HudPanel2;
+            return c;
         }
 
         // 递归给所有控件套上蓝黑主题（按钮/复选框/下拉框/标签/面板）
@@ -1330,17 +2049,21 @@ namespace RepRecorder
                     Button b = c as Button;
                     if (b != null)
                     {
-                        bool colored = b.BackColor != SystemColors.Control && b.BackColor != Color.Empty &&
-                                       b.BackColor != HudPanel && b.BackColor != Color.Transparent;
+                        // 比色时要先把 alpha 剥掉：否则第二次 ApplyHudTheme 会把半透明色误判成"有语义色"
+                        Color bc0 = b.BackColor;
+                        bool colored = bc0 != SystemColors.Control && bc0 != Color.Empty && bc0 != Color.Transparent &&
+                                       Color.FromArgb(bc0.R, bc0.G, bc0.B) != HudPanel;
                         b.FlatStyle = FlatStyle.Flat;
                         b.FlatAppearance.BorderColor = HudLine;
                         b.FlatAppearance.BorderSize = 1;
-                        b.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 46, 84);
-                        b.FlatAppearance.MouseDownBackColor = Color.FromArgb(20, 32, 60);
-                        if (colored) b.BackColor = HudMapBack(b.BackColor);
-                        else b.BackColor = HudPanel;
-                        if (b.ForeColor != Color.White && b.ForeColor != Color.DimGray) b.ForeColor = HudText;
-                        b.Font = new Font("Microsoft YaHei UI", 9F);
+                        b.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 74, 107);
+                        b.FlatAppearance.MouseDownBackColor = Color.FromArgb(48, 62, 90);
+                        if (colored) b.BackColor = Alpha(HudMapBack(Color.FromArgb(bc0.R, bc0.G, bc0.B)), 200);
+                        else b.BackColor = Alpha(HudPanel, 195);   // 够透能看见图，又不会淡到看不清字
+                        // 灰字（「录BGM」被锁时）保留，别被刷掉
+                        if (b.ForeColor != Color.White && b.ForeColor != Color.DimGray && b.ForeColor != HudDim)
+                            b.ForeColor = HudText;
+                        b.Font = Ui(9F);
                     }
                     CheckBox cb = c as CheckBox;
                     if (cb != null)
@@ -1348,32 +2071,359 @@ namespace RepRecorder
                         cb.ForeColor = HudText;
                         cb.BackColor = Color.Transparent;
                         cb.FlatStyle = FlatStyle.Flat;
-                        cb.Font = new Font("Microsoft YaHei UI", 9F);
+                        cb.Font = Ui(9F);
                     }
                     ComboBox cmb = c as ComboBox;
-                    if (cmb != null)
-                    {
-                        cmb.FlatStyle = FlatStyle.Flat;
-                        cmb.BackColor = Color.FromArgb(18, 26, 46);
-                        cmb.ForeColor = HudText;
-                        cmb.Font = new Font("Microsoft YaHei UI", 9F);
-                    }
+                    if (cmb != null) cmb.Font = Ui(9F);   // 其余样式由 HudCombo 自己负责
                     Label lb = c as Label;
                     if (lb != null)
                     {
                         if (lb.BackColor != Color.Transparent) lb.BackColor = Color.Transparent;
-                        if (lb != hudLeftTitle && lb.ForeColor != HudAccent)
+                        if (lb.ForeColor != HudAccent && lb.ForeColor != HudAccent2)
                         {
                             bool dim = lb.ForeColor == Color.DimGray;
                             lb.ForeColor = dim ? HudDim : HudText;
                         }
                     }
                     FlowLayoutPanel flp = c as FlowLayoutPanel;
-                    if (flp != null) flp.BackColor = Color.Transparent;
+                    // 卡片（Tag="card"）：有背景图才整块透明让图透出；没图时保持实色 HudBg
+                    if (flp != null)
+                        flp.BackColor = (flp.Tag as string == "card" && Bg.Cache == null) ? HudBg : Color.Transparent;
                     Panel pn = c as Panel;
-                    if (pn != null && pn != hudTop) pn.BackColor = HudBg;
+                    // MakeFrame 造出来的面板自己要留 HudPanel 底 + 蓝色边框，别被刷成 HudBg
+                    bool isFrame = pn != null && pn.Tag is string && (string)pn.Tag == "hudframe";
+                    bool isCard = pn != null && pn.Tag is string && (string)pn.Tag == "card";
+                    // 普通 Panel（卡片标题条 / 终端收起横条等）：有背景图时整块透明让图透出，
+                    // 不再是一条条实色"黑带"；没图时保持 HudBg，不用背景的用户观感不变。
+                    if (pn != null && pn != hudTop && !isFrame && !isCard)
+                        pn.BackColor = (Bg.Cache != null) ? Color.Transparent : HudBg;
                     ApplyHudTheme(c);
                 }
+            }
+            catch { }
+        }
+
+        // 无边框但仍然是"可缩放窗口"。
+        // 只把 WS_THICKFRAME 加回来，【不加 WS_CAPTION】—— 有了 WS_CAPTION 系统就又去画标题栏了，
+        // 白改。有 WS_THICKFRAME 才有：拖边缘缩放、贴边分屏（Aero Snap）、双击顶栏最大化、
+        // 从最大化状态往下拖自动还原。这几样自己实现又脆又难测，交给系统更稳。
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                // ⚠ 这里要【保留】WS_CAPTION，不能清掉。
+                //   DWM 只把"带框窗口"当正常窗口看 —— 最小化/最大化的过渡动画、投影、圆角
+                //   都靠这个样式。清掉它（或者用 FormBorderStyle.None）窗口就变成"无框"的，
+                //   动画就没了（实测：老版本过渡帧 5 个，清掉 WS_CAPTION 的版本只有 2 个）。
+                //   标题栏之所以看不见，是靠 WM_NCCALCSIZE 把客户区撑满整个窗口实现的 ——
+                //   非客户区是零，系统根本没地方画标题栏。VS Code 那类自定义标题栏也是这么做的。
+                cp.Style |= 0x00C00000;    // WS_CAPTION = WS_BORDER | WS_DLGFRAME
+                cp.Style |= 0x00040000;    // WS_THICKFRAME   可缩放边框
+                // ⚠ WS_EX_COMPOSITED 两轮实测都不行：既压不住缩放闪，还让每次细小重绘（鼠标 hover）
+                //   都整窗走离屏合成，半透明按钮/下拉框反而"鼠标划过就闪"。防闪全靠 WndProc 里的三层冻结。
+                cp.Style |= 0x00080000;    // WS_SYSMENU      顶栏右键出系统菜单
+                cp.Style |= 0x00020000;    // WS_MINIMIZEBOX
+                cp.Style |= 0x00010000;    // WS_MAXIMIZEBOX
+                return cp;
+            }
+        }
+
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+        const int SM_CXSIZEFRAME = 32, SM_CYSIZEFRAME = 33, SM_CXPADDEDBORDER = 92;
+        [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO mi);
+        const uint MONITOR_DEFAULTTONEAREST = 2;
+        [StructLayout(LayoutKind.Sequential)]
+        struct MINMAXINFO
+        {
+            public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct NCCALCSIZE_PARAMS
+        {
+            public RECT rgrc0, rgrc1, rgrc2;
+            public IntPtr lppos;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor, rcWork;
+            public uint dwFlags;
+        }
+
+        const int WM_GETMINMAXINFO = 0x0024;
+        const int WM_NCCALCSIZE = 0x0083;
+        const int WM_NCHITTEST = 0x0084;
+        const int HTCLIENT = 1, HTCAPTION = 2;
+        const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14,
+                  HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hWnd);
+        const int GRIP = 6;        // 缩放热区宽度（客户区坐标；这台机器 300% 缩放，物理上是 18px）
+
+        protected override void WndProc(ref Message m)
+        {
+            // 保险丝：万一异常导致 WM_EXITSIZEMOVE 没送到，整棵树会卡在"禁重绘"状态、画面定格。
+            // 不在拖窗口、也不在拖分隔条，却发现还冻着 → 强制解冻。
+            if (!isResizing && !splitterDragging && paintFrozen)
+                FreezePaint(false);
+            // 拖窗口边框缩放：进入时"三层冻结"—— ①整棵控件树 WM_SETREDRAW=0 掐断重绘
+            // ②窗体+两级 SplitContainer 挂起布局（不再逐帧级联挪子控件）③背景图不画不重建；
+            // 松手按相反顺序一次性解冻 + 重建。单独任何一层都压不住（实测），三层一起才够。
+            if (m.Msg == 0x0231)             // WM_ENTERSIZEMOVE
+            {
+                isResizing = true;
+                Bg.SuspendPaint = true;      // 拖动期间所有 Bg.PaintRect 直接不画（旧尺寸大位图逐帧错位重画是闪源）
+                // 布局也冻住：窗体布局引擎一停，Dock / SplitContainer / FlowLayout 就不会逐帧级联挪子控件
+                SuspendLayout();
+                if (mainSplit != null) mainSplit.SuspendLayout();
+                if (split != null) split.SuspendLayout();
+                FreezePaint(true);
+            }
+            else if (m.Msg == 0x0232)        // WM_EXITSIZEMOVE
+            {
+                if (split != null) split.ResumeLayout(true);
+                if (mainSplit != null) mainSplit.ResumeLayout(true);
+                ResumeLayout(true);
+                FreezePaint(false);
+                isResizing = false;
+                Bg.SuspendPaint = false;
+                OnContentGeometryChanged();  // 刷新裁剪区 + 补一次背景重建
+            }
+            // 只在拖窗口期间吞掉窗体擦背景：系统每帧用底色刷新区、和子控件重画叠在一起就是闪烁。
+            // ⚠ 不能无条件吞：hover 重绘也走这条消息，全局吞掉会造成"鼠标划过就闪"（用户实测）。
+            if (m.Msg == 0x0014 && isResizing) { m.Result = (IntPtr)1; return; }   // WM_ERASEBKGND
+            if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
+            {
+                // 客户区 = 整个窗口 —— 系统标题栏就没地方画了（WS_CAPTION 虽然留着，
+                // 但非客户区是零，一条 1px 的边框都留不下）。
+                // ⚠ 不处理这段的话，窗口顶部会留一条 7px 的 #202020 深色带（实测真实屏幕和
+                //   PrintWindow 都有），正是用户要去掉的那条东西。
+                // 代价：系统自带的缩放热区没了，改由下面的 WM_NCHITTEST 自己报。
+                //
+                // 例外：最大化的时候要减掉那一圈边框。
+                //   保留了 WS_CAPTION 之后，系统给最大化窗口的矩形会比工作区大一圈
+                //   （实测 1296x688 vs 工作区 1280x672，四边各多 8px，那圈是给"拖下来还原"用的）。
+                //   客户区不跟着缩的话，内容会被屏幕四边各切掉 8px。窗口本身大一点无所谓 ——
+                //   它整个在屏幕外，看不见。
+                if (IsZoomed(Handle))
+                {
+                    NCCALCSIZE_PARAMS ncp = (NCCALCSIZE_PARAMS)Marshal.PtrToStructure(m.LParam, typeof(NCCALCSIZE_PARAMS));
+                    int fx = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    int fy = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    ncp.rgrc0.Left += fx;
+                    ncp.rgrc0.Top += fy;
+                    ncp.rgrc0.Right -= fx;
+                    ncp.rgrc0.Bottom -= fy;
+                    Marshal.StructureToPtr(ncp, m.LParam, false);
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                // ⚠ 必须先调 base：WinForms 在这里把 MinimumSize / MaximumSize 写进 ptMinTrackSize/
+                //   ptMaxTrackSize。拦下来不调 base 的话最小尺寸限制就没了（还能拖到比 760x520 更小）。
+                base.WndProc(ref m);
+                // 无边框窗口最大化时默认会连任务栏一起盖住（无边框窗口的通病）。
+                // 把"最大化"的尺寸改写成显示器【工作区】，行为就和普通窗口一模一样。
+                try
+                {
+                    IntPtr mon = MonitorFromWindow(Handle, MONITOR_DEFAULTTONEAREST);
+                    MONITORINFO mi = new MONITORINFO();
+                    mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+                    if (GetMonitorInfo(mon, ref mi))
+                    {
+                        MINMAXINFO mmi = (MINMAXINFO)Marshal.PtrToStructure(m.LParam, typeof(MINMAXINFO));
+                        mmi.ptMaxPosition.X = mi.rcWork.Left - mi.rcMonitor.Left;
+                        mmi.ptMaxPosition.Y = mi.rcWork.Top - mi.rcMonitor.Top;
+                        mmi.ptMaxSize.X = mi.rcWork.Right - mi.rcWork.Left;
+                        mmi.ptMaxSize.Y = mi.rcWork.Bottom - mi.rcWork.Top;
+                        Marshal.StructureToPtr(mmi, m.LParam, false);
+                        m.Result = IntPtr.Zero;
+                    }
+                }
+                catch { }
+                return;
+            }
+            if (m.Msg == WM_NCHITTEST)
+            {
+                // ⚠ lParam 是【屏幕坐标】，x 在低 16 位、y 在高 16 位；必须按 short 取，
+                //   否则副屏/负坐标会被解成很大的正数。
+                int lp = m.LParam.ToInt32();
+                Point cp = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+
+                // 1) 四条边 + 四个角 = 缩放热区。
+                //    WM_NCCALCSIZE 把系统那圈边框去掉了，热区只能自己报，否则窗口拖不动大小。
+                //    最大化时不许缩放（和系统行为一致）。
+                if (!IsZoomed(Handle))
+                {
+                    bool l = cp.X < GRIP, r = cp.X >= ClientSize.Width - GRIP;
+                    bool t = cp.Y < GRIP, b = cp.Y >= ClientSize.Height - GRIP;
+                    if (t && l) { m.Result = (IntPtr)HTTOPLEFT; return; }
+                    if (t && r) { m.Result = (IntPtr)HTTOPRIGHT; return; }
+                    if (b && l) { m.Result = (IntPtr)HTBOTTOMLEFT; return; }
+                    if (b && r) { m.Result = (IntPtr)HTBOTTOMRIGHT; return; }
+                    if (l) { m.Result = (IntPtr)HTLEFT; return; }
+                    if (r) { m.Result = (IntPtr)HTRIGHT; return; }
+                    if (t) { m.Result = (IntPtr)HTTOP; return; }
+                    if (b) { m.Result = (IntPtr)HTBOTTOM; return; }
+                }
+
+                // 2) 顶栏空白处当"标题栏"用：能按住拖窗口、双击最大化、右键出系统菜单。
+                //    落在顶栏上的按钮上就不返回 HTCAPTION，否则按钮点不动。
+                if (hudTop != null && cp.Y >= 0 && cp.Y < hudTop.Height && !OverTopBarButton(cp))
+                {
+                    m.Result = (IntPtr)HTCAPTION;
+                    return;
+                }
+
+                base.WndProc(ref m);
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        // 这个点（窗体客户区坐标）是不是落在顶栏的某个按钮上。
+        // 落在按钮上的必须放行给按钮自己处理，不能当成"拖标题栏"。
+        bool OverTopBarButton(Point clientPt)
+        {
+            try
+            {
+                if (hudTop == null) return false;
+                Point inTop = hudTop.PointToClient(PointToScreen(clientPt));
+                foreach (Control c in hudTop.Controls)
+                    if ((c is ButtonBase || c is HudCapButton) && c.Bounds.Contains(inTop)) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        // ---------------------------------------------------------------- 无边框窗口：子窗口协作
+        // ⚠ 这是这次改造最难的一处，踩坑记录：
+        //   WM_NCHITTEST 不是发给顶层窗口的，而是发给【光标底下那个子窗口】的。
+        //   顶栏是个 Panel、四条边上盖着 SplitContainer 的子面板、还有状态栏和活动栏 ——
+        //   实测每个"装饰区"坐标底下都是子窗口。子窗口自己回 HTCLIENT，点击当场被吃掉，
+        //   顶层 WndProc 根本轮不到（真实拖动期间一条 NCHITTEST 日志都没有）。
+        //   办法：给落在装饰区里的子窗口装钩子，命中装饰区时一律回 HTTRANSPARENT。
+        //   HTTRANSPARENT 的文档语义正是我们要的 ——"消息继续交给同线程底下那层窗口，
+        //   直到某个窗口返回别的值"，最终就落到窗体自己的 WndProc 上，
+        //   于是移动/缩放的还是系统原生那套循环（Aero Snap、双击最大化、拖下来还原都还在）。
+        class ChromeHook : NativeWindow
+        {
+            readonly MainForm form;
+            public ChromeHook(MainForm f) { form = f; }
+            protected override void WndProc(ref Message m)
+            {
+                if (m.Msg == WM_NCHITTEST)
+                {
+                    try
+                    {
+                        if (form.ChromeHit(m.LParam) != 0) { m.Result = (IntPtr)(-1); return; }   // HTTRANSPARENT
+                    }
+                    catch { }
+                }
+                base.WndProc(ref m);
+            }
+        }
+
+        readonly List<ChromeHook> chromeHooks = new List<ChromeHook>();
+
+        // 这条屏幕坐标算哪种"窗口装饰"：顶栏空白 = HTCAPTION，四条边/四角 = 缩放，其它 = 0。
+        // 窗体和子窗口的钩子共用同一套判断，保证两边结论一致。
+        int ChromeHit(IntPtr lParam)
+        {
+            try
+            {
+                int lp = lParam.ToInt32();
+                Point cp = PointToClient(new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF)));
+                if (!IsZoomed(Handle))
+                {
+                    bool l = cp.X < GRIP, r = cp.X >= ClientSize.Width - GRIP;
+                    bool t = cp.Y < GRIP, b = cp.Y >= ClientSize.Height - GRIP;
+                    if (t && l) return HTTOPLEFT;
+                    if (t && r) return HTTOPRIGHT;
+                    if (b && l) return HTBOTTOMLEFT;
+                    if (b && r) return HTBOTTOMRIGHT;
+                    if (l) return HTLEFT;
+                    if (r) return HTRIGHT;
+                    if (t) return HTTOP;
+                    if (b) return HTBOTTOM;
+                }
+                if (hudTop != null && cp.Y >= 0 && cp.Y < hudTop.Height && !OverTopBarButton(cp)) return HTCAPTION;
+            }
+            catch { }
+            return 0;
+        }
+
+        // 重装所有钩子。布局定下来之后调用；重复调用没关系（先摘再装）。
+        void InstallChromeHooks()
+        {
+            foreach (ChromeHook hk in chromeHooks) { try { hk.ReleaseHandle(); } catch { } }
+            chromeHooks.Clear();
+            try { InstallChromeHooks(this); } catch { }
+        }
+
+        void InstallChromeHooks(Control root)
+        {
+            foreach (Control c in root.Controls)
+            {
+                try
+                {
+                    if (c.IsHandleCreated && TouchesChrome(c))
+                    {
+                        ChromeHook hk = new ChromeHook(this);
+                        hk.AssignHandle(c.Handle);
+                        chromeHooks.Add(hk);
+                    }
+                }
+                catch { }
+                InstallChromeHooks(c);
+            }
+        }
+
+        // 这个控件的矩形有没有碰到"装饰区"（四条边的热区 + 整条顶栏）。
+        // 只给碰到的装钩子，省得给几百个控件都套一层。
+        bool TouchesChrome(Control c)
+        {
+            try
+            {
+                Rectangle b = RectangleToClient(c.Parent.RectangleToScreen(c.Bounds));
+                int w = ClientSize.Width, h = ClientSize.Height;
+                if (hudTop != null && b.IntersectsWith(new Rectangle(0, 0, w, hudTop.Height))) return true;
+                if (b.IntersectsWith(new Rectangle(0, 0, w, GRIP))) return true;              // 上边
+                if (b.IntersectsWith(new Rectangle(0, h - GRIP, w, GRIP))) return true;      // 下边
+                if (b.IntersectsWith(new Rectangle(0, 0, GRIP, h))) return true;             // 左边
+                if (b.IntersectsWith(new Rectangle(w - GRIP, 0, GRIP, h))) return true;      // 右边
+            }
+            catch { }
+            return false;
+        }
+
+        // 三个窗口按钮贴在顶栏右上角，整条顶栏高
+        void LayoutCaptionButtons()
+        {
+            try
+            {
+                if (hudTop == null || btnMin == null) return;
+                int h = hudTop.Height;
+                btnClose.SetBounds(hudTop.Width - CAPBTN_W, 0, CAPBTN_W, h);
+                btnMax.SetBounds(hudTop.Width - CAPBTN_W * 2, 0, CAPBTN_W, h);
+                btnMin.SetBounds(hudTop.Width - CAPBTN_W * 3, 0, CAPBTN_W, h);
+            }
+            catch { }
+        }
+
+        // 最大化状态变了 → 中间那个按钮在「最大化」和「还原」两种图标之间切换
+        void SyncCaptionButtons()
+        {
+            try
+            {
+                if (btnMax == null) return;
+                bool max = (WindowState == FormWindowState.Maximized);
+                if (btnMax.Maximized != max) { btnMax.Maximized = max; btnMax.Invalidate(); }
+                LayoutCaptionButtons();
             }
             catch { }
         }
@@ -1387,6 +2437,885 @@ namespace RepRecorder
                 int on = 1;
                 DwmSetWindowAttribute(Handle, 20, ref on, sizeof(int));
                 DwmSetWindowAttribute(Handle, 19, ref on, sizeof(int));
+                // 现在没有系统标题栏了，但 WS_THICKFRAME 还会让 DWM 在窗口外围留 1px 边框，
+                // 默认跟着深色模式渲成近黑 —— 在 #4A4C54 的顶栏边上照样扎眼。直接染成顶栏色。
+                int border = ColorTranslator.ToWin32(HudPanel);   // COLORREF 是 0x00BBGGRR
+                DwmSetWindowAttribute(Handle, 34, ref border, sizeof(int));   // DWMWA_BORDER_COLOR
+                int round = 2;                                                 // DWMWCP_ROUND
+                DwmSetWindowAttribute(Handle, 33, ref round, sizeof(int));    // DWMWA_WINDOW_CORNER_PREFERENCE
+            }
+            catch { }
+        }
+
+        // ============================================================ 背景图
+        // 按摆放方式把原图摆进 dst 矩形；ox/oy 是额外位移（像素，来自 X/Y 轴滑杆）
+        static void DrawImageByLayout(Graphics g, Image img, Rectangle dst, string layout, int ox, int oy)
+        {
+            if (img == null || dst.Width <= 0 || dst.Height <= 0) return;
+            if (layout == "stretch")
+            {
+                // 拉伸是铺满整块的，位移只能靠"整体挪一下、超出部分裁掉"
+                g.DrawImage(img, new Rectangle(dst.X + ox, dst.Y + oy, dst.Width, dst.Height));
+                return;
+            }
+            if (layout == "center")
+            {
+                g.DrawImage(img, new Rectangle(dst.X + (dst.Width - img.Width) / 2 + ox,
+                                               dst.Y + (dst.Height - img.Height) / 2 + oy,
+                                               img.Width, img.Height));
+                return;
+            }
+            if (layout == "tile")
+            {
+                // 平铺：位移就是"从哪开始铺"，用取模保证图样连续
+                int sx = dst.X + (ox % img.Width);
+                int sy = dst.Y + (oy % img.Height);
+                for (int y = sy - img.Height; y < dst.Bottom; y += img.Height)
+                    for (int x = sx - img.Width; x < dst.Right; x += img.Width)
+                        g.DrawImage(img, x, y, img.Width, img.Height);
+                return;
+            }
+            // fill：等比放大到填满，多出来的裁掉（不变形）；fit：等比缩到能完整放下（可能留边）
+            double s = (layout == "fit")
+                ? Math.Min((double)dst.Width / img.Width, (double)dst.Height / img.Height)
+                : Math.Max((double)dst.Width / img.Width, (double)dst.Height / img.Height);
+            int w = Math.Max(1, (int)Math.Round(img.Width * s));
+            int h = Math.Max(1, (int)Math.Round(img.Height * s));
+            g.DrawImage(img, new Rectangle(dst.X + (dst.Width - w) / 2 + ox, dst.Y + (dst.Height - h) / 2 + oy, w, h));
+        }
+
+        // 模糊：先缩小再放大（GDI+ 没有自带模糊，这招又快又够用）
+        static Bitmap BlurBitmap(Bitmap src, int radius)
+        {
+            int f = Math.Max(2, radius / 3 + 2);
+            int sw = Math.Max(1, src.Width / f), sh = Math.Max(1, src.Height / f);
+            using (Bitmap small = new Bitmap(sw, sh, PixelFormat.Format32bppArgb))
+            {
+                using (Graphics g = Graphics.FromImage(small))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                    g.DrawImage(src, new Rectangle(0, 0, sw, sh), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel);
+                }
+                Bitmap big = new Bitmap(src.Width, src.Height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(big))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(small, new Rectangle(0, 0, src.Width, src.Height), 0, 0, sw, sh, GraphicsUnit.Pixel);
+                }
+                return big;
+            }
+        }
+
+        // 右侧内容区（队列 + 终端那一块）在"窗体客户区"坐标系里的矩形。
+        // 背景图就铺在这一块里；左栏控制面板不在其中，所以不会被图覆盖。
+        // 面板收起/拖窄时 Panel2 会变宽 → 这个矩形跟着变 → 图跟着铺满（用户要的行为）。
+        Rectangle ContentRect()
+        {
+            try
+            {
+                Control p = mainSplit.Panel2;
+                Rectangle scr = p.RectangleToScreen(p.ClientRectangle);
+                Point tl = PointToClient(scr.Location);
+                if (scr.Width > 0 && scr.Height > 0) return new Rectangle(tl.X, tl.Y, scr.Width, scr.Height);
+            }
+            catch { }
+            return new Rectangle(0, 0, ClientSize.Width, ClientSize.Height);
+        }
+
+        // 背景图的目标范围：content = 只铺右侧内容区（默认）；global = 全局铺满整个窗口（控制面板也透图）。
+        // 建缓存、算裁剪区都走这里，切范围时只改 cfg.BgScope 就行。
+        Rectangle BgTargetRect()
+        {
+            if (cfg.BgScope == "global") return new Rectangle(Point.Empty, ClientSize);
+            return ContentRect();
+        }
+
+        // 下拉框选完之后整片蓝底不消（用户报的 bug）。
+        // ⚠ 试过把 SelectionLength 归零，没用 —— 那不是"文字选中"，是**焦点渲染**：
+        //   DropDownList 组合框只要还有焦点，系统就会把当前项画成高亮，按不掉。
+        //   正解是把焦点交出去。用 BeginInvoke 推迟一拍，等 WinForms 自己处理完再交。
+        void UpdateMemHint()
+        {
+            if (lblMemHint == null) return;
+            int n = Math.Max(1, Math.Min(6, cfg.ParallelCount));
+            double gb = n * 550 / 1024.0;
+            lblMemHint.Text = "约 " + gb.ToString("0.0") + " GB";
+        }
+
+        // 左栏自适应：拖宽控制面板时，卡片拉伸到视口宽、队列/环境按钮均分一行、大按钮铺满整行
+        void LayoutCardWidth()
+        {
+            if (leftView == null || hudCards == null) return;
+            try
+            {
+                int w = leftView.ClientSize.Width - leftScroll.Width - 12;   // 卡片目标宽 = 视口 - 滚动条 - 余量
+                if (w < 300) w = 300;
+                foreach (FlowLayoutPanel card in hudCards)
+                {
+                    card.MinimumSize = new Size(w, 0);   // AutoSize 卡片的宽度下限，拖窄也不会比 300 小
+                    card.Width = w;
+                }
+                foreach (Panel t in hudTitles) t.Width = w - 8;          // 标题分隔线跟着卡片走
+                int inner = w - 16;                                      // 卡片内宽（左右 Padding 4+4）
+                foreach (Control c in hudFull) c.Width = inner - 4;      // 大按钮铺满整行（扣自身 Margin）
+                foreach (FlowLayoutPanel row in hudRows)
+                {
+                    int n = row.Controls.Count;
+                    if (n == 0) continue;
+                    int bw = (inner - n * 4) / n;                        // 每枚按钮均分行宽（Margin 2+2）
+                    foreach (Control b in row.Controls) b.Width = bw;
+                }
+                if (cbMic != null && lblMic != null && lblMic.Width > 0)
+                    cbMic.Width = inner - lblMic.Width - 14;             // 录音模式下拉也铺满
+            }
+            catch { }
+        }
+
+        void ClearComboHighlight(ComboBox cb)
+        {
+            if (cb == null) return;
+            try
+            {
+                cb.SelectionLength = 0;
+                if (!cb.Focused) return;          // 程序初始化设值时不要抢焦点
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    try { if (cb.Focused) ActiveControl = null; }   // 焦点还给窗体本身，不留任何控件高亮
+                    catch { }
+                });
+            }
+            catch { }
+        }
+
+        // ---- 滚轮分流（WheelRouter 调进来的）----
+        // 返回 true = 这条滚轮消息我们吃掉了（别再往下发）。
+        // 判断顺序：先看光标是不是压在【自绘滚动条自己】身上（那三条是 list/leftView 的兄弟控件，
+        // 不在它们的客户区里，不单独判就永远轮不到），再按区域分。
+        internal bool RouteWheel(int delta, Point screenPt)
+        {
+            try
+            {
+                int clicks = delta / 120;          // 一格 120；高精度滚轮可能给出 ±40 这种，除以 120 就是 0
+                if (clicks == 0) return false;
+                // 队列：自绘滚动条 /
+                if (listScroll != null && listScroll.Visible && OverControl(listScroll, screenPt))
+                {
+                    listScroll.Value -= clicks * 3;   // 与光标压在列表上时同一步长
+                    return true;
+                }
+                // 左栏：自绘滚动条
+                if (leftScroll != null && leftScroll.Visible && OverControl(leftScroll, screenPt))
+                {
+                    leftScroll.Value -= clicks * 3 * 20;
+                    leftScroll.Flash();          // 左栏那条平时藏着，滚的时候要把它叫出来
+                    return true;
+                }
+                // 队列列表本体
+                if (list != null && listScroll != null && listScroll.Visible && OverControl(list, screenPt))
+                {
+                    listScroll.Value -= clicks * 3;
+                    return true;
+                }
+                // 左栏视口（换了自绘滚动条之后 AutoScroll 没了，滚轮得自己转发）
+                if (leftView != null && leftScroll != null && leftScroll.Visible && OverControl(leftView, screenPt))
+                {
+                    leftScroll.Value -= clicks * 3 * 20;
+                    leftScroll.Flash();          // 同上：滚的时候让它露一下脸
+                    return true;
+                }
+                // 终端。它的自绘滚动条是 BgLogView 的【子控件】，落在 logBox 客户区里，
+                // 所以压在条上也会走到这里 —— 正是想要的（压条 = 滚终端）。
+                if (logBox != null && OverControl(logBox, screenPt))
+                {
+                    logBox.ScrollBy(clicks);
+                    return true;
+                }
+                // 滚轮停在下拉框上不要改它的值（WinForms 默认会一格格改，用户实测把 6 滚成了 1）
+                if (OverControl(cbParallel, screenPt) || OverControl(cbMic, screenPt)) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        // 光标（屏幕坐标）是不是停在这个控件身上。顺带挡掉没建句柄/不可见的控件。
+        static bool OverControl(Control c, Point screenPt)
+        {
+            if (c == null || !c.IsHandleCreated || !c.Visible) return false;
+            try { return c.ClientRectangle.Contains(c.PointToClient(screenPt)); }
+            catch { return false; }
+        }
+
+        // ---- 自绘滚动条的同步 ----
+        // 左栏：内容比视口高就出现滑块，滑块值 = 内容上移多少像素
+        // SplitContainer 的 DoubleBuffered 是 protected，只能反射打开。
+        // 打开后拖分割线/窗口缩放时分隔条和底色的重绘走缓冲，闪烁显著减少。
+        static void BufferSplitter(Control c)
+        {
+            try
+            {
+                System.Reflection.PropertyInfo p = typeof(Control).GetProperty("DoubleBuffered",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (p != null) p.SetValue(c, true, null);
+            }
+            catch { }
+        }
+
+        // 拖分割线时冻结整棵窗口树的重绘，松手后一次性刷新 —— 背景图和所有控件都不闪（用户实测的闪烁）
+        bool paintFrozen = false;
+        // ⚠ LockWindowUpdate 实测压不住缩放闪烁：它只挡 WM_PAINT，挡不住子控件自己往屏幕画。
+        //   换成对【整棵控件树】逐个发 WM_SETREDRAW=0 —— 这才是真正把重绘掐断的做法。
+        void SetRedrawTree(bool on)
+        {
+            IntPtr v = on ? (IntPtr)1 : IntPtr.Zero;
+            try { if (IsHandleCreated) SendMessage(Handle, 0x000B, v, IntPtr.Zero); } catch { }
+            foreach (Control c in AllControls(this))
+                try { if (c.IsHandleCreated) SendMessage(c.Handle, 0x000B, v, IntPtr.Zero); } catch { }
+        }
+
+        void FreezePaint(bool freeze)
+        {
+            try
+            {
+                if (freeze)
+                {
+                    if (!paintFrozen && IsHandleCreated) { SetRedrawTree(false); paintFrozen = true; }
+                }
+                else
+                {
+                    // 不强制 Update()：同步重绘会和缩放模态循环抢帧；交给正常绘制周期一次性刷出来
+                    if (paintFrozen) { SetRedrawTree(true); paintFrozen = false; Invalidate(true); }
+                }
+            }
+            catch { }
+        }
+
+        void SyncLeftScroll(bool unused)
+        {
+            if (syncingLeft) return;
+            syncingLeft = true;
+            try
+            {
+                if (leftScroll == null || top == null || leftView == null) return;
+                int viewW = leftView.ClientSize.Width;
+                int viewH = leftView.ClientSize.Height;
+                if (viewW <= 0 || viewH <= 0) return;
+                int contentH = Math.Max(top.Height, top.PreferredSize.Height);
+                int maxV = Math.Max(0, contentH - viewH);
+                leftScroll.LargeChange = Math.Max(1, viewH);
+                leftScroll.Maximum = maxV;
+                bool need = maxV > 0;
+                if (leftScroll.Visible != need) leftScroll.Visible = need;
+                // 内容至少铺满视口宽（AutoSize 面板的宽是内容撑的，不撑满会露出缝）
+                Size ms = top.MinimumSize;
+                if (ms.Width != viewW) top.MinimumSize = new Size(viewW, 0);
+                if (top.Top != -leftScroll.Value) top.Top = -leftScroll.Value;
+            }
+            catch { }
+            finally { syncingLeft = false; }
+        }
+
+        // 队列列表：行数比可见行多就出现滑块；拖动它 → 用 TopItem 把对应那行顶到最上面
+        [DllImport("user32.dll")] static extern int ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr w, IntPtr l);
+
+        // 藏掉队列列表的原生滚动条 —— **竖向和横向两条都要藏**（但保留 WS_VSCROLL，滚动能力才在）。
+        // ⚠ 只藏 SB_VERT 是不够的：列宽加起来超过客户区宽时 comctl32 会再弹一条**横向**原生滚动条，
+        //   那条又丑、滚轮停在它上面还会变成"左右滚"（用户实测）。所以这里用 SB_BOTH。
+        // comctl32 在内容/滚动状态变化时会自己再把它显出来，所以每次同步滚动条时都补一刀。
+        void HideNativeListScrollbar()
+        {
+            try
+            {
+                if (list == null || !list.IsHandleCreated) return;
+                ShowScrollBar(list.Handle, 3 /*SB_BOTH*/, false);
+                // 万一列还是比客户区宽（窗口被拖得很窄），横向滚动范围就又存在了：comctl32 选中某行时会
+                // 自己横向挪一下，而横条已经被藏掉 —— 挪过去就回不来。这种时候把它按回最左边。
+                int used = 0;
+                for (int i = 0; i < list.Columns.Count - 1; i++) used += list.Columns[i].Width;
+                if (used + 80 > list.ClientSize.Width)
+                    SendMessage(list.Handle, 0x1014 /*LVM_SCROLL*/, (IntPtr)(-10000), IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        // 列宽自适应，**保证列加起来永远不超过客户区宽** —— 这是"原生横条 / 滚轮当左右滚 /
+        // 选中某行时自己横向挪走"这一串问题的总根：只要没有横向滚动范围，它们全都不存在。
+        // 规则：文件列优先 290、窄了压到 120；说明列吃掉剩下的，太宽（>360）就把多余的还给文件列。
+        void FitListColumns()
+        {
+            try
+            {
+                if (list == null || !list.IsHandleCreated || list.Columns.Count < 6) return;
+                int clientW = list.ClientSize.Width;
+                if (clientW <= 0) return;
+                const int iFile = 1, iDesc = 5;
+                int others = 0;
+                for (int i = 0; i < list.Columns.Count; i++)
+                    if (i != iFile && i != iDesc) others += list.Columns[i].Width;
+                int avail = clientW - others - 2;                       // 留给 文件 + 说明 的宽度
+                int fileW = Math.Min(290, Math.Max(120, avail - 90));
+                int descW = avail - fileW;
+                if (descW > 360) { fileW = Math.Min(420, fileW + (descW - 360)); descW = 360; }
+                if (descW < 60) descW = 60;
+                if (list.Columns[iFile].Width != fileW) list.Columns[iFile].Width = fileW;
+                if (list.Columns[iDesc].Width != descW) list.Columns[iDesc].Width = descW;
+            }
+            catch { }
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct HRect { public int L, T, R, B; }
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out HRect r);
+
+        // 表头（"# 文件 状态 …"那一行）的高度。
+        // ⚠ ListView 的 ClientSize 把表头也算在客户区里，算"能放几行条目"时必须扣掉它，
+        //   否则会多算一行 → 滚动条的最大值少一行 → 最后一行永远滚不出完整的一行。
+        //   实测：374 高的列表，代码算成 18 行、实际只放得下 17 行，滚到底时第 20 行被底边切掉一半。
+        int ListHeaderHeight()
+        {
+            try
+            {
+                if (list == null || !list.IsHandleCreated) return 0;
+                IntPtr hdr = SendMessage(list.Handle, 0x101F /*LVM_GETHEADER*/, IntPtr.Zero, IntPtr.Zero);
+                if (hdr == IntPtr.Zero) return 0;
+                HRect r;
+                if (!GetWindowRect(hdr, out r)) return 0;
+                return Math.Max(0, r.B - r.T);
+            }
+            catch { return 0; }
+        }
+
+        void SyncListScroll()
+        {
+            if (syncingList) return;
+            syncingList = true;
+            try
+            {
+                FitListColumns();
+                HideNativeListScrollbar();
+                if (listScroll == null || list == null) return;
+                int rowH = 20;
+                try { if (list.Items.Count > 0) rowH = Math.Max(1, list.GetItemRect(0).Height); } catch { }
+                // ⚠ 表头（"# 文件 状态 …"那一行）也占着客户区，但它不是条目行 ——
+                //   不扣掉它，"能放几行"就会多算一行，滚动条最大值少一行，
+                //   结果【最后一行永远只能露出一半】（实测 374 高的列表：代码算 18 行，实际只放得下 17 行，
+                //   滚到底时第 20 行被底边切掉一半 —— 用户报的"少了最后一行"）。
+                int viewH = list.ClientSize.Height - ListHeaderHeight();
+                int visible = Math.Max(1, viewH / Math.Max(1, rowH));
+                int maxV = Math.Max(0, list.Items.Count - visible);
+                listScroll.LargeChange = visible;
+                listScroll.Maximum = maxV;
+                bool need = maxV > 0;
+                if (listScroll.Visible != need) listScroll.Visible = need;
+                if (listScroll.Value > maxV) listScroll.Value = maxV;
+            }
+            catch { }
+            finally { syncingList = false; }
+        }
+
+        // 列表自己滚动过（键盘、EnsureVisible）之后，把滑块位置对回来
+        void ListScrollFollow()
+        {
+            try
+            {
+                if (listScroll == null || list == null || list.Items.Count == 0) return;
+                ListViewItem t = list.TopItem;
+                int idx = (t == null) ? 0 : t.Index;
+                syncingList = true;
+                listScroll.Value = Math.Min(idx, listScroll.Maximum);
+                syncingList = false;
+            }
+            catch { syncingList = false; }
+        }
+
+        // 内容区变了（面板收起/拖动/窗口缩放）就重排背景图，防抖 200ms
+        void ScheduleBgRebuild()
+        {
+            // 拖窗口期间不排重建：200ms 定时器会在拖动中途 fire，重建大位图 + 全窗重绘 = 闪烁源头。
+            // 松手时 WM_EXITSIZEMOVE 会补调一次 OnContentGeometryChanged → 这里再排上。
+            if (isResizing) return;
+            if (bgTimer == null) return;
+            try { bgTimer.Stop(); bgTimer.Start(); }
+            catch { }
+        }
+
+        // 右侧内容区几何变了：拖分割线、收起/展开面板、窗口缩放都会走到这里。
+        // 两件事都要做，缺一不可：
+        //   1) **立刻**刷新 Bg.Clip —— 图绝不越出内容区，哪怕缓存还是旧的那张；
+        //   2) 防抖后重建缓存 —— 修正图的缩放与位移。拖动时每帧重建一张上千像素的位图太慢，所以延后。
+        void OnContentGeometryChanged()
+        {
+            try
+            {
+                // ⚠ 最小化的时候 mainSplit.Panel2 的屏幕矩形是 (-32000,-32000) 那一套，
+                //   ContentRect() 换算出来是垃圾值。不加判断就写进 Bg.Clip 的话，
+                //   从任务栏恢复的那一瞬间图会被整块裁掉 —— 又是一次闪。
+                //   所以这里挡住两种坏值：最小化状态，和算出来根本不在窗口范围内的矩形。
+                if (WindowState != FormWindowState.Minimized)
+                {
+                    Rectangle cr = BgTargetRect();
+                    if (cr.Width > 0 && cr.Height > 0 &&
+                        cr.Right <= ClientSize.Width + 8 && cr.Bottom <= ClientSize.Height + 8)
+                        Bg.Clip = cr;
+                }
+                // 左栏在 FixedPanel.Panel1 下不会因为拖分割线改尺寸（变的只有右栏），
+                // 所以刚才渗上去的旧图不会自己消失 —— 得主动让它重画一遍。
+                // 拖窗口期间例外：这时候正冻结重绘，再主动失效等于把冻结捅漏（缩放闪烁的帮凶）。
+                if (mainSplit != null && !isResizing) mainSplit.Panel1.Invalidate(true);
+            }
+            catch { }
+            ScheduleBgRebuild();
+        }
+
+        // 重建整张背景（窗口大小变了、或者设置改了，都要重建）
+        void RebuildBackground()
+        {
+            try
+            {
+                // 最小化时不重建：这时候算出来的内容区是垃圾值（窗口被挪到 -32000,-32000），
+                // 重建出来只会是错的。恢复的时候会再触发一次。
+                if (WindowState == FormWindowState.Minimized) return;
+                // ⚠ 不能像以前那样先把 Bg.Cache 置空再重建。
+                //   重建要做双三次缩放 + 模糊 + alpha 合成，这几十~一百多毫秒里所有面板
+                //   都只能画纯色 —— 用户报的"从任务栏恢复时背景图一闪"就是这么来的
+                //   （实测：恢复后 0~100ms 内容是纯底色，150ms 才回来）。
+                //   改成先建好新的、整体换上去，最后才释放旧的：任何一帧都有图可画。
+                Bitmap oldCache = Bg.Cache;
+                BackgroundImage = null;                       // 图不再铺在窗体上，只铺在右侧内容区
+                BackgroundImageLayout = ImageLayout.None;
+                // 图的覆盖范围：默认只铺右侧内容区（队列+终端）；global 模式铺满整个窗口（控制面板也透图）
+                Rectangle cr = BgTargetRect();
+                int w = cr.Width, h = cr.Height;
+                if (w <= 0 || h <= 0) return;
+                Bg.CacheOrigin = cr.Location;
+                Bg.Clip = cr;                                 // 裁剪区和缓存同源，任何时候都不会互相打架
+                if (string.IsNullOrEmpty(cfg.BgImage) || !File.Exists(cfg.BgImage))
+                {
+                    Bg.Cache = null;
+                    if (oldCache != null) { try { oldCache.Dispose(); } catch { } }
+                    RefreshAllBg();
+                    return;
+                }
+
+                // 原图只在换路径时读一次
+                if (bgSource == null || bgSourcePath != cfg.BgImage)
+                {
+                    if (bgSource != null) { bgSource.Dispose(); bgSource = null; }
+                    // 用 FileStream 读，读完就关，不会把用户的图片文件锁住
+                    using (FileStream fs = new FileStream(cfg.BgImage, FileMode.Open, FileAccess.Read))
+                    using (Image tmp = Image.FromStream(fs))
+                        bgSource = new Bitmap(tmp);   // 复制一份，脱离流
+                    bgSourcePath = cfg.BgImage;
+                }
+
+                Bitmap laid = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(laid))
+                {
+                    g.Clear(HudBg);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    // X/Y 轴位移按"窗口尺寸的百分比"存，这样换窗口大小也能保持相对位置
+                    int ox = (int)Math.Round(w * cfg.BgOffsetX / 100.0);
+                    int oy = (int)Math.Round(h * cfg.BgOffsetY / 100.0);
+                    DrawImageByLayout(g, bgSource, new Rectangle(0, 0, w, h), cfg.BgLayout, ox, oy);
+                }
+                if (cfg.BgBlur > 0) { Bitmap b = BlurBitmap(laid, cfg.BgBlur); laid.Dispose(); laid = b; }
+
+                // 不透明度：把图按 alpha 混到 HudBg 上（这样"越透明越接近底色"，而不是越透明越像破洞）
+                int a = cfg.BgOpacity; if (a < 0) a = 0; if (a > 100) a = 100;
+                Bitmap mixed = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(mixed))
+                {
+                    g.Clear(HudBg);
+                    if (a > 0)
+                    {
+                        ImageAttributes ia = new ImageAttributes();
+                        ColorMatrix cm = new ColorMatrix();
+                        cm.Matrix33 = a / 100f;                 // 整体 alpha 缩放
+                        ia.SetColorMatrix(cm);
+                        g.DrawImage(laid, new Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel, ia);
+                        ia.Dispose();
+                    }
+                }
+                laid.Dispose();
+                Bg.Cache = mixed;                       // 新图就位
+                if (oldCache != null) { try { oldCache.Dispose(); } catch { } }   // 旧图现在才能扔
+                RefreshAllBg();
+            }
+            catch (Exception ex)
+            {
+                Log.Write("背景图加载失败：" + ex.Message);
+                // 出错了就留着旧的那张 —— 总比整片变成纯色好
+                RefreshAllBg();
+            }
+        }
+
+        // 让所有容器重画背景
+        void RefreshAllBg()
+        {
+            SyncBgTheme();
+            try { Invalidate(true); } catch { }
+            foreach (Control c in AllControls(this))
+                if (c is BgPanel || c is BgFlowPanel) { try { c.Invalidate(); } catch { } }
+            // 设计图（图二）：卡片和窗口底色【统一】，不再亮一档 —— 结构全靠描边/分隔线撑。
+            // 有背景图时卡片整块【透明】：图从父链（top/leftView 都是 Bg 面板）完整透出来，
+            // 不再是一块块实色"黑框"挡住全屏背景（用户要求）。没图时保持实色 HudBg，观感不变。
+            if (hudCards != null)
+            {
+                foreach (Control card in hudCards)
+                {
+                    card.BackColor = (Bg.Cache != null) ? Color.Transparent : HudBg;
+                    try { card.Invalidate(); } catch { }
+                }
+            }
+        }
+
+        // "有没有背景图"这个状态变了，才重新套一遍主题。
+        // ⚠ 不能每次重建都套：ApplyHudTheme 会给每个控件 new Font(...)，拖滑杆时会被调上千次，GDI 句柄会漏。
+        static bool bgThemeApplied = false;
+        void SyncBgTheme()
+        {
+            bool has = (Bg.Cache != null);
+            if (has == bgThemeApplied) return;
+            bgThemeApplied = has;
+            ApplyHudTheme(this);
+            try { if (status != null) status.BackColor = Alpha(HudBg, 170); } catch { }
+        }
+
+        static IEnumerable<Control> AllControls(Control root)
+        {
+            foreach (Control c in root.Controls)
+            {
+                yield return c;
+                foreach (Control d in AllControls(c)) yield return d;
+            }
+        }
+
+        // 窗口不透明度：**固定 100%**。
+        // 用户要求「文字透明度不变，只有背景图片透明度变」。
+        // ⚠ 说清楚：窗口级 alpha（Form.Opacity）是让"桌面透出来"的唯一手段，而它一定会连文字一起变淡 ——
+        //   这是 Windows 的合成方式决定的，不是调节参数能绕开的。所以这里干脆不用它，
+        //   透明度交给「图片不透明度」那一根滑杆（它只影响背景图，完全不碰文字）。
+        void ApplyWindowOpacity()
+        {
+            try { Opacity = 1.0; }
+            catch { }
+        }
+
+        // ---------------------------------------------------- 背景设置对话框
+        // 一行滑杆：标题 + 滑杆 + 实时数值
+        TrackBar MakeSlider(Control host, int y, string title, int min, int max, int val, string suffix, EventHandler onValue)
+        {
+            Label t = new Label();
+            t.Text = title; t.SetBounds(16, y + 4, 96, 20); t.ForeColor = HudText;
+            TrackBar bar = new TrackBar();
+            bar.SetBounds(112, y - 5, 320, 34);
+            bar.Minimum = min; bar.Maximum = max;
+            bar.TickFrequency = Math.Max(1, (max - min) / 10);
+            bar.Value = Math.Min(max, Math.Max(min, val));
+            bar.BackColor = HudBg;
+            Label v = new Label();
+            v.Text = bar.Value + suffix;
+            v.SetBounds(440, y + 4, 82, 20);
+            v.ForeColor = HudAccent2;
+            bar.ValueChanged += delegate
+            {
+                v.Text = bar.Value + suffix;
+                if (onValue != null) onValue(bar, EventArgs.Empty);
+            };
+            host.Controls.Add(t); host.Controls.Add(bar); host.Controls.Add(v);
+            return bar;
+        }
+
+        void OnBackgroundSettings()
+        {
+            // 滑杆是实时预览的，所以先把原值留一份，「取消」时原样还回去
+            string oImg = cfg.BgImage, oLay = cfg.BgLayout, oScope = cfg.BgScope;
+            int oOp = cfg.BgOpacity, oBlur = cfg.BgBlur, oWin = cfg.WindowOpacity;
+            int oox = cfg.BgOffsetX, ooy = cfg.BgOffsetY;
+
+            Form dlg = new Form();
+            dlg.Text = "背景设置";
+            dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+            dlg.MinimizeBox = false;
+            dlg.MaximizeBox = false;
+            dlg.ShowInTaskbar = false;
+            dlg.StartPosition = FormStartPosition.CenterParent;
+            dlg.ClientSize = new Size(540, 312);
+            dlg.BackColor = HudBg;
+            dlg.ForeColor = HudText;
+            dlg.Font = Ui(9F);
+
+            Label lImg = new Label();
+            lImg.Text = "背景图片："; lImg.SetBounds(16, 20, 96, 20); lImg.ForeColor = HudText;
+            TextBox txt = new TextBox();
+            txt.SetBounds(112, 17, 306, 24);
+            txt.ReadOnly = true;
+            txt.BackColor = HudPanel2; txt.ForeColor = HudText; txt.BorderStyle = BorderStyle.FixedSingle;
+            txt.Text = (cfg.BgImage == null) ? "" : cfg.BgImage;
+            Button bBrowse = new Button();
+            bBrowse.Text = "浏览…"; bBrowse.SetBounds(424, 16, 52, 26); bBrowse.FlatStyle = FlatStyle.Flat;
+            bBrowse.BackColor = HudOn; bBrowse.ForeColor = HudText; bBrowse.FlatAppearance.BorderColor = HudLine;
+            bBrowse.Click += delegate
+            {
+                using (OpenFileDialog ofd = new OpenFileDialog())
+                {
+                    ofd.Title = "选一张背景图片";
+                    ofd.Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp|所有文件|*.*";
+                    if (!string.IsNullOrEmpty(cfg.BgImage)) ofd.InitialDirectory = Path.GetDirectoryName(cfg.BgImage);
+                    if (ofd.ShowDialog(dlg) == DialogResult.OK)
+                    {
+                        cfg.BgImage = ofd.FileName;
+                        txt.Text = ofd.FileName;
+                        RebuildBackground();
+                    }
+                }
+            };
+            Button bClear = new Button();
+            bClear.Text = "清除"; bClear.SetBounds(480, 16, 48, 26); bClear.FlatStyle = FlatStyle.Flat;
+            bClear.BackColor = HudOff; bClear.ForeColor = HudDim; bClear.FlatAppearance.BorderColor = HudLine;
+            bClear.Click += delegate { cfg.BgImage = ""; txt.Text = ""; RebuildBackground(); };
+
+            // 三行滑杆
+            // 回调里用 sender 而不是捕获 sOp 变量 —— 捕获的话编译器会报"使用了未赋值的局部变量"
+            // ⚠ 滑杆必须走【防抖重建】(ScheduleBgRebuild)，不能每格都 RebuildBackground：
+            //   重建一次要做整幅高质量缩放 + 模糊 + alpha 合成（几十~一百多毫秒），而拖滑杆每秒能发
+            //   几十次 ValueChanged —— 结果是界面被反复锁住、整窗 Invalidate(true) 一次接一次，
+            //   看起来就是"调背景图时一直闪"（用户实测）。防抖后停手 200ms 才重建一张。
+            MakeSlider(dlg, 58, "图片不透明度", 0, 100, cfg.BgOpacity, "%", delegate(object s, EventArgs e)
+            { cfg.BgOpacity = ((TrackBar)s).Value; ScheduleBgRebuild(); });
+            MakeSlider(dlg, 92, "模糊", 0, 60, cfg.BgBlur, "", delegate(object s, EventArgs e)
+            { cfg.BgBlur = ((TrackBar)s).Value; ScheduleBgRebuild(); });
+            // 整窗不透明度那根滑杆已去掉：窗口固定不透明，文字永远实心
+            MakeSlider(dlg, 126, "水平移动 X", -100, 100, cfg.BgOffsetX, "%", delegate(object s, EventArgs e)
+            { cfg.BgOffsetX = ((TrackBar)s).Value; ScheduleBgRebuild(); });
+            MakeSlider(dlg, 160, "垂直移动 Y", -100, 100, cfg.BgOffsetY, "%", delegate(object s, EventArgs e)
+            { cfg.BgOffsetY = ((TrackBar)s).Value; ScheduleBgRebuild(); });
+
+            // 放置方式
+            Label lLay = new Label();
+            lLay.Text = "放置方式："; lLay.SetBounds(16, 210, 96, 20); lLay.ForeColor = HudText;
+            ComboBox cb = new ComboBox();
+            cb.DropDownStyle = ComboBoxStyle.DropDownList;
+            cb.SetBounds(112, 206, 200, 24);
+            cb.BackColor = HudPanel2; cb.ForeColor = HudText; cb.FlatStyle = FlatStyle.Flat;
+            cb.Items.Add("填充（等比铺满，多的裁掉）");
+            cb.Items.Add("适应（等比完整显示）");
+            cb.Items.Add("拉伸（铺满，会变形）");
+            cb.Items.Add("平铺（原图重复）");
+            cb.Items.Add("居中（原始大小）");
+            string[] keys = new string[] { "fill", "fit", "stretch", "tile", "center" };
+            int li = Array.IndexOf(keys, cfg.BgLayout);
+            cb.SelectedIndex = (li < 0) ? 0 : li;
+            cb.SelectedIndexChanged += delegate { cfg.BgLayout = keys[cb.SelectedIndex]; RebuildBackground(); };
+
+            // 背景范围：只铺右侧内容区（默认） / 全局铺满整个窗口（控制面板也透图）
+            Label lScope = new Label();
+            lScope.Text = "背景范围："; lScope.SetBounds(16, 236, 96, 20); lScope.ForeColor = HudText;
+            ComboBox cbScope = new ComboBox();
+            cbScope.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbScope.SetBounds(112, 232, 240, 24);
+            cbScope.BackColor = HudPanel2; cbScope.ForeColor = HudText; cbScope.FlatStyle = FlatStyle.Flat;
+            cbScope.Items.Add("内容区（队列 + 终端）");
+            cbScope.Items.Add("全局（整个窗口，控制面板也透图）");
+            cbScope.SelectedIndex = (cfg.BgScope == "global") ? 1 : 0;
+            cbScope.SelectedIndexChanged += delegate
+            {
+                cfg.BgScope = (cbScope.SelectedIndex == 1) ? "global" : "content";
+                try { Bg.Clip = BgTargetRect(); } catch { }   // 裁剪区立刻切，不等重建
+                RebuildBackground();
+            };
+
+            Button bOk = new Button();
+            bOk.Text = "确定"; bOk.SetBounds(348, 260, 84, 30); bOk.FlatStyle = FlatStyle.Flat;
+            bOk.BackColor = HudOn; bOk.ForeColor = HudText; bOk.FlatAppearance.BorderColor = HudLine;
+            bOk.DialogResult = DialogResult.OK;
+            Button bCancel = new Button();
+            bCancel.Text = "取消"; bCancel.SetBounds(440, 260, 84, 30); bCancel.FlatStyle = FlatStyle.Flat;
+            bCancel.BackColor = HudOff; bCancel.ForeColor = HudDim; bCancel.FlatAppearance.BorderColor = HudLine;
+            bCancel.DialogResult = DialogResult.Cancel;
+
+            dlg.Controls.Add(lImg); dlg.Controls.Add(txt); dlg.Controls.Add(bBrowse); dlg.Controls.Add(bClear);
+            dlg.Controls.Add(lLay); dlg.Controls.Add(cb);
+            dlg.Controls.Add(lScope); dlg.Controls.Add(cbScope);
+            dlg.Controls.Add(bOk); dlg.Controls.Add(bCancel);
+            dlg.AcceptButton = null;
+            dlg.CancelButton = bCancel;
+
+            DialogResult r = dlg.ShowDialog(this);
+            if (r == DialogResult.OK)
+            {
+                cfg.Save();
+                Log.Write("背景设置：图片=" + (string.IsNullOrEmpty(cfg.BgImage) ? "<无>" : cfg.BgImage)
+                          + "  不透明度=" + cfg.BgOpacity + "%  模糊=" + cfg.BgBlur
+                          + "  放置=" + cfg.BgLayout + "  位移=" + cfg.BgOffsetX + "," + cfg.BgOffsetY
+                          + "  范围=" + (cfg.BgScope == "global" ? "全局" : "内容区"));
+            }
+            else
+            {
+                // 取消：把实时预览改掉的值全部还原
+                cfg.BgImage = oImg; cfg.BgLayout = oLay; cfg.BgScope = oScope;
+                cfg.BgOpacity = oOp; cfg.BgBlur = oBlur; cfg.WindowOpacity = oWin;
+                cfg.BgOffsetX = oox; cfg.BgOffsetY = ooy;
+                try { Bg.Clip = BgTargetRect(); } catch { }
+                RebuildBackground();
+                ApplyWindowOpacity();
+            }
+            dlg.Dispose();
+        }
+
+        // 上下分栏固定 3:5（列表 3 / 终端 2），窗口一改尺寸就重算
+        void FitLastColumn()
+        {
+            try
+            {
+                if (list == null || list.Columns.Count == 0) return;
+                int used = 0;
+                for (int i = 0; i < list.Columns.Count - 1; i++) used += list.Columns[i].Width;
+                int rest = list.ClientSize.Width - used;
+                if (rest > 60 && list.Columns[list.Columns.Count - 1].Width != rest)
+                    list.Columns[list.Columns.Count - 1].Width = rest;
+            }
+            catch { }
+        }
+
+        void ToggleLogCollapse()
+        {
+            logCollapsed = !logCollapsed;
+            if (logHeader != null) logHeader.Invalidate();
+            ApplySplitRatio();
+        }
+
+        void ApplySplitRatio()
+        {
+            if (splitRatioLocked) return;
+            splitRatioLocked = true;
+            try
+            {
+                int h = split.Height;
+                if (h <= 0) return;
+                int usable = h - split.SplitterWidth;
+                if (usable <= 0) return;
+                // 终端折叠时：只留边框标题 24 + 折叠条 22 + 上下留白 9 ≈ 55px
+                if (logCollapsed)
+                {
+                    int d = usable - 55 - split.Panel2MinSize;
+                    if (d < split.Panel1MinSize) d = split.Panel1MinSize;
+                    if (d != split.SplitterDistance) split.SplitterDistance = d;
+                }
+                else
+                {
+                    int d = (int)Math.Round(usable * 3.0 / 5.0);
+                    int max = usable - split.Panel2MinSize;
+                    if (d > max) d = max;
+                    if (d < split.Panel1MinSize) d = split.Panel1MinSize;
+                    if (d != split.SplitterDistance) split.SplitterDistance = d;
+                }
+                FitLastColumn();
+            }
+            catch { }
+            finally { splitRatioLocked = false; }
+        }
+
+        // ---- 左侧控制面板：宽度 / 收起 / 展开（学 VS Code 的侧边栏）----
+        // 只负责"把宽度设成 w"，不碰 suppressSplitterEvent 标记（调用方自己管）
+        void SetPanelWidthRaw(int w)
+        {
+            if (mainSplit == null || mainSplit.Panel1Collapsed) return;
+            int max = mainSplit.Width - mainSplit.SplitterWidth - mainSplit.Panel2MinSize;
+            if (w > max) w = max;
+            if (w < 160) w = 160;
+            if (w != mainSplit.SplitterDistance) mainSplit.SplitterDistance = w;
+        }
+
+        // 窗口真正撑开之后才能定最小尺寸（顺序不能反：先把分隔位置挪进合法区间，再收紧 Panel2MinSize）
+        void InitPanelLayout()
+        {
+            try
+            {
+                int w = mainSplit.Width;
+                if (w <= 0) return;
+                if (cfg.PanelWidth >= 160) panelWidth = cfg.PanelWidth;   // 上次记住的宽度
+                mainSplit.Panel1MinSize = 0;                       // 允许拖到 0 → 触发自动收起
+                int safe = w - mainSplit.SplitterWidth - 320;      // 先退到一个两边都合法的位置
+                if (safe < 0) safe = 0;
+                int d = panelWidth < safe ? panelWidth : safe;
+                if (d != mainSplit.SplitterDistance) mainSplit.SplitterDistance = d;
+                mainSplit.Panel2MinSize = 320;                     // 现在收紧才安全
+                // 上次退出时是收起的 → 这次也按收起还原；否则展开成记住的宽度
+                if (cfg.PanelCollapsed) SetPanelCollapsed(true);
+                else SetPanelWidthRaw(panelWidth);
+            }
+            catch { }
+            finally
+            {
+                suppressSplitterEvent = false; panelStateReady = true;
+                // 面板宽度到这里才最终定下来，背景图现在建才是对的。
+                // 布局过程中排下的那些防抖重建（SetPanelCollapsed / Panel2.SizeChanged 触发的）
+                // 全都作废，这里直接建一张准的。
+                try { if (bgTimer != null) bgTimer.Stop(); } catch { }
+                try { Bg.Clip = BgTargetRect(); } catch { }
+                RebuildBackground();
+            }
+        }
+
+        // 面板宽度 / 收起状态变化后写盘，下次启动还原
+        void SavePanelState()
+        {
+            if (!panelStateReady) return;
+            try
+            {
+                cfg.PanelWidth = panelWidth;
+                cfg.PanelCollapsed = mainSplit.Panel1Collapsed;
+                cfg.Save();
+            }
+            catch { }
+        }
+
+        void SetPanelCollapsed(bool collapsed)
+        {
+            // 记住进入前的屏蔽状态并原样还回去 —— 否则在 InitPanelLayout 里调用时
+            // 会提前把屏蔽解除，后面的布局动作就会被当成"用户拖动"
+            bool prevSuppress = suppressSplitterEvent;
+            suppressSplitterEvent = true;
+            try
+            {
+                if (collapsed)
+                {
+                    // 先记住当前宽度，展开时原样还原
+                    if (!mainSplit.Panel1Collapsed && mainSplit.SplitterDistance > 0)
+                        panelWidth = mainSplit.SplitterDistance;
+                    mainSplit.Panel1Collapsed = true;
+                    btnPanel.Text = "▶  展开面板";
+                }
+                else
+                {
+                    mainSplit.Panel1Collapsed = false;
+                    SetPanelWidthRaw(panelWidth);
+                    btnPanel.Text = "◀  收起面板";
+                }
+                activityBar.Visible = collapsed;    // 收起时左边那条窄竖条才出现
+                OnContentGeometryChanged();         // 内容区宽度变了：先裁好，再重排
+                InstallChromeHooks();               // 活动栏出现/消失会改变"谁压在左边热区上"，钩子要重装
+            }
+            catch { }
+            finally { suppressSplitterEvent = prevSuppress; SavePanelState(); }
+        }
+
+        // 分隔条被拖动：拖得比 110px 还窄就当作"想收起"，直接折叠（VS Code 就是这个手感）
+        void OnPanelSplitterMoved()
+        {
+            if (suppressSplitterEvent) { splitterDragging = false; return; }
+            try
+            {
+                bool byMouse = splitterDragging;     // SplitterMoving 只在真的拖动时才触发
+                splitterDragging = false;
+                if (mainSplit.Panel1Collapsed) return;
+                if (mainSplit.SplitterDistance < 110) { SetPanelCollapsed(true); return; }
+                panelWidth = mainSplit.SplitterDistance;    // 记住新宽度，下次收起/展开还用它
+                OnContentGeometryChanged();                 // 内容区宽度变了：先裁好，再重排
+                // ⚠ 只有用户真的拖过才写盘：窗口布局过程中的程序性变化也会触发 SplitterMoved，
+                //   那时宽度可能正被约束夹着（实测把 322 夹成 303 存进了设置）。
+                if (byMouse) SavePanelState();
             }
             catch { }
         }
@@ -1394,27 +3323,72 @@ namespace RepRecorder
         // 表头：深底 + 蓝字 + 一条下划线
         void OnHudDrawColumnHeader(object sender, DrawListViewColumnHeaderEventArgs e)
         {
-            using (SolidBrush bb = new SolidBrush(Color.FromArgb(16, 24, 44)))
+            if (headFont == null) headFont = new Font(list.Font, FontStyle.Bold);
+            using (SolidBrush bb = new SolidBrush(HudHead))
                 e.Graphics.FillRectangle(bb, e.Bounds);
             using (Pen p = new Pen(HudLine))
                 e.Graphics.DrawLine(p, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
-            TextRenderer.DrawText(e.Graphics, e.Header.Text, list.Font, e.Bounds, HudAccent,
+            // 表头文字：设计图里表头是浅色加粗
+            TextRenderer.DrawText(e.Graphics, e.Header.Text, headFont, e.Bounds, HudText,
                                   TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
 
-        // 行背景：整行画（本批=绿色底；选中=亮蓝底）
+        // ⚠ 行背景【不在这里画】—— 整行铺底会毁掉这一行的文字，见下面 PaintCellBack 的说明。
+        //   这里实现 OwnerDraw 的 DrawItem（.NET 靠它才会继续发 DrawSubItem），但不画任何东西。
         void OnHudDrawItem(object sender, DrawListViewItemEventArgs e)
         {
-            Color bg;
-            if (e.Item.Selected) bg = Color.FromArgb(30, 62, 124);
-            else if (e.Item.BackColor == Color.Empty || e.Item.BackColor == Color.White) bg = HudBg;
-            else if (e.Item.BackColor == Color.FromArgb(214, 244, 214)) bg = Color.FromArgb(20, 68, 48);   // 本批绿
-            else bg = HudBg;
-            using (SolidBrush bb = new SolidBrush(bg)) e.Graphics.FillRectangle(bb, e.Bounds);
-            if (e.Item.Index % 2 == 1 && !e.Item.Selected && bg == HudBg)
+        }
+
+        // 单元格背景：这一格的那块底由这一格自己铺（本批=绿底；选中=亮蓝底；隔行条纹；有背景图就贴图）
+        // ⚠ 必须**一格一格**铺，绝不能在这里替整行铺底 —— 用户报的"rep 放进队列后文件名/状态空白、
+        //   只剩个序号，点一下才回来"就是这么来的（实测埋点复现）：
+        //     · 列表开了 LVS_EX_DOUBLEBUFFER（BgListView 的 DoubleBuffered），comctl32 某些趟
+        //       （改焦点/选中状态那几笔）是拿**裁剪区=整个客户区**的内存 DC 重画某几行的
+        //       （实测 e.Graphics 的 clip 是 0,0,784x374，整行都在裁剪区里，铺底不受限）；
+        //     · 而那一趟 WinForms 只发 DrawItem + **第 0 列**的 DrawSubItem（实测每个条目只有 1 个 SUB）；
+        //     · 以前在这里整行铺底 → 刚画好的文件名/状态被整行抹平，只补回一个序号。
+        //   一格一格铺之后，那种"只重画第 0 列"的一趟顶多把序号列重画一遍，别的列原样不动。
+        void PaintCellBack(Graphics g, ListViewItem item, Rectangle cell, int colIndex)
+        {
+            if (cell.Width <= 0 || cell.Height <= 0) return;
+            // 最后一列顺手把右边剩下的那截（列宽之外、行宽之内）也铺上，否则会露出 ListView 自己的底色
+            if (list.Columns.Count > 0 && colIndex == list.Columns.Count - 1)
             {
-                using (SolidBrush bb = new SolidBrush(Color.FromArgb(12, 18, 34)))
-                    e.Graphics.FillRectangle(bb, e.Bounds);
+                int right = item.Bounds.Right;
+                if (right > cell.Right) cell.Width = right - cell.Left;
+            }
+            bool batch = item.BackColor == Color.FromArgb(214, 244, 214);   // 被标记成"本批"的那几行
+            if (Bg.Cache == null)
+            {
+                Color bg;
+                if (item.Selected) bg = HudSel;
+                else if (batch) bg = HudBatch;
+                else bg = HudBg;
+                using (SolidBrush bb = new SolidBrush(bg)) g.FillRectangle(bb, cell);
+                // 隔行稍微深一点，长列表更好扫
+                if (item.Index % 2 == 1 && !item.Selected && !batch)
+                {
+                    using (SolidBrush bb = new SolidBrush(HudPanel))
+                        g.FillRectangle(bb, cell);
+                }
+            }
+            else
+            {
+                // 有背景图：控件不会替我们铺背景（owner-draw + Opaque），所以每一格自己把
+                // 对应区域的那块图画上去，然后再叠一层半透明强调色（不透明色会把图盖死）
+                Bg.PaintRect(list, g, cell);
+                Color tint = Color.Empty;
+                if (item.Selected) tint = Color.FromArgb(120, HudSel);
+                else if (batch) tint = Color.FromArgb(110, HudBatch);
+                else if (item.Index % 2 == 1) tint = Color.FromArgb(40, 0, 0, 0);
+                if (tint != Color.Empty)
+                    using (SolidBrush bb = new SolidBrush(tint)) g.FillRectangle(bb, cell);
+            }
+            // "本批"那几行左边再压一条绿条，一眼能认出来
+            if (batch && !item.Selected && colIndex == 0)
+            {
+                using (SolidBrush bb = new SolidBrush(HudBatchBar))
+                    g.FillRectangle(bb, item.Bounds.Left, cell.Top, 2, cell.Height);
             }
         }
 
@@ -1423,11 +3397,32 @@ namespace RepRecorder
         {
             Color fg = e.Item.ForeColor;
             if (fg == Color.Black || fg == Color.Empty) fg = HudText;
-            else if (fg == Color.FromArgb(0, 120, 0)) fg = Color.FromArgb(110, 230, 160);
-            else if (fg == Color.FromArgb(180, 0, 0)) fg = Color.FromArgb(255, 130, 130);
-            else if (fg == Color.FromArgb(190, 120, 0)) fg = Color.FromArgb(255, 200, 110);
+            else if (fg == Color.FromArgb(0, 120, 0)) fg = HudAccent2;      // 完成 / 已录制
+            else if (fg == Color.FromArgb(180, 0, 0)) fg = HudRed;          // 失败
+            else if (fg == Color.FromArgb(190, 120, 0)) fg = HudOrange;     // 注意
+            PaintCellBack(e.Graphics, e.Item, e.Bounds, e.ColumnIndex);     // 先铺这一格的底，再写字
             Rectangle r = e.Bounds;
             if (e.ColumnIndex == 0) r = new Rectangle(r.Left + 6, r.Top, r.Width - 6, r.Height);
+
+            // 状态列（第2列）：画彩色圆点徽标
+            if (e.ColumnIndex == 2)
+            {
+                string st = e.SubItem.Text;
+                Color dotColor = HudDim;
+                if (st == "等待") dotColor = HudDim;
+                else if (st == "录制中") dotColor = HudAccent;
+                // ⚠ "已录制" 也是"已经有视频了"，和"完成"一样该亮绿点；漏了它会显示成灰点（和文字颜色对不上）
+                else if (st == "完成" || st == "已录制") dotColor = HudAccent2;
+                else if (st == "失败") dotColor = HudRed;
+                else if (st == "注意") dotColor = HudOrange;
+                int dotSize = 8;
+                int dotX = r.Left + 2;
+                int dotY = r.Top + (r.Height - dotSize) / 2;
+                using (SolidBrush dotBrush = new SolidBrush(dotColor))
+                    e.Graphics.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                r = new Rectangle(r.Left + dotSize + 6, r.Top, r.Width - dotSize - 6, r.Height);
+            }
+
             TextRenderer.DrawText(e.Graphics, e.SubItem.Text, list.Font, r, fg,
                                   TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
@@ -1460,7 +3455,7 @@ namespace RepRecorder
 
         void OnDragDrop(object sender, DragEventArgs e)
         {
-            hint.Text = "把 .rep 文件（可多选，也可以整个文件夹）拖到这里  ↓";
+            hint.Text = "";
             string[] paths = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (paths == null || paths.Length == 0) return;
             AddPaths(paths);
@@ -1486,6 +3481,14 @@ namespace RepRecorder
             List<Job> already = new List<Job>();
             Ui(delegate
             {
+                // ⚠ 必须用 BeginUpdate/EndUpdate 把"加条目"整个包起来。
+                //   这是 owner-draw 的 ListView：每 Items.Add 一次它就自己重画一次，而重画的时候
+                //   后面的条目还没排好版 —— 结果就是"一部分行画出来了、后面的行只有序号是空的，
+                //   再点一下才补上"（用户报的"放进来一开始不显示，点一下才出来"）。
+                //   顺带也解决了性能问题：放几百个 rep 时不再逐条重画。
+                list.BeginUpdate();
+                try
+                {
                 lock (jobsLock)
                 {
                     foreach (string r in reps)
@@ -1514,7 +3517,14 @@ namespace RepRecorder
                         added++;
                     }
                 }
+                }
+                finally
+                {
+                    list.EndUpdate();     // 到这里才统一重画一次
+                    list.Invalidate();    // 保险：再失效一遍，确保所有新行都补上
+                }
             });
+            SyncListScroll();     // 条目数变了，自绘滚动条要跟着更新
             if (added > 0) Log.Write("加入队列 " + added + " 个 rep");
             else Log.Write("没有可加入的 rep（重复或不是 .rep）");
             // 需求：检测到"已经录制过"的文件 → 问一次是否重录
@@ -1584,6 +3594,7 @@ namespace RepRecorder
         }
 
         Font batchFont = null;
+        Font headFont = null;      // 列表表头用的加粗等宽字体（"? 文件 状态 …" 那行）
         // 高亮"下一次点开始录制会录的那几行"：
         //   列表里选中了行 → 只高亮选中的（选中 = 一律重录）
         //   没选中 → 队列里最前面的 ParallelCount 个「等待/失败」项
@@ -1601,6 +3612,11 @@ namespace RepRecorder
                     if (sj != null && !sel.Contains(sj)) sel.Add(sj);
                 }
                 int marked = 0;
+                // ⚠ 同样要 BeginUpdate/EndUpdate：下面每改一次 BackColor/Font，ListView 就重画一次，
+                //   几百个条目时会卡，而且分批重画容易画出"半截"的状态。
+                list.BeginUpdate();
+                try
+                {
                 lock (jobsLock)
                 {
                     foreach (Job j in jobs)
@@ -1616,6 +3632,8 @@ namespace RepRecorder
                         j.Item.Font = on ? batchFont : list.Font;
                     }
                 }
+                }
+                finally { list.EndUpdate(); list.Invalidate(); }
             }
             catch { }
         }
@@ -2007,6 +4025,25 @@ namespace RepRecorder
             Log.Write("已还原 OBS 录像目录：" + originalRecordDir);
         }
 
+        // 把录制前记下的一批 OBS 输入静音状态还回去。
+        // 麦克风和桌面音频原来各抄了一份一模一样的循环（只有日志文案不同），合并到这里。
+        void RestoreInputMutes(Dictionary<string, bool> saved, string logMessage)
+        {
+            foreach (KeyValuePair<string, bool> kv in saved)
+            {
+                try
+                {
+                    Dictionary<string, object> s = new Dictionary<string, object>();
+                    s["inputName"] = kv.Key;
+                    s["inputMuted"] = kv.Value;
+                    obs.Request("SetInputMute", s);
+                }
+                catch { }
+            }
+            if (saved.Count > 0) Log.Write(logMessage);
+            saved.Clear();
+        }
+
         // 录制期间临时静音麦克风（全局音频会被一起录进去）
         // 录音模式：gameOnly = 录制时静音麦克风；gameAndMic = 录制时保持/开启麦克风（解说）
         // 无论哪种模式，录制结束后都会把麦克风恢复成原来的状态。
@@ -2049,19 +4086,7 @@ namespace RepRecorder
                 }
                 else
                 {
-                    foreach (KeyValuePair<string, bool> kv in micOriginalMute)
-                    {
-                        try
-                        {
-                            Dictionary<string, object> s = new Dictionary<string, object>();
-                            s["inputName"] = kv.Key;
-                            s["inputMuted"] = kv.Value;
-                            obs.Request("SetInputMute", s);
-                        }
-                        catch { }
-                    }
-                    if (micOriginalMute.Count > 0) Log.Write("已把麦克风恢复成录制前的状态");
-                    micOriginalMute.Clear();
+                    RestoreInputMutes(micOriginalMute, "已把麦克风恢复成录制前的状态");
                 }
             }
             catch (Exception ex) { Log.Write("处理麦克风失败（可忽略）：" + ex.Message); }
@@ -2099,19 +4124,7 @@ namespace RepRecorder
                 }
                 else
                 {
-                    foreach (KeyValuePair<string, bool> kv in deskOriginalMute)
-                    {
-                        try
-                        {
-                            Dictionary<string, object> s = new Dictionary<string, object>();
-                            s["inputName"] = kv.Key;
-                            s["inputMuted"] = kv.Value;
-                            obs.Request("SetInputMute", s);
-                        }
-                        catch { }
-                    }
-                    if (deskOriginalMute.Count > 0) Log.Write("已恢复 OBS 桌面音频");
-                    deskOriginalMute.Clear();
+                    RestoreInputMutes(deskOriginalMute, "已恢复 OBS 桌面音频");
                 }
             }
             catch (Exception ex) { Log.Write("处理音频路由失败（可忽略）：" + ex.Message); }
@@ -2898,23 +4911,12 @@ namespace RepRecorder
 
                         if (dr == DialogResult.Yes)
                         {
-                            using (FolderBrowserDialog fb = new FolderBrowserDialog())
+                            string picked = PickSaveFolder(dlg);
+                            if (picked != null)
                             {
-                                fb.Description = "选择保存视频的文件夹";
-                                fb.ShowNewFolderButton = true;
-                                try
-                                {
-                                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
-                                        fb.SelectedPath = cfg.LastSaveFolder;
-                                }
-                                catch { }
-                                if (fb.ShowDialog(dlg) == DialogResult.OK)
-                                {
-                                    cfg.LastSaveFolder = fb.SelectedPath;
-                                    cfg.Save();
-                                    if (chkAll.Checked) queueSaveFolder = fb.SelectedPath;
-                                    result = fb.SelectedPath;
-                                }
+                                cfg.Save();
+                                if (chkAll.Checked) queueSaveFolder = picked;
+                                result = picked;
                             }
                         }
                         else if (dr == DialogResult.No)
@@ -3025,10 +5027,37 @@ namespace RepRecorder
                 else if (status == "失败") job.Item.ForeColor = Color.FromArgb(180, 0, 0);
                 else if (status == "注意") job.Item.ForeColor = Color.FromArgb(190, 120, 0);
                 else job.Item.ForeColor = Color.Black;
-                list.EnsureVisible(job.Item.Index);
+                // ⚠ 这里【不能】再 EnsureVisible。
+                //   并行录制时 SetJob 是【每秒】被调一次的（"并行中 M:SS" 那个进度），
+                //   原来那句会把列表一秒一次拽回正在录制的那几行 —— 用户滚到别处看队列，
+                //   下一秒就被弹回来（用户报的"滚动队列会自动回到正在录的那块"）。
+                //   现在改成：只在【一批刚开始】的时候挪一次（ScrollListToBatch），录制过程中不碰用户的滚动条。
+                SyncListScroll();
+                ListScrollFollow();
                 // 某一条录完了 → 高亮自动挪到下一批（用户不用再选）
                 if (status == "完成" || status == "失败" || status == "注意" || status == "已录制")
                     HighlightBatchRows();
+            });
+        }
+
+        // 把列表挪到这一批的第一行（只有"新的一批要开始了"这一刻才调）。
+        // 为什么单独抽出来：原来那句 EnsureVisible 在 SetJob 里，而 SetJob 录制期间每秒都跑
+        // —— 用户一滚队列就被拽回来。挪一次是提示"开始录这几行了"，每秒挪一次是抢用户的滚动条。
+        void ScrollListToBatch(List<Job> batch)
+        {
+            Ui(delegate
+            {
+                try
+                {
+                    if (batch == null || batch.Count == 0 || list == null) return;
+                    Job first = null;
+                    foreach (Job j in batch) { if (j != null && j.Item != null) { first = j; break; } }
+                    if (first == null) return;
+                    list.EnsureVisible(first.Item.Index);
+                    SyncListScroll();
+                    ListScrollFollow();
+                }
+                catch { }
             });
         }
 
@@ -3042,6 +5071,14 @@ namespace RepRecorder
             Ui(delegate
             {
                 logBox.AppendText("> " + line + Environment.NewLine);
+                // 折叠时把最新一条日志写到摘要条
+                if (logCollapsed)
+                {
+                    string t = line;
+                    if (t.Length > 60) t = t.Substring(0, 57) + "...";
+                    lastLogLine = t;
+                    if (logHeader != null) logHeader.Invalidate();
+                }
             });
         }
 
@@ -3057,7 +5094,7 @@ namespace RepRecorder
                 if (game == null) s += "    游戏：未找到 th123.exe";
                 else s += "    游戏：已就绪";
                 obsState.Text = s;
-                obsState.ForeColor = (obsExe == null || game == null) ? Color.Firebrick : Color.SeaGreen;
+                obsState.ForeColor = (obsExe == null || game == null) ? HudRed : HudDim;
             });
         }
 
@@ -3076,6 +5113,7 @@ namespace RepRecorder
             try
             {
                 if (me.Button != MouseButtons.Left) return;
+                if (marqueeOn) return;    // 正在框选：松开那一下不算"点空白处"，别把框出来的行钉成本批
                 if (list.HitTest(me.Location).Item != null) return;      // 点在条目上 → 正常处理
                 if (list.SelectedItems.Count > 0)                        // Down 时选择还在，先记下来
                 {
@@ -3119,6 +5157,131 @@ namespace RepRecorder
                 emptyClickTimer.Start();
             }
             catch { }
+        }
+
+        // ---------------------------------------------------- 框选（自己画那一层框）
+        // ⚠ 为什么要自己实现：列表开着 FullRowSelect，一行从左到右都算"条目"，而 comctl32 的规则是
+        //   **按在条目上 = 拖条目，不起框选**，只有按在完全没有条目的空白处才起框。我们的列基本铺满
+        //   整宽，空白只剩最后一行下面那一块 → 框只能从下往上拉，选不出"中间一段"（用户实测）。
+        //   所以：在**行上**按下左键拖动 → 自己画一个半透明蓝框、实时选中框到的行；
+        //   最后一行下面那块空白照旧交给 comctl32 的原生框选，不去抢它。
+        bool marqueeArmed = false;                  // 在行上按下了左键，还没拖出框
+        bool marqueeOn = false;                     // 框正在拖
+        bool marqueeAdd = false;                    // 按住 Ctrl = 追加到原来的选中
+        Point marqueeAnchor, marqueeNow;
+        Rectangle marqueeLast = Rectangle.Empty;    // 上一帧的框，用来只重画脏的那块
+        readonly List<ListViewItem> marqueeBase = new List<ListViewItem>();
+        HudMarquee marquee;                         // 那层半透明框（独立分层窗体，见类定义）
+
+        Rectangle MarqueeRect()
+        {
+            int x1 = Math.Min(marqueeAnchor.X, marqueeNow.X), x2 = Math.Max(marqueeAnchor.X, marqueeNow.X);
+            int y1 = Math.Min(marqueeAnchor.Y, marqueeNow.Y), y2 = Math.Max(marqueeAnchor.Y, marqueeNow.Y);
+            return new Rectangle(x1, y1, Math.Max(0, x2 - x1), Math.Max(0, y2 - y1));
+        }
+
+        void MarqueeDown(MouseEventArgs me)
+        {
+            try
+            {
+                marqueeArmed = marqueeOn = false;
+                if (me.Button != MouseButtons.Left) return;
+                if (list.HitTest(me.Location).Item == null) return;   // 空白区 → 让原生框选去处理
+                marqueeArmed = true;
+                marqueeAnchor = marqueeNow = me.Location;
+                marqueeAdd = (Control.ModifierKeys & Keys.Control) == Keys.Control;
+            }
+            catch { }
+        }
+
+        void MarqueeMove(MouseEventArgs me)
+        {
+            try
+            {
+                if (!marqueeArmed && !marqueeOn) return;
+                // ⚠ 这里**不能**用 me.Button 判断按键：WinForms 给 WM_MOUSEMOVE 的 Button 是 None，
+                //   拿它当"松手了"会第一下移动就把框取消掉（实测）。按没按着只看 armed/on 这两个状态
+                //   —— 它们由 MouseDown/MouseUp 维护，框选期间 list.Capture 也保证收得到 Up。
+                if (!marqueeOn)
+                {
+                    // 动够 4px 才算框选；没动的话就是普通点击，交给 ListView 自己选中
+                    if (Math.Abs(me.X - marqueeAnchor.X) < 4 && Math.Abs(me.Y - marqueeAnchor.Y) < 4) return;
+                    marqueeOn = true;
+                    marqueeBase.Clear();
+                    if (marqueeAdd) foreach (ListViewItem it in list.SelectedItems) marqueeBase.Add(it);
+                    try { list.Capture = true; } catch { }        // 拖到列表外面也继续收得到消息
+                }
+                marqueeNow = me.Location;
+                Rectangle r = MarqueeRect();
+                MarqueeApply(r);
+                MarqueeShow(r);                                    // 框交给独立那层窗体去画
+                marqueeLast = r;
+            }
+            catch { }
+        }
+
+        void MarqueeUp(MouseEventArgs me)
+        {
+            try
+            {
+                if (marqueeOn) { marqueeNow = me.Location; MarqueeApply(MarqueeRect()); }
+                bool was = marqueeOn;
+                MarqueeEnd();
+                if (was) SyncParallelCountToSelection();    // 框完了再让「同时录制数量」跟着走一次
+            }
+            catch { }
+        }
+
+        // 把那层框摆到列表里 r 这个矩形上（r 是列表客户区坐标 → 换算成屏幕坐标）
+        void MarqueeShow(Rectangle r)
+        {
+            try
+            {
+                if (marquee == null)
+                {
+                    marquee = new HudMarquee();
+                    marquee.Owner = this;      // 跟着主窗口走：主窗口一关它也跟着关
+                    marquee.Show();
+                    marquee.Visible = false;
+                }
+                Point tl = list.PointToScreen(new Point(r.X, r.Y));
+                marquee.Bounds = new Rectangle(tl.X, tl.Y, Math.Max(1, r.Width), Math.Max(1, r.Height));
+                if (!marquee.Visible) marquee.Visible = true;
+                marquee.Invalidate();
+            }
+            catch { }
+        }
+
+        void MarqueeEnd()
+        {
+            marqueeArmed = marqueeOn = false;
+            marqueeLast = Rectangle.Empty;
+            try { if (marquee != null) marquee.Visible = false; } catch { }
+            if (list == null) return;
+            try
+            {
+                try { if (list.Capture) list.Capture = false; } catch { }
+                list.Invalidate();
+            }
+            catch { }
+        }
+
+        // 按框到的范围改选中状态（Ctrl 追加时保留原来选中的那几个）
+        void MarqueeApply(Rectangle r)
+        {
+            if (list == null) return;
+            bool old = suppressSelSync;
+            suppressSelSync = true;      // 拖的过程中别让「数量跟随选择」连锁乱跳/反复写设置
+            try
+            {
+                foreach (ListViewItem it in list.Items)
+                {
+                    bool hit = it.Bounds.IntersectsWith(r);
+                    if (marqueeAdd && !hit) hit = marqueeBase.Contains(it);
+                    if (it.Selected != hit) it.Selected = hit;
+                }
+            }
+            finally { suppressSelSync = old; }
         }
 
         void SyncParallelCountToSelection()
@@ -3173,7 +5336,7 @@ namespace RepRecorder
 
                         Label hint = new Label();
                         hint.SetBounds(14, 74, 516, 20);
-                        hint.ForeColor = Color.FromArgb(120, 158, 214);
+                        hint.ForeColor = HudDim;      // 次要信息，跟着主题走（原来是写死的浅蓝）
                         hint.Text = "上次用的位置：" + (string.IsNullOrEmpty(cfg.LastSaveFolder) ? "（还没选过）" : cfg.LastSaveFolder);
 
                         CheckBox chkRemember = new CheckBox();
@@ -3207,23 +5370,9 @@ namespace RepRecorder
                         DialogResult dr = dlg.ShowDialog(this);
                         if (dr == DialogResult.Yes)
                         {
-                            using (FolderBrowserDialog fb = new FolderBrowserDialog())
-                            {
-                                fb.Description = "选择保存视频的文件夹";
-                                fb.ShowNewFolderButton = true;
-                                try
-                                {
-                                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
-                                        fb.SelectedPath = cfg.LastSaveFolder;
-                                }
-                                catch { }
-                                if (fb.ShowDialog(dlg) == DialogResult.OK)
-                                {
-                                    queueSaveFolder = fb.SelectedPath;
-                                    cfg.LastSaveFolder = fb.SelectedPath;
-                                }
-                                else dr = DialogResult.OK;   // 没挑文件夹 → 当作"和 rep 放在一起"
-                            }
+                            string picked = PickSaveFolder(dlg);
+                            if (picked != null) queueSaveFolder = picked;
+                            else dr = DialogResult.OK;   // 没挑文件夹 → 当作"和 rep 放在一起"
                         }
                         if (dr == DialogResult.Cancel) { go = false; return; }
                         if (chkRemember.Checked)
@@ -3351,7 +5500,15 @@ namespace RepRecorder
         {
             if (worker != null && worker.IsAlive) { Log.Write("队列运行中，先停止再清空"); return; }
             lock (jobsLock) { jobs.Clear(); }
-            list.Items.Clear();
+            // ⚠ 「钉住的本批」（pinnedBatch）存的是 Job 对象，队列清空后它们已经不在 jobs 里了。
+            //   不同步清掉的话，下次放进新 rep 时 HighlightBatchRows 会拿这批**已经不存在的 job**
+            //   去比对（pinnedBatch 非空就只认它），结果一行都不高亮 —— 用户实测：清空队列后
+            //   再拖进来，状态栏写着「本批 6 个」，列表里却一条绿的都没有。
+            pinnedBatch.Clear();
+            list.BeginUpdate();
+            try { list.Items.Clear(); }
+            finally { list.EndUpdate(); list.Invalidate(); }   // 清空同样要统一重画，别留下残影
+            SyncListScroll();
             Log.Write("队列已清空");
         }
 
@@ -3406,6 +5563,11 @@ namespace RepRecorder
                     {
                         j.Output = "";
                         j.Size = 0;
+                        // ⚠ 也要清掉"用时"：VideoSeconds 是上一次录出来那条视频的真实时长，
+                        //   视频删了它还留着，列表就会一直显示一个不存在的时长（用户实测的 bug）。
+                        j.VideoSeconds = 0;
+                        j.Started = DateTime.MinValue;
+                        j.Ended = DateTime.MinValue;
                         SetJob(j, "等待", "还没有视频，会被录制");
                         waiting++;
                     }
@@ -3419,6 +5581,14 @@ namespace RepRecorder
             if (worker != null && worker.IsAlive) { Log.Write("队列运行中，不能移除"); return; }
             List<Job> del = new List<Job>();
             foreach (ListViewItem it in list.SelectedItems) del.Add((Job)it.Tag);
+            // ⚠ 没有蓝色选中时，删「本批」那批绿色的 —— 跟「开始录制」一套逻辑。
+            //   用户实测：钉子钉成绿色之后再点「移除选中」什么都不删（因为 green 不是 ListView 的选中态）。
+            if (del.Count == 0 && pinnedBatch != null && pinnedBatch.Count > 0) del.AddRange(pinnedBatch);
+            if (del.Count == 0)
+            {
+                Log.Write("没得移除：先在列表里选中几行（蓝色），或者用「标记本批」把它们标成绿色再移除");
+                return;
+            }
             lock (jobsLock)
             {
                 foreach (Job j in del) { jobs.Remove(j); list.Items.Remove(j.Item); }
@@ -3426,6 +5596,39 @@ namespace RepRecorder
             }
             foreach (Job dj in del) pinnedBatch.Remove(dj);
             HighlightBatchRows();   // 移除后本批高亮要跟着挪
+            SyncListScroll();
+            Log.Write("已从队列移除 " + del.Count + " 个 rep");
+        }
+
+        // 「标记本批」：把当前蓝色选中的几行钉成本批（绿色），再把蓝色取消掉 ——
+        // 跟"点列表下方空白处"那条路做的事完全一样，只是不用去找空白处（队列塞满时没有空白处可点）。
+        void OnMarkBatch(object sender, EventArgs e)
+        {
+            try
+            {
+                List<Job> sel = new List<Job>();
+                foreach (ListViewItem it in list.SelectedItems)
+                {
+                    Job j = it.Tag as Job;
+                    if (j != null && !sel.Contains(j)) sel.Add(j);
+                }
+                if (sel.Count == 0)
+                {
+                    Log.Write("还没选：先在列表里选中几行（蓝色），再点「标记本批」");
+                    return;
+                }
+                pinnedBatch.Clear();
+                foreach (Job j in sel) pinnedBatch.Add(j);
+                suppressSelSync = true;                     // 取消蓝色选中时别让"数量跟随"连锁乱跳
+                try { foreach (ListViewItem it in list.Items) it.Selected = false; }
+                catch { }
+                finally { suppressSelSync = false; }
+                HighlightBatchRows();
+                SyncParallelCountToSelection();
+                Log.Write("已把选中的 " + sel.Count + " 个标记为「本批」（绿色），数量也跟着改成 " +
+                          Math.Min(6, sel.Count) + " 个");
+            }
+            catch (Exception ex) { Log.Write("标记本批失败：" + ex.Message); }
         }
 
         void OnCheck(object sender, EventArgs e)
@@ -3624,25 +5827,24 @@ namespace RepRecorder
             string msg;
             if (!GameAudio.GetSystemMute(out muted, out msg))
             {
-                btnSound.Text = "声音：未知";
-                btnSound.Width = 124;
-                btnSound.BackColor = Color.Gainsboro;
-                btnSound.ForeColor = Color.Black;
+                btnSound.Text = "🔊 声音：未知";
+                btnSound.Width = 148;
+                btnSound.BackColor = HudOff;
+                btnSound.ForeColor = HudDim;
+                btnSound.FlatAppearance.BorderColor = HudLine;
                 return;
             }
             if (muted)
             {
-                btnSound.Text = "声音：静音 ✕（录完自动恢复）";
-                btnSound.Width = 236;
-                btnSound.BackColor = Color.FromArgb(190, 60, 60);
-                btnSound.ForeColor = Color.White;
+                btnSound.Text = "🔊 声音：静音 ✕（录完自动恢复）";
+                btnSound.Width = 260;
+                HudSetToggle(btnSound, false);
             }
             else
             {
-                btnSound.Text = "声音：开 ✓";
-                btnSound.Width = 124;
-                btnSound.BackColor = Color.FromArgb(0, 120, 60);
-                btnSound.ForeColor = Color.White;
+                btnSound.Text = "🔊 声音：开 ✓";
+                btnSound.Width = 148;
+                HudSetToggle(btnSound, true);
             }
         }
 
@@ -3737,15 +5939,13 @@ namespace RepRecorder
             if (btnGameAudio == null) return;
             if (cfg.RecordGameAudio)
             {
-                btnGameAudio.Text = "录打击音效：开 ✓";
-                btnGameAudio.BackColor = Color.FromArgb(0, 120, 60);
-                btnGameAudio.ForeColor = Color.White;
+                btnGameAudio.Text = "🔊 录打击音效：开 ✓";
+                HudSetToggle(btnGameAudio, true);
             }
             else
             {
-                btnGameAudio.Text = "录打击音效：关 ✕";
-                btnGameAudio.BackColor = Color.FromArgb(120, 120, 120);
-                btnGameAudio.ForeColor = Color.White;
+                btnGameAudio.Text = "🔊 录打击音效：关 ✕";
+                HudSetToggle(btnGameAudio, false);
             }
             // 「录打击音效」关掉 = 录出来完全无声 → 顺手把「录BGM」锁成关（连游戏里也不放 BGM）
             if (btnBgm != null)
@@ -3754,31 +5954,11 @@ namespace RepRecorder
                 if (!cfg.RecordGameAudio)
                 {
                     btnBgm.Text = "录BGM：关 ✕（已锁）";
-                    btnBgm.BackColor = Color.FromArgb(180, 180, 180);
-                    btnBgm.ForeColor = Color.DimGray;
+                    btnBgm.BackColor = HudOff;
+                    btnBgm.ForeColor = HudDim;
                 }
                 else RefreshBgmButton();
             }
-        }
-
-        // 提醒：ReplayDnD.ini 里 MuteMusic=1 时，游戏播放 rep 根本不放 BGM，
-        // 这时「录打击音效：开」也只能录到音效 —— 想连 BGM 一起录必须点「录BGM」把它改成 0。
-        void WarnIfBgmMuted()
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(cfg.GameDir)) return;
-                foreach (string sub in new string[] { @"modules\ReplayDnD\ReplayDnD.ini", @"modules\ReplayDnD-old\ReplayDnD.ini" })
-                {
-                    string p = Path.Combine(cfg.GameDir, sub);
-                    if (!File.Exists(p)) continue;
-                    string t = File.ReadAllText(p);
-                    if (System.Text.RegularExpressions.Regex.IsMatch(t, @"(?im)^\s*MuteMusic\s*=\s*1\s*$"))
-                        Log.Write("提醒：" + sub + " 里 MuteMusic=1 —— 游戏播放 rep 时不放背景音乐，" +
-                                  "所以录像里只有音效、没有 BGM。想连 BGM 一起录就点界面上的「录BGM」按钮。");
-                }
-            }
-            catch { }
         }
 
         // ==================== 「录BGM」开关 ====================
@@ -3864,14 +6044,13 @@ namespace RepRecorder
             if (cfg.RecordBgm)
             {
                 btnBgm.Text = "录BGM：开 ✓";
-                btnBgm.BackColor = Color.FromArgb(0, 120, 60);
+                HudSetToggle(btnBgm, true);
             }
             else
             {
                 btnBgm.Text = "录BGM：关 ✕";
-                btnBgm.BackColor = Color.FromArgb(120, 120, 120);
+                HudSetToggle(btnBgm, false);
             }
-            btnBgm.ForeColor = Color.White;
         }
 
         // 启动时把 ini 的真实状态同步到设置和按钮上
@@ -3900,27 +6079,25 @@ namespace RepRecorder
             }
         }
 
-        // 旧方式（按进程静音，会让录像也没声音），只留给命令行诊断用
-        void SetGameAudioMute(bool mute)
+        // 「另存到文件夹…」——两处"问视频放哪里"的对话框共用这一段，原来是各抄一份。
+        // 返回 null 表示用户没挑文件夹（调用方各自决定怎么处理：一个当作"留在 rep 旁边"，
+        // 一个当作"和 rep 放在一起"）。挑到了就把路径记进设置里，下次直接用。
+        string PickSaveFolder(IWin32Window owner)
         {
-            try
+            using (FolderBrowserDialog fb = new FolderBrowserDialog())
             {
-                Process[] ps = Process.GetProcessesByName("th123");
-                if (ps.Length == 0)
+                fb.Description = "选择保存视频的文件夹";
+                fb.ShowNewFolderButton = true;
+                try
                 {
-                    Log.Write("游戏没在运行，无法" + (mute ? "静音" : "打开") + "游戏声音");
-                    return;
+                    if (!string.IsNullOrEmpty(cfg.LastSaveFolder) && Directory.Exists(cfg.LastSaveFolder))
+                        fb.SelectedPath = cfg.LastSaveFolder;
                 }
-                foreach (Process p in ps)
-                {
-                    string msg;
-                    bool ok = GameAudio.SetProcessMute(p.Id, mute, out msg);
-                    Log.Write("游戏声音（PID " + p.Id + "）：" + msg + (ok ? "" : "（失败）"));
-                }
-                if (mute) Log.Write("已静音游戏声音：你自己听不到，但录像里仍会录到游戏原声");
-                else Log.Write("已恢复游戏声音");
+                catch { }
+                if (fb.ShowDialog(owner) != DialogResult.OK) return null;
+                cfg.LastSaveFolder = fb.SelectedPath;
+                return fb.SelectedPath;
             }
-            catch (Exception ex) { Log.Write("切换游戏声音失败：" + ex.Message); }
         }
 
         void OnOpenLog(object sender, EventArgs e)
@@ -3940,12 +6117,6 @@ namespace RepRecorder
         bool obsStuckRetried = false;      // 这一批是否已经因为「OBS 没真正开录」自动重启过 OBS（只重试一次）
         List<Job> pinnedBatch = new List<Job>();   // 点空白处"钉"下来的本批（绿色标记），当作手动选中用
         bool suppressSelSync = false;      // 恢复列表选择期间抑制"数量跟随选择"（否则会连锁乱跳）
-
-        // 只录界面上选中的那些 rep（逻辑已并进「开始录制」按钮，这里保留给将来的命令行/脚本用）
-        void OnRecordSelected(object sender, EventArgs e)
-        {
-            OnStart(sender, e);
-        }
 
         IntPtr WaitForMainWindow(Process p, int seconds)
         {
@@ -4029,34 +6200,6 @@ namespace RepRecorder
         static string MakeWindowString(string title, string cls)
         {
             return (title == null ? "" : title) + ":" + (cls == null ? "" : cls) + ":th123.exe";
-        }
-
-        string BuildWindowStringForProcess(Process p)
-        {
-            string title = null, cls = null;
-            int pid = 0;
-            try { pid = p.Id; } catch { return null; }
-            EnumWindows(delegate(IntPtr h, IntPtr l)
-            {
-                uint wp;
-                GetWindowThreadProcessId(h, out wp);
-                if (wp == (uint)pid && IsWindowVisible(h))
-                {
-                    StringBuilder sb = new StringBuilder(512);
-                    GetWindowText(h, sb, 512);
-                    if (sb.Length > 0)
-                    {
-                        StringBuilder cb = new StringBuilder(256);
-                        GetClassName(h, cb, 256);
-                        title = sb.ToString();
-                        cls = cb.ToString();
-                        return false;
-                    }
-                }
-                return true;
-            }, IntPtr.Zero);
-            if (title == null) return null;
-            return MakeWindowString(title, cls);
         }
 
         void EnsureInput(string name, string kind, Dictionary<string, object> settings)
@@ -4468,6 +6611,9 @@ namespace RepRecorder
         void RunParallelBatch(List<Job> batch)
         {
             if (batch.Count == 0) return;
+            // 在上一批的收尾里按了「停止」→ 这一批根本别开。
+            // （批与批之间本来就有检查，这里是再兜一道，保证"停止"之后绝不会再冒出下一批）
+            if (cancel) { Log.Write("已停止：这一批不再开始"); return; }
             // 降级成单录时，也要把采集源准备好并切到录制场景（单录流程自己不做这些）
             if (batch.Count == 1)
             {
@@ -4475,7 +6621,12 @@ namespace RepRecorder
                 if (cfg.AutoPrepareObs) PrepareObs(false);
                 if (cfg.AutoPrepareObs && cfg.UseDedicatedScene) SwitchScene(true);
                 CaptureOriginalRecordDir();
-                ProcessJob(batch[0]);
+                // ⚠ 单录这条路以前漏了 ApplyAudioRouting：默认「只录游戏声音」时 OBS 桌面音频没被静音，
+                //   系统里的其他声音会混进录像。这里补上，录完在 finally 里恢复（原本走 RunQueue 的
+                //   那段恢复代码因为 parallelRequested 恒为 true 早就不执行了）。
+                try { ApplyAudioRouting(true); } catch { }
+                try { ProcessJob(batch[0]); }
+                finally { try { ApplyAudioRouting(false); } catch { } }
                 return;
             }
             if (!cfg.AutoPrepareObs) { Log.Write("并行录制需要打开「自动准备采集源并绑定游戏窗口」，已中止"); return; }
@@ -4484,6 +6635,7 @@ namespace RepRecorder
             // 结果列表里显示成 (现在 - 0001年) 那种天文数字（63926114748s）
             DateTime batchStart = DateTime.Now;
             for (int i = 0; i < batch.Count; i++) batch[i].Started = batchStart;
+            ScrollListToBatch(batch);   // 新的一批开始了，把列表挪过去看一眼（之后整批都不再动它）
 
             // OBS 最多 6 条音轨：超过 6 格时每格的声音没法分开，整批录成无声，避免出现"画面是这局、声音是那局"
             bool cellAudio = cfg.RecordGameAudio && batch.Count <= 6;
@@ -4588,6 +6740,13 @@ namespace RepRecorder
                 cellSec = new double[batch.Count];
                 cellHead = new double[batch.Count];     // 这一格"采集到画面"的时刻（剪掉开头的黑屏）
                 cellLastSeen = new double[batch.Count]; // 这一格"最后一次看到画面"的时刻（剪掉结尾的黑屏）
+
+                // 准备阶段中途按了「停止」→ 别再往下开了（否则游戏照开、录像照起）
+                if (cancel)
+                {
+                    Log.Write("已停止：这一批在准备阶段被中止，不会启动游戏、不会开录");
+                    return;
+                }
 
                 // ===== 只开一次游戏 =====
                 // 以前是"先空参数开 N 个实例停在标题画面 → 摆好源 → 全部杀掉 → 开录 → 再带 rep 重启"，
@@ -5050,6 +7209,23 @@ namespace RepRecorder
             catch (Exception ex) { Log.Write("并行录制出错：" + ex.Message); }
             finally
             {
+                // ⚠ 异常收尾兜底：正常路径要到 L7138/L7147 才停「标题看守」和 StopRecord；
+                //   中途一旦抛异常，看守线程会一直给（可能已被系统回收复用的）窗口改名，
+                //   而且 OBS 会一直录下去、文件越写越大。这里统一兜住。
+                try { titleWatch = false; } catch { }
+                try
+                {
+                    if (obs != null && obs.IsConnected)
+                    {
+                        Dictionary<string, object> rs = obs.Request("GetRecordStatus", null);
+                        if (rs.ContainsKey("outputActive") && Convert.ToBoolean(rs["outputActive"]))
+                        {
+                            obs.Request("StopRecord", null);
+                            Log.Write("并行：异常收尾时发现 OBS 仍在录像，已停止");
+                        }
+                    }
+                }
+                catch { }
                 try { if (origW > 0) { Dictionary<string,object> ov = new Dictionary<string,object>();
                         ov["baseWidth"] = origW; ov["baseHeight"] = origH; ov["outputWidth"] = origW; ov["outputHeight"] = origH;
                         ov["fpsNumerator"] = origFps > 0 ? origFps : 60; ov["fpsDenominator"] = 1;
@@ -5203,6 +7379,9 @@ namespace RepRecorder
         void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             cancel = true;
+            // 摘掉滚轮分流器：它握着对本窗体的引用，留着会让窗体关不掉（也免得窗口没了还去动控件）
+            try { if (wheelRouter != null) Application.RemoveMessageFilter(wheelRouter); }
+            catch { }
             // 还在录的话不要直接退出，否则 OBS 会一直在后台录下去
             if (!closing && worker != null && worker.IsAlive)
             {
@@ -5288,7 +7467,7 @@ namespace RepRecorder
             catch (Exception ex)
             {
                 Log.Write("程序崩溃：" + ex.ToString());
-                MessageBox.Show(ex.Message, "RepRecorder 出错", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.ToString(), "RepRecorder 出错", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -5381,8 +7560,9 @@ namespace RepRecorder
             return result;
         }
 
-        // 收集所有"麦克风类"目标：可枚举的输入 + 全局麦克风设备
-        public static List<string> FindMicTargets(ObsClient obs)
+        // 收集"麦克风类"或"桌面音频类"目标：可枚举的对应 kind 输入 + 全局音频设备。
+        // 这两件事原来各写了一份，只有 kind 字符串和设备类别不同，合并成一个。
+        static List<string> FindAudioTargets(ObsClient obs, string kindA, string kindB, bool wantMic)
         {
             List<string> names = new List<string>();
             try
@@ -5391,37 +7571,28 @@ namespace RepRecorder
                 {
                     Dictionary<string, object> m = (Dictionary<string, object>)o;
                     string kind = Convert.ToString(m["unversionedInputKind"]);
-                    if (kind != "wasapi_input_capture" && kind != "coreaudio_input_capture") continue;
+                    if (kind != kindA && kind != kindB) continue;
                     string n = Convert.ToString(m["inputName"]);
                     if (!names.Contains(n)) names.Add(n);
                 }
             }
             catch { }
-            foreach (string n in FindGlobalAudioNames(true))
-                if (!names.Contains(n)) names.Add(n);
+            // ⚠ 找桌面音频时必须排掉"已经被当成麦克风加进来"的那些名字：全局设备可能两边都出现，
+            //   只按 kind 过滤是不够的（原版就是靠这个 Contains 挡住的，合并时别丢）。
+            List<string> mics = wantMic ? null : FindGlobalAudioNames(true);
+            foreach (string n in FindGlobalAudioNames(wantMic))
+                if ((mics == null || !mics.Contains(n)) && !names.Contains(n)) names.Add(n);
             return names;
         }
 
-        // 收集所有"桌面音频"目标：可枚举的输出采集输入 + 全局桌面音频设备
+        public static List<string> FindMicTargets(ObsClient obs)
+        {
+            return FindAudioTargets(obs, "wasapi_input_capture", "coreaudio_input_capture", true);
+        }
+
         public static List<string> FindDesktopTargets(ObsClient obs)
         {
-            List<string> names = new List<string>();
-            try
-            {
-                foreach (object o in ObsClient.ToList(obs.Request("GetInputList", null)["inputs"]))
-                {
-                    Dictionary<string, object> m = (Dictionary<string, object>)o;
-                    string kind = Convert.ToString(m["unversionedInputKind"]);
-                    if (kind != "wasapi_output_capture" && kind != "coreaudio_output_capture") continue;
-                    string n = Convert.ToString(m["inputName"]);
-                    if (!names.Contains(n)) names.Add(n);
-                }
-            }
-            catch { }
-            List<string> mics = FindGlobalAudioNames(true);
-            foreach (string n in FindGlobalAudioNames(false))
-                if (!mics.Contains(n) && !names.Contains(n)) names.Add(n);
-            return names;
+            return FindAudioTargets(obs, "wasapi_output_capture", "coreaudio_output_capture", false);
         }
 
         static void AudioMeterCli(string secArg)
@@ -5687,6 +7858,883 @@ namespace RepRecorder
                 if (managerObj != null && !object.ReferenceEquals(managerObj, manager)) { try { Marshal.ReleaseComObject(managerObj); } catch { } }
                 if (device != null) { try { Marshal.ReleaseComObject(device); } catch { } }
                 if (enumerator != null) { try { Marshal.ReleaseComObject(enumerator); } catch { } }
+            }
+        }
+    }
+
+    // ============================================================ 背景图支持
+    // 关键点：必须重写 OnPaintBackground，不能挂 Paint 事件。
+    //   子控件设置 BackColor = Color.Transparent 时，WinForms 调用的是父控件的
+    //   OnPaintBackground（经 InvokePaintBackground），Paint 事件压根不会被触发 ——
+    //   挂 Paint 事件的话，子控件透明出来的是父控件的底色，不是背景图。
+    public static class Bg
+    {
+        // 背景图只画在【右侧内容区】（队列 + 终端）。左栏控制面板、顶栏、状态栏都不画。
+        //   Cache        = 内容区大小、已按摆放/不透明度/模糊处理好的位图
+        //   CacheOrigin  = 内容区左上角在"窗体客户区"坐标系里的位置
+        public static Bitmap Cache;
+        public static Point CacheOrigin = Point.Empty;
+
+        // 拖窗口缩放期间置 true：所有 PaintRect 直接不画。
+        // 旧尺寸的缓存位图在新窗口上逐帧错位重画，正是"拖动中闪"的画源之一。
+        public static bool SuspendPaint = false;
+
+        // 图像允许出现的范围（"窗体客户区"坐标系）= 右侧内容区。
+        // ⚠ 这是**权威裁剪区**，几何一变就由窗体同步刷新。
+        //   CacheOrigin 只是建图那一刻的快照，天生会落后于布局（拖分割线 / 收起面板 / 启动时
+        //   InitPanelLayout 还没跑）。只拿它裁剪的话，陈旧的那张宽图会一直画到左边控制面板上
+        //   —— 用户报的"图片不跟随分割线"就是这么来的（实测 CacheOrigin.X=54，而面板归位后是 380）。
+        //   Width<=0 表示"还没有内容区"，此时不裁剪。
+        public static Rectangle Clip = Rectangle.Empty;
+
+        // 控件左上角在"窗体客户区"坐标系里的位置
+        public static Point OffsetIn(Control c)
+        {
+            Form f = c.FindForm();
+            if (f == null) return Point.Empty;
+            return f.PointToClient(c.PointToScreen(Point.Empty));
+        }
+
+        // 把控件内的矩形 r 铺上对应的背景图。超出图区的部分自动裁掉 ——
+        // 这就是"左栏不画图"的实现方式：左栏整个落在图区外，交集为空，直接不画，保留它自己的底色。
+        public static void PaintRect(Control c, Graphics g, Rectangle r)
+        {
+            if (Cache == null || SuspendPaint || r.Width <= 0 || r.Height <= 0) return;
+            Point o = OffsetIn(c);
+            // 背景图在"这个控件的坐标系"里占的矩形
+            Rectangle cacheInCtl = new Rectangle(CacheOrigin.X - o.X, CacheOrigin.Y - o.Y, Cache.Width, Cache.Height);
+            Rectangle inter = Rectangle.Intersect(r, cacheInCtl);
+            if (inter.Width <= 0 || inter.Height <= 0) return;
+            // 再跟"权威裁剪区"取交集：这一道保证了不管缓存多陈旧，图都出不了右侧内容区
+            if (Clip.Width > 0 && Clip.Height > 0)
+            {
+                Rectangle clipInCtl = new Rectangle(Clip.X - o.X, Clip.Y - o.Y, Clip.Width, Clip.Height);
+                inter = Rectangle.Intersect(inter, clipInCtl);
+                if (inter.Width <= 0 || inter.Height <= 0) return;
+            }
+            // 显式给源/目标矩形，避免 DrawImage 按图片 DPI 缩放
+            g.DrawImage(Cache, inter,
+                        inter.X - cacheInCtl.X, inter.Y - cacheInCtl.Y, inter.Width, inter.Height,
+                        GraphicsUnit.Pixel);
+        }
+
+        public static void Paint(Control c, Graphics g)
+        {
+            PaintRect(c, g, c.ClientRectangle);
+        }
+
+        // 这个控件底下"应该是什么颜色"：自己有实底色就用自己，透明就往父控件上找。
+        // ⚠ 自绘控件（ButtonBase 系）设了 ControlStyles.Opaque —— 背景不会被自动擦掉，
+        //   必须先整块填一遍，否则上一次画的文字会留下重影（实测）。
+        public static Color EffectiveBack(Control c)
+        {
+            if (c.BackColor != Color.Transparent) return c.BackColor;
+            Control p = c.Parent;
+            while (p != null)
+            {
+                if (p.BackColor != Color.Transparent) return p.BackColor;
+                p = p.Parent;
+            }
+            return MainForm.HudBg;
+        }
+
+        public static void Clear(Control c, Graphics g)
+        {
+            using (SolidBrush b = new SolidBrush(EffectiveBack(c)))
+                g.FillRectangle(b, c.ClientRectangle);
+        }
+    }
+
+    // 顶栏右边的窗口按钮（最小化 / 最大化-还原 / 关闭）。
+    // 窗口是无边框的，系统标题栏连按钮一起没了 —— 这三个得自己画。
+    // 字形用线画，不用「─ ☐ ✕」这类字符：字体里到底有没有这个字形、基线在哪、大小对不对，
+    // 得看机器说话（这软件已经踩过 TextRenderer 不吃旋转变换的坑）；画线是确定的。
+    public class HudCapButton : Control
+    {
+        public const int KindMin = 0, KindMax = 1, KindClose = 2;
+
+        readonly int kind;
+        bool hover = false;
+
+        public bool Maximized;      // 只有「最大化」按钮用：最大化时改画"还原"那个双层方框
+
+        public HudCapButton(int kind)
+        {
+            this.kind = kind;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            // ⚠ 不能写 Color.Transparent：Control 基类没开 SupportsTransparentBackColor，
+            //   设透明会直接抛 ArgumentException（实测，整个程序起不来）。反正 OnPaintBackground
+            //   是整块填的，给个实色就行。
+            BackColor = MainForm.HudPanel;
+            TabStop = false;                    // 别把键盘焦点从主界面抢走
+            Cursor = Cursors.Default;
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
+
+        // 按钮底色（悬停时会变），顺便给 OnPaint 填"还原"图标那个遮挡用
+        Color Face()
+        {
+            if (!hover) return MainForm.HudPanel;
+            return (kind == KindClose) ? MainForm.HudRed : MainForm.HudPanel2;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            using (SolidBrush b = new SolidBrush(Face()))
+                e.Graphics.FillRectangle(b, ClientRectangle);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            int cx = Width / 2, cy = Height / 2;
+            Color ink = hover ? (kind == KindClose ? Color.White : MainForm.HudText) : MainForm.HudDim;
+
+            if (kind == KindMin)
+            {
+                // 减号：画实心 1px 矩形比 DrawLine 更稳，永远是干净的一像素
+                using (SolidBrush b = new SolidBrush(ink)) g.FillRectangle(b, cx - 5, cy, 10, 1);
+                return;
+            }
+            if (kind == KindClose)
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;   // 斜线不抗锯齿会有台阶
+                using (Pen p = new Pen(ink, 1.4f))
+                {
+                    g.DrawLine(p, cx - 5, cy - 5, cx + 5, cy + 5);
+                    g.DrawLine(p, cx + 5, cy - 5, cx - 5, cy + 5);
+                }
+                return;
+            }
+            // 最大化 / 还原：直角方框，不抗锯齿，1px 线最清晰
+            g.SmoothingMode = SmoothingMode.None;
+            using (Pen p = new Pen(ink, 1f))
+            {
+                if (!Maximized)
+                {
+                    g.DrawRectangle(p, cx - 5, cy - 5, 10, 10);
+                }
+                else
+                {
+                    // 后面那个框
+                    g.DrawRectangle(p, cx - 5, cy - 5, 8, 8);
+                    // 前面那个框：先用按钮底色盖掉重叠部分，再描边（标准"还原"图标就这么画）
+                    using (SolidBrush b = new SolidBrush(Face()))
+                        g.FillRectangle(b, cx - 1, cy - 1, 8, 8);
+                    g.DrawRectangle(p, cx - 2, cy - 2, 8, 8);
+                }
+            }
+        }
+    }
+
+    // 会画背景图的 Panel / FlowLayoutPanel（顶栏、左栏、三块边框面板用）
+    public class BgPanel : Panel
+    {
+        public BgPanel() { DoubleBuffered = true; }
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            // 先整块填底色再叠图：面板落在背景图范围外的部分（比如左栏）就不会留下残影
+            Bg.Clear(this, e.Graphics);
+            if (Bg.Cache != null) Bg.Paint(this, e.Graphics);
+        }
+    }
+
+    public class BgFlowPanel : FlowLayoutPanel
+    {
+        public BgFlowPanel() { DoubleBuffered = true; }
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Bg.Clear(this, e.Graphics);
+            if (Bg.Cache != null) Bg.Paint(this, e.Graphics);
+        }
+    }
+
+    // 滚轮分流器。挂在消息泵上（Application.AddMessageFilter），把 WM_MOUSEWHEEL 按【光标位置】
+    // 交给该滚的那一块，而不是交给"有焦点的那个控件"。真要干的事都在 MainForm.RouteWheel 里。
+    public class WheelRouter : IMessageFilter
+    {
+        const int WM_MOUSEWHEEL = 0x020A;
+        readonly MainForm form;
+
+        public WheelRouter(MainForm form) { this.form = form; }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg != WM_MOUSEWHEEL) return false;    // 走开得早，别拖慢其它消息
+            // ⚠ delta 是 wParam 的高 16 位，必须是【有符号】的：滚轮向上是 +120、向下是 -120，
+            //   直接当无符号取会变成 65416 这种，除以 120 整个方向就乱了。
+            int delta = (short)((long)m.WParam >> 16);
+            try { return form.RouteWheel(delta, Cursor.Position); }
+            catch { return false; }
+        }
+    }
+
+    // 自绘滚动条。
+    // 原生滚动条只有"系统浅色 / 深色"两套可挑，配不上我们的中灰主题（实测原生渲染出来是 #171717，
+    // 压在 #3C3E45 的面板上非常突兀）。所以自己画：槽用面板色、滑块用主题色，拖动/点击/滚轮都自己处理。
+    public class HudScrollBar : Control
+    {
+        int min = 0, max = 0, val = 0;
+        int large = 1;                 // 可见范围（决定滑块长度）
+        bool dragging = false;
+        int dragOff = 0;
+
+        // ---- 自动隐藏（给左栏用）----
+        // 左栏那一列控件本来就比视口高约 1.8 倍，滚动条一直是"用得上"的状态，于是常驻画在那里
+        // （用户报的"不好看"）。AutoHide = 平时【不画出来】（铺成周围底色，看不出这里有个控件）。
+        // ⚠ 只在【真的用它】的时候才露面：滚轮滚它 / 滚左栏 / 点它 / 拖它。
+        //   以前还挂了"鼠标划过就出现"，用户嫌烦（每次划过都弹一下）—— 已经去掉，划过不算用它。
+        // ⚠ 只改"画不画"：Visible、Maximum、拖动、滚轮转发，全都没动。
+        public bool AutoHide = false;
+        public Color IdleBack = MainForm.HudPanel;   // 隐藏时铺的底色（铺成周围那个色才叫看不见）
+        bool active = false;
+        System.Windows.Forms.Timer idleTimer;
+
+        public void Flash()            // 外部动了它（比如窗体那边转发滚轮进来）也叫醒一下
+        {
+            if (!AutoHide) return;
+            Wake();
+        }
+
+        void Wake()
+        {
+            try
+            {
+                if (!AutoHide) return;
+                if (idleTimer == null)
+                {
+                    idleTimer = new System.Windows.Forms.Timer();
+                    idleTimer.Interval = 1200;
+                    idleTimer.Tick += delegate
+                    {
+                        idleTimer.Stop();
+                        // 还在拖 → 继续留着（拖到一半消失就太怪了）。别的都不留：
+                        // 鼠标只是压在它上面不算"在用"，1.2 秒后照常收起来。
+                        if (dragging) { idleTimer.Start(); return; }
+                        active = false;
+                        Invalidate();
+                    };
+                }
+                idleTimer.Stop();
+                idleTimer.Start();
+                if (!active) { active = true; Invalidate(); }
+            }
+            catch { }
+        }
+
+        public event EventHandler ValueChanged;
+
+        public HudScrollBar()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            Width = 10;
+            Cursor = Cursors.Hand;
+        }
+
+        public int Minimum { get { return min; } set { min = value; if (val < min) val = min; Invalidate(); } }
+        public int Maximum { get { return max; } set { max = value; if (val > max) val = max; Invalidate(); } }
+        public int LargeChange { get { return large; } set { large = Math.Max(1, value); Invalidate(); } }
+        public int Value
+        {
+            get { return val; }
+            set
+            {
+                int v = Math.Max(min, Math.Min(max, value));
+                if (v == val) return;
+                val = v;
+                Invalidate();
+                if (ValueChanged != null) ValueChanged(this, EventArgs.Empty);
+            }
+        }
+
+        Rectangle Thumb()
+        {
+            int h = ClientSize.Height;
+            int range = max - min;                 // 可滚动范围
+            int total = range + large;             // 内容总长
+            if (total <= 0) return new Rectangle(0, 0, Width, h);
+            int th = Math.Max(22, (int)((long)h * large / total));
+            if (th > h) th = h;
+            int span = h - th;
+            int top = (range <= 0) ? 0 : (int)((long)span * (val - min) / range);
+            return new Rectangle(0, top, Width, th);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            // 自动隐藏且没被唤醒 → 整条铺成周围的面板色，等于"这里没有东西"
+            if (AutoHide && !active)
+            {
+                using (SolidBrush b = new SolidBrush(IdleBack))
+                    g.FillRectangle(b, ClientRectangle);
+                // 背景模式下光铺实色底色会露出一条深色竖缝 —— 把图也铺上，这条才真的"隐形"
+                if (Bg.Cache != null) Bg.Paint(this, g);
+                return;
+            }
+            using (SolidBrush b = new SolidBrush(MainForm.HudPanel2))
+                g.FillRectangle(b, ClientRectangle);
+            Rectangle t = Thumb();
+            using (SolidBrush b = new SolidBrush(dragging ? MainForm.HudAccent : MainForm.HudLine))
+                g.FillRectangle(b, t);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            Wake();                                   // 点它也是"用上了"
+            Rectangle t = Thumb();
+            if (t.Contains(e.Location)) { dragging = true; dragOff = e.Y - t.Top; }
+            else Value = val + (e.Y < t.Top ? -large : large);   // 点槽里空白 = 翻一页
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (dragging)
+            {
+                Wake();                               // 拖着的时候一直留着，别在拖动中消失
+                int span = ClientSize.Height - Thumb().Height;
+                int range = max - min;
+                if (span > 0 && range > 0)
+                {
+                    int top = Math.Max(0, Math.Min(span, e.Y - dragOff));
+                    Value = min + (int)Math.Round((double)top * range / span);
+                }
+            }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            dragging = false;
+            Invalidate();
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            Wake();                               // 滚它就说明"用上了" → 让它露面
+            Value = val - (e.Delta / 120) * 3;
+            base.OnMouseWheel(e);
+        }
+    }
+
+    // 自绘复选框。
+    // 系统画的那个小方框在深色底上要么是白底黑勾、要么和背景糊在一起（用户反馈"勾选颜色看不清晰"），
+    // 所以整个自己画：方框用主题色，勾用薄荷绿，未勾中时是暗底 + 灰边。
+    // 框选那层"半透明蓝框"。
+    // ⚠ 为什么不用"在 ListView 的 WM_PAINT 之后补画"（第一版就是那样，用户实测"框一直闪"）：
+    //   半透明填充每帧会再叠一层（22%+22%+…），所以每帧都必须让列表把那块**重画干净**；
+    //   列表是自绘的，60 行时那块很大，"列表重画"和"补画框"之间屏幕会闪一下。
+    //   改成独立的一层窗体（自带透明度）之后，框画在自己的窗口上，**列表一帧都不用重画**。
+    public class HudMarquee : Form
+    {
+        const int WS_EX_TOOLWINDOW = 0x00000080;   // 不进 alt-tab
+        const int WS_EX_TRANSPARENT = 0x00000020;  // 不吃鼠标
+        const int WS_EX_NOACTIVATE = 0x08000000;   // 不抢焦点
+
+        public HudMarquee()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            // 填充用"亮一档的冷蓝"：框里那几行拖的过程中已经是蓝的（选中态）了，再叠半透明蓝还是蓝，
+            // 看不出"框住了一块"；叠亮色才像 Explorer 那样明显亮一层（实测像素：叠强调蓝只有 #5E70B1，
+            // 跟选中行 #58628C 几乎分不出来）。
+            BackColor = MainForm.HudLog;
+            Opacity = 0.42;                      // 整层半透明（边框也跟着淡，所以边框另外挑更亮的颜色画）
+            TopMost = true;
+            SetStyle(ControlStyles.Selectable, false);
+            Visible = false;
+        }
+
+        protected override bool ShowWithoutActivation { get { return true; } }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+                return cp;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using (Pen p = new Pen(MainForm.HudText, 2f))     // 填充已经是亮蓝了，边框得再亮一档才分得出来
+                e.Graphics.DrawRectangle(p, 1, 1, Math.Max(1, Width - 3), Math.Max(1, Height - 3));
+        }
+    }
+
+    // 自绘下拉框。
+    // ⚠ WinForms 的 ComboBox（DropDownList）**不吃 BackColor**：只要程序开了视觉样式
+    //   （Application.EnableVisualStyles），它就一定画成系统那套白底 + 系统色下拉箭头按钮 ——
+    //   压在近黑底上就它一块白（用户报的"全屏最亮的那块"）。实测两件事单独做都不够：
+    //     · 只设 FlatStyle.Flat + BackColor —— 完全无效，还是白的；
+    //     · 只调 SetWindowTheme(h,"","") —— 框面变深了，右边那个箭头按钮还是系统色。
+    //   所以这里一起做：先关掉系统主题（BackColor 才生效），再在 base 画完之后**把整个客户区
+    //   重画一遍**（框面底色 + 选中项文字 + 右侧箭头），把系统那套彻底盖掉。
+    //   下拉列表里的条目走 DrawItem 自己画。
+    public class HudCombo : ComboBox
+    {
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hWnd, string appName, string idList);
+
+        public Color Face = MainForm.HudPanel2;      // 合起来那条框的底色
+        public Color Ink = MainForm.HudText;
+
+        public HudCombo()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList;
+            DrawMode = DrawMode.OwnerDrawFixed;
+            ItemHeight = 18;
+            FlatStyle = FlatStyle.Flat;
+            BackColor = Face;
+            ForeColor = Ink;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            DrawItem += OnDrawRow;
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try { SetWindowTheme(Handle, "", ""); } catch { }     // 关掉系统主题，BackColor 才生效
+        }
+
+        // 下拉列表里的每一行（列表底色比那条框再暗一档，选中行才用亮一档的蓝）
+        void OnDrawRow(object sender, DrawItemEventArgs e)
+        {
+            bool sel = (e.State & DrawItemState.Selected) != 0;
+            using (SolidBrush b = new SolidBrush(sel ? MainForm.HudOn : MainForm.HudPanel))
+                e.Graphics.FillRectangle(b, e.Bounds);
+            if (e.Index >= 0 && e.Index < Items.Count)
+                TextRenderer.DrawText(e.Graphics, Items[e.Index].ToString(), Font,
+                                      new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 6, e.Bounds.Height),
+                                      Ink, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0x000F || m.Msg == 0x0005)               // WM_PAINT / WM_SIZE
+            {
+                try { PaintFace(); } catch { }
+            }
+        }
+
+        // 合起来那一条：底色 + 文字 + 右侧箭头（系统画的那套全被这层盖掉）
+        void PaintFace()
+        {
+            using (Graphics g = Graphics.FromHwnd(Handle))
+            {
+                Rectangle rc = ClientRectangle;
+                if (rc.Width <= 0 || rc.Height <= 0) return;
+                int arrow = 18;
+                if (Bg.Cache != null)
+                {
+                    // 有背景图：先铺图再压一层半透明面色 —— 框不再是实色黑块，字也照样清楚
+                    Bg.Paint(this, g);
+                    using (SolidBrush vb = new SolidBrush(Color.FromArgb(150, Face.R, Face.G, Face.B)))
+                        g.FillRectangle(vb, rc);
+                }
+                else using (SolidBrush b = new SolidBrush(Face)) g.FillRectangle(b, rc);
+                using (Pen p = new Pen(MainForm.HudLine)) g.DrawRectangle(p, 0, 0, rc.Width - 1, rc.Height - 1);
+                TextRenderer.DrawText(g, Text, Font,
+                                      new Rectangle(5, 0, rc.Width - arrow - 8, rc.Height), Ink,
+                                      TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                      TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                using (Pen p2 = new Pen(MainForm.HudLine)) g.DrawLine(p2, rc.Width - arrow, 1, rc.Width - arrow, rc.Height - 2);
+                int cx = rc.Width - arrow / 2, cy = rc.Height / 2 + 1;      // 小箭头
+                using (Pen p3 = new Pen(MainForm.HudDim, 1.6f))
+                {
+                    g.DrawLine(p3, cx - 4, cy - 2, cx, cy + 2);
+                    g.DrawLine(p3, cx, cy + 2, cx + 4, cy - 2);
+                }
+            }
+        }
+    }
+
+    public class HudCheck : CheckBox
+    {
+        public HudCheck()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                     ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                     ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            ForeColor = MainForm.HudText;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            // ⚠ 必须先整块填底：ButtonBase 设了 ControlStyles.Opaque，背景不会自动擦，
+            //   不填的话上一次的文字会留下来变成重影（实测）
+            Bg.Clear(this, g);
+            if (Bg.Cache != null) Bg.Paint(this, g);
+
+            int bs = 14;
+            int by = (ClientSize.Height - bs) / 2;
+            Rectangle box = new Rectangle(1, by, bs, bs);
+
+            using (SolidBrush b = new SolidBrush(Checked ? MainForm.HudAccent : MainForm.HudPanel2))
+                g.FillRectangle(b, box);
+            using (Pen p = new Pen(Checked ? MainForm.HudAccent : MainForm.HudLine))
+                g.DrawRectangle(p, box);
+
+            if (Checked)
+            {
+                using (Pen p = new Pen(Color.White, 2f))
+                {
+                    p.StartCap = LineCap.Round;
+                    p.EndCap = LineCap.Round;
+                    g.DrawLines(p, new Point[]
+                    {
+                        new Point(box.Left + 3, box.Top + 7),
+                        new Point(box.Left + 6, box.Top + 10),
+                        new Point(box.Right - 3, box.Top + 4)
+                    });
+                }
+            }
+
+            int tx = box.Right + 6;
+            TextRenderer.DrawText(g, Text, Font, new Rectangle(tx, 0, ClientSize.Width - tx, ClientSize.Height),
+                                  Enabled ? ForeColor : MainForm.HudDim,
+                                  TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    // 能透出背景图的 ListView。
+    // 分两块画：
+    //   · 每一【行】的图由 OnHudDrawItem 负责（列表本来就是全自绘的，天然合适）
+    //   · 最后一行【下面】那块空白由这里补 —— 控件在 owner-draw 模式下不走 WM_ERASEBKGND
+    //     （它设了 ControlStyles.Opaque），只能等它自己画完，再用 WM_PAINT 补一遍。
+    public class BgListView : ListView
+    {
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out WRect r);
+        [StructLayout(LayoutKind.Sequential)] struct WRect { public int L, T, R, B; }
+
+        // 队列为空时居中显示的提示文字（由 MainForm 设）。必须在本控件的 WM_PAINT 末尾画，
+        // 不能挂 Paint 事件 —— 原生 ListView 的绘制会把 Paint 事件画的字盖掉（实测）。
+        public string EmptyHint = "";
+
+        public BgListView() { DoubleBuffered = true; }
+
+        int HeaderHeight()
+        {
+            try
+            {
+                IntPtr hdr = SendMessage(Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);   // LVM_GETHEADER
+                if (hdr != IntPtr.Zero)
+                {
+                    WRect r;
+                    if (GetWindowRect(hdr, out r)) return r.B - r.T;
+                }
+            }
+            catch { }
+            return 0;
+        }
+
+        void PaintEmptyArea(Graphics g)
+        {
+            if (Bg.Cache == null) return;
+            int startY = (Items.Count > 0) ? Items[Items.Count - 1].Bounds.Bottom : HeaderHeight();
+            int ch = ClientSize.Height;
+            if (startY >= ch) return;
+            Rectangle empty = new Rectangle(0, startY, ClientSize.Width, ch - startY);
+            Bg.PaintRect(this, g, empty);
+        }
+
+        [DllImport("user32.dll")] static extern int ShowScrollBar(IntPtr hWnd, int wBar, bool bShow);
+        [DllImport("user32.dll")] static extern IntPtr GetWindowDC(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr hWnd, out WRect r);
+        [DllImport("user32.dll")] static extern int MapWindowPoints(IntPtr from, IntPtr to, ref WPoint pts, int n);
+        [StructLayout(LayoutKind.Sequential)] struct WPoint { public int X, Y; }
+
+        // 非客户区（= 原生滚动条待的那一圈）自己刷成列表底色。
+        // 藏滚动条（ShowScrollBar）只是把它按回去，comctl32 在滚动状态一变时又会自己把它显出来，
+        // 而真正【画】那条滚动条的是 DefWindowProc 处理 WM_NCPAINT 那一步 —— 于是屏幕上闪一下
+        // 系统浅色的滚动条（用户报的"白色滚动条闪烁"）。把 WM_NCPAINT 拦下来自己画，它就永远画不出来。
+        // 注意：这里只拦【绘制】，一点没碰滚动能力。
+        void PaintNcBand()
+        {
+            if (!IsHandleCreated) return;
+            WRect wr, cr;
+            if (!GetWindowRect(Handle, out wr)) return;
+            if (!GetClientRect(Handle, out cr)) return;
+            WPoint p; p.X = 0; p.Y = 0;
+            MapWindowPoints(Handle, IntPtr.Zero, ref p, 1);      // 客户区原点 → 屏幕坐标
+            int offX = p.X - wr.L, offY = p.Y - wr.T;            // 非客户区四条带子的宽度
+            int w = wr.R - wr.L, h = wr.B - wr.T;
+            int right = offX + (cr.R - cr.L), bottom = offY + (cr.B - cr.T);
+            if (offX <= 0 && offY <= 0 && right >= w && bottom >= h) return;   // 本来就没有非客户区
+            IntPtr hdc = GetWindowDC(Handle);
+            if (hdc == IntPtr.Zero) return;
+            try
+            {
+                using (Graphics g = Graphics.FromHdc(hdc))
+                {
+                    // 底：不透明那一层（有背景图时图是半透明的，得先垫一层实色）
+                    Color baseC = (BackColor.A == 255) ? BackColor : MainForm.HudBg;
+                    using (SolidBrush b = new SolidBrush(baseC))
+                    {
+                        if (offY > 0) g.FillRectangle(b, 0, 0, w, offY);
+                        if (bottom < h) g.FillRectangle(b, 0, bottom, w, h - bottom);
+                        if (offX > 0) g.FillRectangle(b, 0, 0, offX, h);
+                        if (right < w) g.FillRectangle(b, right, 0, w - right, h);
+                    }
+                    // 面：背景图（和"补空白区"用的是同一套，位置才对得上）
+                    if (Bg.Cache != null)
+                    {
+                        if (right < w) Bg.PaintRect(this, g, new Rectangle(right, 0, w - right, h));
+                        if (bottom < h) Bg.PaintRect(this, g, new Rectangle(0, bottom, w, h - bottom));
+                    }
+                }
+            }
+            finally { ReleaseDC(Handle, hdc); }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            // WM_NCPAINT：见 PaintNcBand 上面的说明。拦下来就不往下传，DefWindowProc 也就不会去画滚动条。
+            if (m.Msg == 0x0085)
+            {
+                try { PaintNcBand(); } catch { }
+                return;
+            }
+            base.WndProc(ref m);
+            // WM_SIZE：客户区一变（典型情况就是 comctl32 刚给自己塞进一条原生滚动条）就把它按回去。
+            // ⚠ 放在这里而不是 WM_PAINT 里：这一步会改窗口的非客户区，在绘制过程中改会重入。
+            if (m.Msg == 0x0005)
+            {
+                try { if (IsHandleCreated) ShowScrollBar(Handle, 3 /*SB_BOTH*/, false); } catch { }
+            }
+            if (m.Msg == 0x000F)   // WM_PAINT：原生画完了，最后再补空白区 + 空态提示（这样才盖得住）
+            {
+                try
+                {
+                    using (Graphics g = Graphics.FromHwnd(Handle))
+                    {
+                        if (Bg.Cache != null) PaintEmptyArea(g);
+                        if (Items.Count == 0 && !string.IsNullOrEmpty(EmptyHint))
+                        {
+                            Size sz = TextRenderer.MeasureText(EmptyHint, Font);
+                            int top = HeaderHeight();
+                            int x = (ClientSize.Width - sz.Width) / 2;
+                            int y = top + (ClientSize.Height - top - sz.Height) / 2;
+                            TextRenderer.DrawText(g, EmptyHint, Font, new Point(x, y), MainForm.HudDim);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+    }
+
+    // 能透出背景图的终端。TextBox 的 BackColor 不支持 alpha，只能换成一个自己画的控件：
+    // 按行折行、自己滚、自己画。
+    public class BgLogView : Control
+    {
+        readonly List<string> raw = new List<string>();    // 原始行
+        readonly List<string> disp = new List<string>();   // 折好行之后的显示行
+        readonly Dictionary<char, int> charW = new Dictionary<char, int>();   // 每个字符的宽度缓存
+        readonly HudScrollBar bar;
+        int lineH = 16;
+        int lastWrapWidth = -1;
+        const int MaxRaw = 2000;                            // 只留最近这么多原始行，免得越跑越慢
+
+        public BgLogView()
+        {
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer |
+                     ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+            bar = new HudScrollBar();
+            bar.Dock = DockStyle.Right;
+            bar.Width = 10;
+            bar.ValueChanged += delegate { Invalidate(); };
+            Controls.Add(bar);
+            lineH = Math.Max(8, Font.Height);
+            UpdateBar(false);            // 一开始日志是空的 → 先判断一次，把滚动条藏好
+            // 原来的 TextBox 能选中复制，自绘控件不行 → 至少给个"复制全部"
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.Items.Add("复制全部日志", null, delegate
+            {
+                try { Clipboard.SetText(string.Join(Environment.NewLine, raw.ToArray())); }
+                catch { }
+            });
+            ContextMenuStrip = menu;
+        }
+
+        protected override void OnFontChanged(EventArgs e)
+        {
+            base.OnFontChanged(e);
+            lineH = Math.Max(8, Font.Height);
+            charW.Clear();          // 换字体了，之前缓存的字符宽度作废
+            RewrapAll();
+            Invalidate();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            int w = TextWidth();
+            if (w != lastWrapWidth)
+            {
+                RewrapAll();                    // 宽度变了才需要重新折行
+                return;
+            }
+            // ⚠ 只改了高度的情况（最典型的就是拖「队列 / 终端」那条分割线）：
+            //   不用重新折行，但"一屏能显示几行"变了，滚动范围必须跟着重算。
+            //   原来这里什么都不做 —— 面板拖矮之后就滚不到最后几行，拖高反而能滚出一片空白。
+            bool wasBottom = IsAtBottom();
+            UpdateBar(false);
+            if (wasBottom) bar.Value = bar.Maximum;   // 本来就贴着底部 → 继续贴着
+            Invalidate();
+        }
+
+        int TextWidth()
+        {
+            return Math.Max(32, ClientSize.Width - bar.Width - 6);
+        }
+
+        // 单个字符的宽度（带缓存）
+        // ⚠ 不能每折一行就调一次 MeasureText：那是逐字符测量，2000 行的日志在改窗口大小时
+        //   要重排几十万次，会卡好几秒。终端本来就是等宽字体，按字符缓存宽度即可。
+        int WidthOf(char c)
+        {
+            int w;
+            if (charW.TryGetValue(c, out w)) return w;
+            w = TextRenderer.MeasureText(c.ToString(), Font, new Size(int.MaxValue, int.MaxValue),
+                                         TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
+            if (w <= 0) w = 1;
+            charW[c] = w;
+            return w;
+        }
+
+        List<string> WrapLine(string s)
+        {
+            List<string> outp = new List<string>();
+            if (string.IsNullOrEmpty(s)) { outp.Add(""); return outp; }
+            int maxW = TextWidth();
+            int cur = 0;
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < s.Length; i++)
+            {
+                int w = WidthOf(s[i]);
+                if (sb.Length > 0 && cur + w > maxW)
+                {
+                    outp.Add(sb.ToString());
+                    sb.Length = 0;
+                    cur = 0;
+                }
+                sb.Append(s[i]);
+                cur += w;
+            }
+            outp.Add(sb.ToString());
+            return outp;
+        }
+
+        void RewrapAll()
+        {
+            // ⚠ 重排【不能】强行拉到底。原来这里写死 UpdateBar(true)，结果：
+            //   横向改一下窗口尺寸、或者日志超过 MaxRaw 被裁剪，都会把正在往上翻看的用户
+            //   一把拽回最底下（用户报的）。改成：只有原本就贴在底部（在跟日志尾巴）时才跟着走，
+            //   否则停在原来的位置（Value 的 setter 会自己把越界夹回去）。
+            bool wasBottom = IsAtBottom();
+            int oldVal = bar.Value;
+            lastWrapWidth = TextWidth();
+            disp.Clear();
+            foreach (string s in raw)
+                foreach (string w in WrapLine(s)) disp.Add(w);
+            UpdateBar(false);
+            bar.Value = wasBottom ? bar.Maximum : oldVal;
+            Invalidate();                       // 重排后一定要重画，否则画面还是旧的
+        }
+
+        bool IsAtBottom()
+        {
+            return bar.Value >= bar.Maximum;   // 自绘滚动条：Maximum 就是"能滚到的最大值"
+        }
+
+        void UpdateBar(bool goBottom)
+        {
+            int visible = Math.Max(1, ClientSize.Height / lineH);
+            bar.Minimum = 0;
+            bar.Maximum = Math.Max(0, disp.Count - visible);   // 第一行最多能滚到"最后 N 行刚好填满"
+            bar.LargeChange = visible;
+            // 不够长就藏起来 —— 和列表、左栏那两处保持一致（那两个也是不够长就 Visible=false）。
+            // ⚠ TextWidth() 里始终扣掉了 bar.Width，所以藏起来不会改变文字宽度 →
+            //   不会触发 OnSizeChanged → 不会来回重排（重排 2000 行很贵）。
+            bool need = bar.Maximum > 0;
+            if (bar.Visible != need) bar.Visible = need;
+            if (goBottom) bar.Value = bar.Maximum;
+        }
+
+        // 滚轮：WinForms 会把 WM_MOUSEWHEEL 发给【有焦点的控件】再往上冒泡，
+        // 鼠标停在终端上时焦点常常在别处 —— 所以窗体那边会按光标位置转发进来（见 MainForm 的 MouseWheel）。
+        public void ScrollBy(int wheelClicks)
+        {
+            try
+            {
+                int lines = SystemInformation.MouseWheelScrollLines;
+                if (lines <= 0) lines = 3;
+                // ⚠ 方向：Windows 里"滚轮向上滚"给的是【正】delta，而向上滚应该让内容往下走、
+                //   Value 减小 —— 所以是【减】。这里原来写的是加，整个滚动方向是反的（用户报的）。
+                //   列表和左栏那两处转发、以及 HudScrollBar.OnMouseWheel 都是减，只有这里是加 —— 就是它错了。
+                bar.Value = bar.Value - wheelClicks * lines;   // 越界由 Value 自己夹
+            }
+            catch { }
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            ScrollBy(e.Delta / 120);
+            base.OnMouseWheel(e);
+        }
+
+        public void AppendText(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return;
+            bool atBottom = IsAtBottom();
+            string[] parts = s.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+            int n = parts.Length;
+            if (n > 0 && parts[n - 1].Length == 0) n--;     // 结尾那个换行不算一行
+            for (int i = 0; i < n; i++)
+            {
+                raw.Add(parts[i]);
+                foreach (string w in WrapLine(parts[i])) disp.Add(w);
+            }
+            if (raw.Count > MaxRaw)
+            {
+                raw.RemoveRange(0, raw.Count - MaxRaw);
+                RewrapAll();                                 // 偶尔才走一次
+                return;
+            }
+            UpdateBar(atBottom);
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            if (Bg.Cache != null) Bg.Paint(this, g);
+            else g.Clear(MainForm.HudBg);
+            int first = bar.Value;
+            int y = 1;
+            int h = ClientSize.Height;
+            for (int i = first; i < disp.Count && y < h; i++)
+            {
+                TextRenderer.DrawText(g, disp[i], Font, new Point(3, y), MainForm.HudLog,
+                                      TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                y += lineH;
             }
         }
     }
