@@ -829,6 +829,15 @@ namespace RepRecorder
         bool suppressSplitterEvent = true;
         bool splitterDragging = false;   // 分隔条是不是真的被鼠标拖着
         bool isResizing = false;         // 正在拖窗口边框/标题栏（WM_ENTERSIZEMOVE ~ WM_EXITSIZEMOVE）
+        // ---- 拖动中的「整窗快照预览」（2026-10-03，见 WndProc 里那段实测数据）----
+        //   按下缩放那一刻把整窗拍成一张位图；拖动期间顶层子控件临时藏起来（隐藏的控件不参与布局，
+        //   也不重绘），窗体自己把这张图按新尺寸铺满 —— 每步只剩一次 blit。
+        //   实测同一台机器：边拖边完整重绘 48ms/步（≈20fps），一张图铺满整窗 13ms/步。
+        Bitmap dragSnap;                 // 快照位图（拍在"按下那一刻"，松手就扔）
+        bool snapArmed = false;          // 快照已拍好，等第一次真的变尺寸再启用
+        bool snapActive = false;         // 正在用快照预览（子控件已藏）
+        int lastSnapSizeTick = 0;        // 上一次变尺寸的时刻（保险丝用：久没变 + 左键松开 = 拖动已结束）
+        readonly List<Control> snapShow = new List<Control>();   // 藏之前哪些是可见的，收工时原样放回
         bool splitterHover = false;      // 光标是不是压在分隔条上（压在才把它画出来）
         Label lblParHint;
         Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnCheck, btnPrepare, btnSet, btnOpenLog;
@@ -1301,7 +1310,9 @@ namespace RepRecorder
             // 空队列提示：⚠ 不能在 list.Paint 里画 —— ListView 原生 WM_PAINT 会在之后把这里画的东西盖掉
             //   （实测：空队列截图里提示文字完全不显示）。改由 BgListView 在自己的 WM_PAINT 末尾画，
             //   这里只把文案交给它，见 BgListView.WndProc。
-            list.EmptyHint = "把 .rep 文件拖到这里（可多选/可拖文件夹）";
+            // 2026-10-03：用户不要队列里这行字了（"把 .rep 文件拖到这里…"压在背景图上很碍眼）。
+            //   机制留着没删：哪天想加回来，把下面这行注释放开就行，BgListView 那边不用动。
+            // list.EmptyHint = "把 .rep 文件拖到这里（可多选/可拖文件夹）";
 
             // 终端：自定义控件（TextBox 的背景不支持透明，透不出背景图）
             logBox = new BgLogView();
@@ -1371,11 +1382,10 @@ namespace RepRecorder
             split.Panel2.Controls.Add(frameLog);
             split.BackColor = HudBg;
             split.SplitterWidth = 6;                      // 上下比例由 ApplySplitRatio() 按 3:5 摆
-            // ⚠ 必须和主分隔条一样打 splitterDragging 标记：WndProc 里有条"保险丝"——
-            //   只要 !isResizing && !splitterDragging && paintFrozen 就强制解冻（防 WM_EXITSIZEMOVE 丢失）。
-            //   拖这条上下分隔条时若不打标记，定时器消息一到就把刚冻上的重绘解冻 → 拖队列/终端分隔条照旧闪。
-            split.SplitterMoving += delegate { splitterDragging = true; FreezePaint(true); };
-            split.SplitterMoved += delegate { splitterDragging = false; FreezePaint(false); };
+            // splitterDragging：拖分隔条期间为 true（分隔条高亮 + 让 OnPanelSplitterMoved 认出"是手拖的"）。
+            // 以前这里还顺手 FreezePaint(true/false)，2026-10-03 整套冻结已废弃，见 WndProc 顶上那段。
+            split.SplitterMoving += delegate { splitterDragging = true; };
+            split.SplitterMoved += delegate { splitterDragging = false; };
             BufferSplitter(split);
             // 队列和终端之间的缝（分割条 6px + 上下面板各 3px Padding）不能露实色，
             // 否则背景图会被这条横杠拦腰截断（用户实测）。让缝也透出背景图：
@@ -1431,6 +1441,19 @@ namespace RepRecorder
                 recIndicator.Visible = recording;
                 recLabel.Visible = recording;
                 recIndicator.Invalidate();
+                // 快照预览的保险丝：左键已经松开、而且 800ms 没再变过尺寸，却还挂着快照 ——
+                // 说明收尾那条 WM_EXITSIZEMOVE 丢了，赶紧把子控件放回来，绝不能停在"一张图"上。
+                // ⚠ WndProc 里那条 `!isResizing && snapActive` 的自检对付不了这种情况：
+                //   消息丢了的话 isResizing 一直是 true，它永远不触发。
+                // ⚠ 两个条件都要：只看鼠标键的话，那种"程序性连续改尺寸"（没有鼠标按键的场合）
+                //   会在拖动中途被误判成结束，快照当场被收掉。
+                if (snapActive && (Control.MouseButtons & MouseButtons.Left) == 0
+                    && unchecked(Environment.TickCount - lastSnapSizeTick) > 800)
+                {
+                    isResizing = false;
+                    EndSnap();
+                    try { OnContentGeometryChanged(); } catch { }
+                }
             };
             recLabel = new Label();
             recLabel.Text = "REC";
@@ -1554,13 +1577,12 @@ namespace RepRecorder
             mainSplit.FixedPanel = FixedPanel.Panel1;
             // ⚠ Panel1MinSize / Panel2MinSize 不能在这里设：此刻控件还没有真实尺寸，
             //   SplitContainer 会校验 SplitterDistance 落不落在两者之间，直接抛异常。放到 Shown 里初始化。
-            mainSplit.SplitterMoved += delegate { OnPanelSplitterMoved(); FreezePaint(false); };
-            mainSplit.SplitterMoving += delegate { splitterDragging = true; FreezePaint(true); };
+            mainSplit.SplitterMoved += delegate { OnPanelSplitterMoved(); };
+            mainSplit.SplitterMoving += delegate { splitterDragging = true; };
             BufferSplitter(mainSplit);
             // 全局背景模式：左栏四周的 Padding 缝和左右分割条也要透图（内容区模式画不出来，无害）
             mainSplit.Panel1.Paint += delegate(object s, PaintEventArgs pe) { Bg.Paint(mainSplit.Panel1, pe.Graphics); };
             BufferSplitter(mainSplit.Panel1);
-            // 拖动期间冻结重绘（FreezePaint），松手才整帧刷新 —— 否则背景图每帧重画会闪
             // 分隔条自己画：平时只铺底色（暗缝），光标压上去或正在拖的时候中间亮一条 2px 强调蓝。
             // 这样"看不看得见"和"能不能拖"分开了 —— 平时干净，要拖的时候它自己会提示你在这儿。
             mainSplit.Paint += delegate(object s, PaintEventArgs pe)
@@ -2164,33 +2186,57 @@ namespace RepRecorder
 
         protected override void WndProc(ref Message m)
         {
-            // 保险丝：万一异常导致 WM_EXITSIZEMOVE 没送到，整棵树会卡在"禁重绘"状态、画面定格。
-            // 不在拖窗口、也不在拖分隔条，却发现还冻着 → 强制解冻。
-            if (!isResizing && !splitterDragging && paintFrozen)
-                FreezePaint(false);
-            // 拖窗口边框缩放：进入时"三层冻结"—— ①整棵控件树 WM_SETREDRAW=0 掐断重绘
-            // ②窗体+两级 SplitContainer 挂起布局（不再逐帧级联挪子控件）③背景图不画不重建；
-            // 松手按相反顺序一次性解冻 + 重建。单独任何一层都压不住（实测），三层一起才够。
+            // ⚠⚠ 2026-10-03：「整棵树 WM_SETREDRAW=0」那套"三层冻结"已彻底废弃，别再捡回来。
+            //   实测（对窗体发 WM_SETREDRAW(0) 之后查状态，三次采样）：
+            //     正常   WS_VISIBLE=True   IsWindowVisible=True   WindowFromPoint(窗口中心)=自己
+            //     冻结中 WS_VISIBLE=False  IsWindowVisible=False  WindowFromPoint(窗口中心)=别的窗口
+            //     解冻后 WS_VISIBLE=True   IsWindowVisible=True   WindowFromPoint(窗口中心)=自己
+            //   也就是 WM_SETREDRAW(FALSE) 走到 DefWindowProc 时会把 WS_VISIBLE 抹掉（官方文档 Note 里也写了），
+            //   于是窗口在系统眼里"不存在"了 —— 正好对上用户报的两条现场：
+            //     ① 任务栏只给"可见窗口"显示按钮 → 拖窗口期间按钮直接消失，松手才回来；
+            //     ② 窗口不参与命中测试 → 点哪儿都穿到后面的窗口上，看着就是"整个软件卡死了"。
+            //   更要命的是它【会漏】：SplitterMoving 一旦没等到配对的 SplitterMoved（拖到一半松手在外面、
+            //   点那条竖线时最容易），冻结就永久留在那儿 —— 窗口从此再也点不动（用户实测的复现方式）。
+            //   LockWindowUpdate 那条路早先也试过，压不住子控件自己往屏幕画，同样不考虑。
+            //   现在改成：拖动期间【照常实时重绘】，背景图靠 Bg.PaintRect 的"拉伸预览"实时变形，
+            //   整份代码里不再有任何"禁重绘"状态，也就没有漏的地方。
+            //
+            // ⚠⚠ 2026-10-03 第二版：光"照常重绘"还是卡。实测（同一台机器、全屏大小、每步一次缩放）：
+            //     空壳窗体 + 背景图                13 ms/步
+            //     RepRecorder（现在这样，全量重绘） 48 ms/步   ← 约 20fps，用户说的"卡"
+            //     RepRecorder（把绘制全关掉）       18 ms/步
+            //     加 WS_EX_COMPOSITED              47 ms/步（没用）
+            //   也就是说这 48ms 里我们自己画的部分只有 ~30ms，剩下的全是"每步把 74 个子窗口
+            //   重新布局 + 重新画 + 逐个提交给合成器"。WinForms 里"边拖边完整重绘"的天花板就在这儿。
+            //   所以拖动期间改成放"整窗快照"：顶层子控件临时藏掉（隐藏的控件既不参与布局也不重绘），
+            //   窗体自己把按下那一刻拍下的整窗画面按新尺寸铺满 —— 每步只剩一次 blit（≈13ms）。
+            //   视觉上就是 macOS 那种缩放：整幅画面跟着鼠标实时缩放，文字略糊，松手瞬间恢复锐利。
+            //   对照实验里 DPI 感知/合成层都试过了，都不如这条（数据见 _看片 附的说明）。
             if (m.Msg == 0x0231)             // WM_ENTERSIZEMOVE
             {
                 isResizing = true;
-                Bg.SuspendPaint = true;      // 拖动期间所有 Bg.PaintRect 直接不画（旧尺寸大位图逐帧错位重画是闪源）
-                // 布局也冻住：窗体布局引擎一停，Dock / SplitContainer / FlowLayout 就不会逐帧级联挪子控件
-                SuspendLayout();
-                if (mainSplit != null) mainSplit.SuspendLayout();
-                if (split != null) split.SuspendLayout();
-                FreezePaint(true);
+                ArmSnap();                   // 先拍一张（这个时候窗口还没变过大小，拍下来才是完整的）
             }
             else if (m.Msg == 0x0232)        // WM_EXITSIZEMOVE
             {
-                if (split != null) split.ResumeLayout(true);
-                if (mainSplit != null) mainSplit.ResumeLayout(true);
-                ResumeLayout(true);
-                FreezePaint(false);
                 isResizing = false;
-                Bg.SuspendPaint = false;
-                OnContentGeometryChanged();  // 刷新裁剪区 + 补一次背景重建
+                EndSnap();                   // 恢复正常绘制（子控件放回来）
+                OnContentGeometryChanged();  // 刷新裁剪区 + 排一次重建（拖动中间不重建，见 ScheduleBgRebuild）
             }
+            // 保险丝：拖动早就结束了（WM_EXITSIZEMOVE 万一没送到），快照还挂着 → 立刻收工。
+            // 这一步只是把 Visible 放回去，放两次也没事，不会像以前 WM_SETREDRAW 那样把窗口搞成点不动。
+            if (!isResizing && snapActive) EndSnap();
+            // 真的开始变尺寸了才启用快照：只是拖标题栏挪位置的话（尺寸没变）完全用不上，什么都别动。
+            if (m.Msg == 0x0005 && isResizing)                                           // WM_SIZE
+            {
+                lastSnapSizeTick = Environment.TickCount;
+                if (snapArmed && !snapActive) BeginSnap();
+                // ⚠ 这一句不能省：子控件藏起来之后没人再触发重绘（WinForms 默认不在改变大小时
+                //   整窗失效，ResizeRedraw 也没开），画面会停在旧尺寸那一帧上、看着像卡住。
+                //   每步主动失效一次，正好就是"一张图按新尺寸铺满"的那一次 blit。
+                if (snapActive) Invalidate();
+            }
+
             // 只在拖窗口期间吞掉窗体擦背景：系统每帧用底色刷新区、和子控件重画叠在一起就是闪烁。
             // ⚠ 不能无条件吞：hover 重绘也走这条消息，全局吞掉会造成"鼠标划过就闪"（用户实测）。
             if (m.Msg == 0x0014 && isResizing) { m.Result = (IntPtr)1; return; }   // WM_ERASEBKGND
@@ -2283,6 +2329,87 @@ namespace RepRecorder
                 return;
             }
             base.WndProc(ref m);
+        }
+
+        // ---------------------------------------------------- 拖动中的「整窗快照预览」
+        [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+        const uint PW_RENDERFULLCONTENT = 2;   // 连子窗口一起画进 DC（不加这个只画窗体自己）
+
+        // 按下缩放的那一刻拍一张整窗画面。⚠ 必须在窗口**还没变尺寸之前**拍（WM_ENTERSIZEMOVE 正是这个点），
+        // 晚了就只能拍到已经拉伸过的残帧。拍不动也不算错：把 snapArmed 留成 false，这一趟就照常重绘。
+        void ArmSnap()
+        {
+            snapArmed = false;
+            try
+            {
+                if (dragSnap != null) { dragSnap.Dispose(); dragSnap = null; }
+                Size sz = ClientSize;
+                if (sz.Width <= 0 || sz.Height <= 0 || !IsHandleCreated) return;
+                Bitmap bmp = new Bitmap(sz.Width, sz.Height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    IntPtr hdc = g.GetHdc();
+                    try { PrintWindow(Handle, hdc, PW_RENDERFULLCONTENT); }
+                    finally { g.ReleaseHdc(hdc); }
+                }
+                dragSnap = bmp;
+                snapArmed = true;
+            }
+            catch
+            {
+                if (dragSnap != null) { try { dragSnap.Dispose(); } catch { } dragSnap = null; }
+                snapArmed = false;
+            }
+        }
+
+        // 真的开始变尺寸 → 把顶层子控件全藏起来（一整棵子树就都不画了，也不会跟着布局挪位），
+        // 窗体自己铺那张快照。⚠ 只藏【本来就是可见的】那几个，恢复时照单放回 ——
+        // 活动栏（activityBar）平时是隐藏的，不能顺手点亮。
+        void BeginSnap()
+        {
+            if (dragSnap == null) { snapArmed = false; return; }
+            try
+            {
+                snapShow.Clear();
+                foreach (Control c in Controls)
+                    if (c.Visible) { snapShow.Add(c); c.Visible = false; }
+                snapActive = true;
+                Invalidate();
+            }
+            catch
+            {
+                snapActive = false;
+                foreach (Control c in snapShow) { try { c.Visible = true; } catch { } }
+                snapShow.Clear();
+                snapArmed = false;
+            }
+        }
+
+        // 收工：把子控件放回原样、扔掉快照、整窗重画一遍。可以重复调用。
+        void EndSnap()
+        {
+            snapArmed = false;
+            if (snapActive)
+            {
+                snapActive = false;
+                foreach (Control c in snapShow) { try { c.Visible = true; } catch { } }
+            }
+            snapShow.Clear();
+            if (dragSnap != null) { try { dragSnap.Dispose(); } catch { } dragSnap = null; }
+            try { Invalidate(true); } catch { }
+        }
+
+        // 快照预览期间，整窗就画这一张图：按当前客户区大小铺满 = 整幅界面跟着窗口实时缩放。
+        // 子控件都藏着，所以这里画的什么就是用户看到的全部。
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            if (snapActive && dragSnap != null)
+            {
+                try { e.Graphics.DrawImage(dragSnap, ClientRectangle); }
+                catch { }
+                return;
+            }
+            base.OnPaintBackground(e);
         }
 
         // 这个点（窗体客户区坐标）是不是落在顶栏的某个按钮上。
@@ -2660,34 +2787,10 @@ namespace RepRecorder
             catch { }
         }
 
-        // 拖分割线时冻结整棵窗口树的重绘，松手后一次性刷新 —— 背景图和所有控件都不闪（用户实测的闪烁）
-        bool paintFrozen = false;
-        // ⚠ LockWindowUpdate 实测压不住缩放闪烁：它只挡 WM_PAINT，挡不住子控件自己往屏幕画。
-        //   换成对【整棵控件树】逐个发 WM_SETREDRAW=0 —— 这才是真正把重绘掐断的做法。
-        void SetRedrawTree(bool on)
-        {
-            IntPtr v = on ? (IntPtr)1 : IntPtr.Zero;
-            try { if (IsHandleCreated) SendMessage(Handle, 0x000B, v, IntPtr.Zero); } catch { }
-            foreach (Control c in AllControls(this))
-                try { if (c.IsHandleCreated) SendMessage(c.Handle, 0x000B, v, IntPtr.Zero); } catch { }
-        }
-
-        void FreezePaint(bool freeze)
-        {
-            try
-            {
-                if (freeze)
-                {
-                    if (!paintFrozen && IsHandleCreated) { SetRedrawTree(false); paintFrozen = true; }
-                }
-                else
-                {
-                    // 不强制 Update()：同步重绘会和缩放模态循环抢帧；交给正常绘制周期一次性刷出来
-                    if (paintFrozen) { SetRedrawTree(true); paintFrozen = false; Invalidate(true); }
-                }
-            }
-            catch { }
-        }
+        // ⚠ 这里原来有 SetRedrawTree() / FreezePaint()（拖分隔条/拖窗口时对整棵树发 WM_SETREDRAW=0）。
+        //   2026-10-03 整段删除，原因见 WndProc 顶上那段实测记录：那套东西会把 WS_VISIBLE 抹掉，
+        //   导致任务栏丢按钮 + 窗口点不动，而且漏一次就永久卡死。防闪改走"实时重绘 + 拉伸预览"。
+        // ⚠ LockWindowUpdate 早先也试过，只挡 WM_PAINT、挡不住子控件自己往屏幕画，同样不用。
 
         void SyncLeftScroll(bool unused)
         {
@@ -2830,8 +2933,10 @@ namespace RepRecorder
         // 内容区变了（面板收起/拖动/窗口缩放）就重排背景图，防抖 200ms
         void ScheduleBgRebuild()
         {
-            // 拖窗口期间不排重建：200ms 定时器会在拖动中途 fire，重建大位图 + 全窗重绘 = 闪烁源头。
-            // 松手时 WM_EXITSIZEMOVE 会补调一次 OnContentGeometryChanged → 这里再排上。
+            // 拖窗口期间不排重建：200ms 定时器会在拖动中途 fire，重建大位图（双三次缩放+模糊+alpha 合成）
+            // 是几十~一百多毫秒的重活，紧跟着全窗重绘，拖动会一顿一顿的。
+            // 拖动期间画面由 Bg.PaintRect 的"拉伸预览"顶着（实时跟随），松手时 WM_EXITSIZEMOVE
+            // 会补调一次 OnContentGeometryChanged → 这里再排上，按最终尺寸建一张准的。
             if (isResizing) return;
             if (bgTimer == null) return;
             try { bgTimer.Stop(); bgTimer.Start(); }
@@ -2859,8 +2964,9 @@ namespace RepRecorder
                 }
                 // 左栏在 FixedPanel.Panel1 下不会因为拖分割线改尺寸（变的只有右栏），
                 // 所以刚才渗上去的旧图不会自己消失 —— 得主动让它重画一遍。
-                // 拖窗口期间例外：这时候正冻结重绘，再主动失效等于把冻结捅漏（缩放闪烁的帮凶）。
-                if (mainSplit != null && !isResizing) mainSplit.Panel1.Invalidate(true);
+                // 拖窗口期间也要（2026-10-03 改）：现在拖动期间不再冻结重绘，左栏也得跟着实时重画，
+                // 否则全局背景下左栏那张图会慢半拍（正是用户报的"图片不实时跟随"）。
+                if (mainSplit != null) mainSplit.Panel1.Invalidate(true);
             }
             catch { }
             ScheduleBgRebuild();
@@ -7379,6 +7485,7 @@ namespace RepRecorder
         void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             cancel = true;
+            try { EndSnap(); } catch { }     // 万一在拖动中被关掉，快照位图要扔掉
             // 摘掉滚轮分流器：它握着对本窗体的引用，留着会让窗体关不掉（也免得窗口没了还去动控件）
             try { if (wheelRouter != null) Application.RemoveMessageFilter(wheelRouter); }
             catch { }
@@ -7875,10 +7982,6 @@ namespace RepRecorder
         public static Bitmap Cache;
         public static Point CacheOrigin = Point.Empty;
 
-        // 拖窗口缩放期间置 true：所有 PaintRect 直接不画。
-        // 旧尺寸的缓存位图在新窗口上逐帧错位重画，正是"拖动中闪"的画源之一。
-        public static bool SuspendPaint = false;
-
         // 图像允许出现的范围（"窗体客户区"坐标系）= 右侧内容区。
         // ⚠ 这是**权威裁剪区**，几何一变就由窗体同步刷新。
         //   CacheOrigin 只是建图那一刻的快照，天生会落后于布局（拖分割线 / 收起面板 / 启动时
@@ -7897,25 +8000,38 @@ namespace RepRecorder
 
         // 把控件内的矩形 r 铺上对应的背景图。超出图区的部分自动裁掉 ——
         // 这就是"左栏不画图"的实现方式：左栏整个落在图区外，交集为空，直接不画，保留它自己的底色。
+        //
+        // ⚠ 2026-10-03 改：目标区改成【实时的 Clip】，缓存位图按比例拉伸过去 —— 这就是"缩放窗口 /
+        //   拖分隔条时图片实时跟随"的实现。以前是拿 CacheOrigin + Cache.Size 1:1 死贴，
+        //   而缓存位图在整个拖动过程中【不会重建】（见 ScheduleBgRebuild：拖动期间根本不排重建），
+        //   于是新露出来的那块没有任何像素可画 —— 用户看到的就是"刚缩放出来的区域变透明，
+        //   松手才恢复"。拉伸预览画的正是"松手后重建出来会是什么样"，松手时无缝接上。
+        //   尺寸一致时（日常绝大多数时候）走下面那条整数路径，和以前一模一样，不会平白变慢或变糊。
         public static void PaintRect(Control c, Graphics g, Rectangle r)
         {
-            if (Cache == null || SuspendPaint || r.Width <= 0 || r.Height <= 0) return;
+            if (Cache == null || r.Width <= 0 || r.Height <= 0) return;
+            // 图该铺到哪儿（"窗体客户区"坐标系）：Clip 是权威（几何一变就由窗体同步刷新）；
+            // 它还没定下来时（Width<=0）退回建图那一刻的快照。
+            Rectangle dest = (Clip.Width > 0 && Clip.Height > 0) ? Clip : new Rectangle(CacheOrigin, Cache.Size);
+            if (dest.Width <= 0 || dest.Height <= 0) return;
             Point o = OffsetIn(c);
-            // 背景图在"这个控件的坐标系"里占的矩形
-            Rectangle cacheInCtl = new Rectangle(CacheOrigin.X - o.X, CacheOrigin.Y - o.Y, Cache.Width, Cache.Height);
-            Rectangle inter = Rectangle.Intersect(r, cacheInCtl);
+            // 图在"这个控件的坐标系"里占的矩形
+            Rectangle destInCtl = new Rectangle(dest.X - o.X, dest.Y - o.Y, dest.Width, dest.Height);
+            Rectangle inter = Rectangle.Intersect(r, destInCtl);
             if (inter.Width <= 0 || inter.Height <= 0) return;
-            // 再跟"权威裁剪区"取交集：这一道保证了不管缓存多陈旧，图都出不了右侧内容区
-            if (Clip.Width > 0 && Clip.Height > 0)
+            if (dest.Width == Cache.Width && dest.Height == Cache.Height)
             {
-                Rectangle clipInCtl = new Rectangle(Clip.X - o.X, Clip.Y - o.Y, Clip.Width, Clip.Height);
-                inter = Rectangle.Intersect(inter, clipInCtl);
-                if (inter.Width <= 0 || inter.Height <= 0) return;
+                // 尺寸一致：老路径，1:1 直贴（显式给源/目标矩形，避免 DrawImage 按图片 DPI 缩放）
+                g.DrawImage(Cache, inter,
+                            inter.X - destInCtl.X, inter.Y - destInCtl.Y, inter.Width, inter.Height,
+                            GraphicsUnit.Pixel);
+                return;
             }
-            // 显式给源/目标矩形，避免 DrawImage 按图片 DPI 缩放
+            // 尺寸不一致 = 正在缩放 / 正在拖分隔条，缓存还是旧那张：整块拉过去当预览
+            float sx = Cache.Width / (float)dest.Width, sy = Cache.Height / (float)dest.Height;
             g.DrawImage(Cache, inter,
-                        inter.X - cacheInCtl.X, inter.Y - cacheInCtl.Y, inter.Width, inter.Height,
-                        GraphicsUnit.Pixel);
+                        (inter.X - destInCtl.X) * sx, (inter.Y - destInCtl.Y) * sy,
+                        inter.Width * sx, inter.Height * sy, GraphicsUnit.Pixel);
         }
 
         public static void Paint(Control c, Graphics g)
