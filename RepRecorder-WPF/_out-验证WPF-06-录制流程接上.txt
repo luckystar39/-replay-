@@ -1,5 +1,5 @@
 OK   test reps available  count=2
-OK   app alive  pid=19748
+OK   app alive  pid=22552
 OK   log has the startup banner  len=302
 OK   log has the game dir line  
 OK   no exception in log  

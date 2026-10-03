@@ -1,11 +1,11 @@
-OK   A: no-arg launch is alive  pid=12400 waited=0s
+OK   A: no-arg launch is alive  pid=10700 waited=0s
 OK   A: debug port answers (so it is the WPF shell)  
 OK   A: window is not the WinForms host  class=Window
 OK   A: WPF shell exposes AutomationId win  
 OK   A: log says the WPF UI is in use  len=312
 OK   A: no exception in log  
 OK   A: no debug port left behind (clean exit)  
-OK   B: --old launch is alive  pid=13888
+OK   B: --old launch is alive  pid=13752
 OK   B: window class is WinForms  class=WindowsForms10.Window.8.app.0.34f5582_r7_ad1
 OK   B: no debug port under --old  
 OK   C: legacy --wpf still opens the WPF shell  waited=0s

@@ -6,19 +6,18 @@ rem  ÓÃ·¨£º¸ÄÍê´úÂë -> Ë«»÷ ±àÒë.bat ±à³ö RepRecorderWPF.exe -> ÔÙË«»÷±¾ÎÄ¼ş¡£
 rem
 rem  ×öµÄÊÂ£º
 rem    1. °Ñ RepRecorderWPF.exe ¸´ÖÆ³É RepRecorder.exe£¨Ãû×Ö²»±ä£¬ÓÃ»§Ë«»÷µÄ»¹ÊÇËü£©£¬
-rem       µ½ RepRecorder\ ºÍ RepRecorder-¸ø±ğÈË\£»
+rem       µ½ RepRecorder-¸ø±ğÈË\
 rem    2. ¸²¸ÇÖ®Ç°ÏÈ°ÑÄ¿±êÎ»ÖÃµÄÀÏ exe ±¸·İµ½ <Ä¿±ê>\±¸·İ\RepRecorder-Ê±¼ä´Á.exe£¬
-rem       ²¢ÇÒÁ¢¿ÌÑéÖ¤±¸·İÕæµÄ´æÔÚ£¨½»½ÓÎÄµµµÚ 1 ½ÚµÄÌúÂÉ 2£©£»
-rem    3. ÖØ´ò RepRecorder-·¢¸ø±ğÈË.zip£»
-rem    4. ¡¾¾ø¶Ô²»¶¯¡¿RepRecorder-Ô´Âë\ ¡ª¡ª ÄÇ¸öÄ¿Â¼ÊÇÖ»¶ÁµÄ£¬¼û½»½ÓÎÄµµÌúÂÉ 1¡£
+rem       ²¢ÇÒÁ¢¿ÌÑéÖ¤±¸·İÕæµÄ´æÔÚ£¨½»½ÓÎÄµµµÚ 1 ½ÚµÄÌúÂÉ 2£©
+rem    3. ÖØ´ò RepRecorder-·¢¸ø±ğÈË.zip
+rem    4. ¡¾¾ø¶Ô²»¶¯¡¿RepRecorder-¾É°æWinForms\ ¡ª¡ª ÄÇÊÇ¾É°æ¿ìÕÕ£¬ÊÇÍËÂ·
 rem
-rem  ¾¯¸æ£º±ğÔÙË«»÷ RepRecorder-Ô´Âë\Í¬²½µ½ËùÓĞÎÄ¼ş¼Ğ.bat ÁË£¡
-rem        ÄÇ¸ö¾É½Å±¾»á°Ñ¡¾¾É WinForms °æ¡¿µÄ exe ¸²¸Ç»ØÀ´£¬°ÑÕâ´ÎÇĞ»»³åµô¡£
+rem  ×¢Òâ£º¾É°æÄÇ¸öÍ¬²½½Å±¾ÒÑ¾­Í£ÓÃ£¨ÔÚ RepRecorder-¾É°æWinForms\ Àï£¬
+rem        ÎÄ¼şÃû´ø [ÒÑÍ£ÓÃ-±ğÓÃ] Ç°×º£©¡£Ëü»á°Ñ¾É WinForms °æµÄ exe ¸²¸Ç»ØÀ´¡£
 rem ============================================================
 setlocal
 set SRC=%~dp0
 set ROOT=%SRC%..
-set T1=%ROOT%\RepRecorder
 set T2=%ROOT%\RepRecorder-¸ø±ğÈË
 set EXE=%SRC%RepRecorderWPF.exe
 
@@ -41,19 +40,11 @@ rem Ê±¼ä´Á½»¸ø PowerShell Éú³É ¡ª¡ª ²»ÓÃ %date%£¬ÖĞÎÄÏµÍ³µÄ %date% ´ø"ÖÜÁù"»á°Ñ½
 set STAMP=unknown
 for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set STAMP=%%i
 
-call :backup "%T1%"
-if errorlevel 9 goto abort
 call :backup "%T2%"
 if errorlevel 9 goto abort
 
 echo.
 echo ´Ó RepRecorder-WPF Í¬²½µ½£º
-if exist "%T1%" (
-  copy /Y "%EXE%" "%T1%\RepRecorder.exe" >nul
-  if errorlevel 1 ( echo    [Ê§°Ü] RepRecorder\ ) else ( echo    [OK] RepRecorder\ )
-) else (
-  echo    [Ìø¹ı] ÕÒ²»µ½ %T1%
-)
 if exist "%T2%" (
   copy /Y "%EXE%" "%T2%\RepRecorder.exe" >nul
   if errorlevel 1 ( echo    [Ê§°Ü] RepRecorder-¸ø±ğÈË\ ) else ( echo    [OK] RepRecorder-¸ø±ğÈË\ )
@@ -62,13 +53,11 @@ if exist "%T2%" (
 )
 
 echo.
-echo ×¢Òâ£ºRepRecorder-Ô´Âë\ Ò»¸ö×Ö½Ú¶¼Ã»¶¯£¨Ö»¶ÁÄ¿Â¼£¬ÊÇ¾É WinForms °æµÄÍËÂ·£©¡£
+echo ×¢Òâ£ºRepRecorder-¾É°æWinForms\ Ò»¸ö×Ö½Ú¶¼Ã»¶¯£¨¾É°æ¿ìÕÕ£¬ÊÇÍËÂ·£©¡£
 echo       ÒªÅÜ¾É½çÃæ£ºË«»÷ Æô¶¯¾É½çÃæ-ÍËÂ·.bat£¬»ò¸ø exe ¼Ó --old ²ÎÊı¡£
 
 echo.
-echo ÖØ´ò zip£º
-set ZIPPS=Add-Type -AssemblyName System.IO.Compression.FileSystem; $d='%T2%'; $z='%ROOT%\RepRecorder-·¢¸ø±ğÈË.zip'; if(Test-Path -LiteralPath $d){ if(Test-Path -LiteralPath $z){Remove-Item -LiteralPath $z -Force}; [System.IO.Compression.ZipFile]::CreateFromDirectory($d,$z,[System.IO.Compression.CompressionLevel]::Optimal,$false); Write-Host '    [OK] RepRecorder-·¢¸ø±ğÈË.zip' }
-powershell -NoProfile -Command "%ZIPPS%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SRC%´ò°ü-·¢¸ø±ğÈË.ps1"
 
 echo.
 echo Í¬²½Íê³É¡£
@@ -83,8 +72,8 @@ exit /b 1
 
 :backup
 if not exist "%~1\RepRecorder.exe" exit /b 0
-if not exist "%~1\±¸·İ" mkdir "%~1\±¸·İ"
-set BK=%~1\±¸·İ\RepRecorder-%STAMP%.exe
+if not exist "%ROOT%\_exe±¸·İ" mkdir "%ROOT%\_exe±¸·İ"
+set BK=%ROOT%\_exe±¸·İ\RepRecorder-%STAMP%.exe
 copy /Y "%~1\RepRecorder.exe" "%BK%" >nul
 if exist "%BK%" (
   echo    [±¸·İ] %BK%

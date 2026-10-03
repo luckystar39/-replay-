@@ -1,5 +1,5 @@
 settings ParallelCount before test = 1
-OK  app alive  pid=7252
+OK  app alive  pid=3472
 OK  all left-panel controls present  missing=
 OK  btnStart has a playlist glyph + CJK  raw=?  开始录制
 OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB

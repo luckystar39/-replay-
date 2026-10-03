@@ -1,11 +1,11 @@
-OK   app alive  pid=3480 waited=0s
+OK   app alive  pid=5944 waited=0s
 OK   starts with an empty queue  queue=0
 OK   stop is disabled while idle  
 OK   start is enabled while idle  
 OK   status.recording is false while idle  recording=False
 OK   pressing start on an empty queue says so  loglen=340
 OK   empty-queue start does not enter recording  recording=False
-OK   empty-queue start leaves the window alive  pid=3480
+OK   empty-queue start leaves the window alive  pid=5944
 OK   six rows added  count=6
 OK   nothing selected yet  
 OK   selectrange accepted  
@@ -18,7 +18,7 @@ OK   single-row select gives sel=1
 OK   parallel count follows to 1  combo=1
 OK   select:-1 clears  
 OK   out-of-range select is still ok  sel=0
-OK   app survived the whole selection pass  pid=3480
+OK   app survived the whole selection pass  pid=5944
 OK   no exception in log  
 settings restored
 PASS
