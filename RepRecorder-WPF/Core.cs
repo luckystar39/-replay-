@@ -125,6 +125,8 @@ namespace RepRecorder
         public int BgOffsetY { get; set; }
         [Category("界面"), Description("背景图的范围：content=只铺右侧内容区（队列+终端，默认）；global=全局铺满整个窗口（控制面板也透出背景图）。")]
         public string BgScope { get; set; }
+        [Category("界面"), Description("WPF 界面的面板底色强度（0~100）。0 = 面板完全透明、背景图零遮挡；\r\n越大越暗、压在背景图上的文字越好读。默认 25（图片仍一眼看清，文字有保障）。")]
+        public int PanelScrim { get; set; }
         [Category("界面"), Description("【已停用】整窗不透明度。窗口现在固定 100% 不透明（让文字永远实心）；\r\n想调背景的浓淡请用「背景…」对话框里的「图片不透明度」。")]
         public int WindowOpacity { get; set; }
         [Browsable(false)]
@@ -182,6 +184,7 @@ namespace RepRecorder
             BgOffsetX = 0;
             BgOffsetY = 0;
             BgScope = "content";       // 默认只铺右侧内容区；"global" = 全局铺满整个窗口
+            PanelScrim = 25;           // 面板底色：淡淡一层，图片仍一眼看清，文字有保障
             WindowOpacity = 85;
             SettingsVersion = 2;
         }
@@ -243,6 +246,13 @@ namespace RepRecorder
             {
                 // 老设置文件里没有"背景图位移" → 默认居中
                 s.SettingsVersion = 7;
+            }
+            if (s.SettingsVersion < 8)
+            {
+                // 老设置文件里没有"面板底色" → 给默认值。
+                // 这一段只在升级时跑一次，所以之后用户主动把滑块拉到 0（零遮挡）会被正常保留。
+                if (s.PanelScrim <= 0) s.PanelScrim = 25;
+                s.SettingsVersion = 8;
             }
             s.FillDefaults();
             return s;

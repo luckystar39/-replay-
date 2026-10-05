@@ -81,8 +81,9 @@ Check 'status reports the queue' ($s.queue -eq 1) ('queue=' + $s.queue)
 Check 'status window size sane' ($s.win -match 'x') ('win=' + $s.win)
 $t = Dbg 'text:btnStart' | ConvertFrom-Json
 Check 'start button text' ($t.text.Length -gt 0) ('raw=' + $t.text)
-$t = Dbg 'text:statusText' | ConvertFrom-Json
-Check 'status bar text' ($t.text.Length -gt 0) ('raw=' + $t.text)
+# 'status bar text' dropped 2026-10-05: the bottom status bar was removed at the user's request.
+$t = Dbg 'text:btnStop' | ConvertFrom-Json
+Check 'stop button text' ($t.text.Length -gt 0) ('raw=' + $t.text)
 
 # --- clear via the real button (goes through Recorder -> facade -> list) ---
 $c = Dbg 'press:btnClear' | ConvertFrom-Json

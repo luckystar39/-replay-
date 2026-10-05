@@ -13,6 +13,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Markup;
@@ -36,17 +37,28 @@ namespace RepRecorder
         GridSplitter splitterV;
         Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnRefresh, btnPrepare, btnCheck, btnSet, btnOpenLog;
         Button btnSound, btnGameAudio, btnBgm, btnPanel, btnBg;
-        CheckBox chkAuto, chkPrepare, chkCloseObs, chkRound;
+        CheckBox chkPrepare, chkCloseObs, chkRound;
         ComboBox cbParallel, cbMic;
         TextBlock lblMemHint, lblParHint, hintText, statusText, statusEnv;
         bool collapsed = false;
+        Grid queueHead;                      // 队列表头，列表出滚动条时要往左让一条
+        ScrollViewer queueScroll, logScroll; // 队列/终端各自的滚动容器（借用它的视口宽度）
+        double headPadNow = -1;
 
         // 队列
         ListBox queueList;
         Canvas marqueeLayer;
         Rectangle marqueeRect;
         Point marqueeFrom;
-        bool marqueeArmed, marqueeOn, marqueeAdd;
+        bool marqueeArmed, marqueeOn, marqueeAdd, marqueeBlank;
+        readonly List<int> marqueeHit = new List<int>();   // 上一帧框到的行（用来判断"这一帧没变"）
+
+        bool SameHits(List<int> hit)
+        {
+            if (hit.Count != marqueeHit.Count) return false;
+            for (int i = 0; i < hit.Count; i++) if (hit[i] != marqueeHit[i]) return false;
+            return true;
+        }
         readonly ObservableCollection<RowVm> rows = new ObservableCollection<RowVm>();
         public ObservableCollection<RowVm> Rows { get { return rows; } }
         public ListBox QueueList { get { return queueList; } }
@@ -55,9 +67,17 @@ namespace RepRecorder
         ListBox logList;
         TextBlock logHeaderArrow, logHeaderTail;
         bool logCollapsed = false;
+        GridLength savedQueueH, savedLogH;   // 收起前两行的高度，展开时还原
+        // 终端收起：整个卡片藏起来，只在右侧底部留一条窄条；这几个是收起时要改的行高/元素
+        RowDefinition rowQueue, rowSplitH, rowLogBody, rowLogBar;
+        UIElement logCardEl;
+        Button logBar;
         string lastLogLine = "";
+        const int LogMaxRaw = 2000;                  // 终端只留最近这么多"原始"行（旧版规矩）
         readonly List<string> logRaw = new List<string>();
         readonly ObservableCollection<string> logLines = new ObservableCollection<string>();
+        // 每条原始行折成了几行 —— 超限丢队头时要成对地丢，不能整份重排（见 AppendLog）
+        readonly Queue<int> logWrapCount = new Queue<int>();
         readonly Dictionary<char, int> logCharW = new Dictionary<char, int>();
         public ObservableCollection<string> LogLines { get { return logLines; } }
         public bool LogCollapsed { get { return logCollapsed; } }
@@ -65,7 +85,11 @@ namespace RepRecorder
         // 背景图层
         Rectangle bgLayer;
         BlurEffect bgBlurFx;
-        string bgLoadedPath = null;
+        // 记录画刷是按什么参数建出来的。⚠ 只记路径是不够的：放置方式（fill/fit/stretch/
+        // center/tile）也是画刷的属性，只改下拉框不换图片的话，以前这里判定"没变"就不重建画刷，
+        // 于是放置方式怎么选都不生效（2026-10-04 用户报的"放置位置功能都用不了"就是这个）。
+        string bgLoadedKey = null;
+        Grid bgClip;                     // 背景图层的裁剪容器：位移不许把图推出内容区
 
         System.Windows.Threading.DispatcherTimer soundTimer;
 
@@ -77,6 +101,7 @@ namespace RepRecorder
         public TextBlock ParHint { get { return lblParHint; } }
         public ComboBox ComboParallel { get { return cbParallel; } }
         public Settings CfgPublic { get { return cfg; } }
+        public Recorder RecPublic { get { return rec; } }
 
         public ShellWindow(Settings settings, Recorder recorder)
         {
@@ -86,8 +111,13 @@ namespace RepRecorder
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
             Width = 1180; Height = 648;                 // DIP：和旧版的逻辑像素一样大
+            // 旧版 WinForms 里有一句 MinimumSize = new Size(760, 520)（Core.cs 的 MainForm），
+            // 目的是「窗口缩小也不会漏掉按钮」。搬到 WPF 时漏了这一句 —— 能一路拖到只剩几百像素，
+            // 左栏五张卡片被挤成一条缝。旧版那套是 DPI 不感知的，760×520 就是逻辑像素，
+            // WPF 这边同样是 DIP，所以数值直接照搬。
+            MinWidth = 760; MinHeight = 520;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Base;                       // 跟着「面板暗化」走的窗口底色
             UseLayoutRounding = true;
             SnapsToDevicePixels = true;
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
@@ -95,7 +125,11 @@ namespace RepRecorder
             Ui.Id(this, "win");
 
             // 全局滚动条样式（列表和终端都吃这条）
-            Resources.Add(typeof(ScrollBar), (Style)XamlReader.Parse(HudScrollBarXaml));
+            Resources.Add(typeof(ScrollBar), Ui.HudScrollBar(10));
+
+            // 面板底色强度（设置里的「面板暗化」）——必须在 BuildRoot 之前设好，
+            // 因为卡片构造时就要用这个共享画刷
+            Ui.SetScrim(cfg == null ? 25 : cfg.PanelScrim);   // 必须无条件调用：窗口底色画刷靠它初始化
 
             // 无边框窗口的拖动/缩放/双击最大化/贴边分屏，WPF 自带
             WindowChrome chrome = new WindowChrome();
@@ -112,7 +146,11 @@ namespace RepRecorder
             SourceInitialized += delegate
             {
                 HwndSource src = (HwndSource)PresentationSource.FromVisual(this);
-                if (src != null) src.AddHook(Hook);
+                if (src != null)
+                {
+                    src.AddHook(Hook);
+                    AddCaptionStyle(src.Handle);        // 补回 WS_CAPTION，否则没有最小化/还原动画
+                }
             };
         }
 
@@ -125,15 +163,12 @@ namespace RepRecorder
             Grid body = new Grid();
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
+            // 2026-10-05 按用户要求删掉底部状态栏（左右角那两行小字），所以这里只有两行
             UIElement top = BuildTopBar();
             UIElement mid = BuildMiddle();
-            UIElement st = BuildStatus();
             Grid.SetRow(mid, 1);
-            Grid.SetRow(st, 2);
             body.Children.Add(top);
             body.Children.Add(mid);
-            body.Children.Add(st);
             root.Children.Add(body);
             return root;
         }
@@ -141,13 +176,17 @@ namespace RepRecorder
         UIElement BuildTopBar()
         {
             Grid bar = new Grid();
-            bar.Background = Ui.Br(MainForm.HudPanel, 0xE6);
+            bar.Background = Ui.Scrim;                  // 淡化后的面板底色，别再盖黑板
             Ui.Id(bar, "topBar");
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(22, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            left.Children.Add(Ui.Txt("REP → MP4  录制器   (OBS)", 13, MainForm.HudText, true));
+            // 横向 StackPanel 会把子元素拉满整行高度，而 TextBlock 默认贴着自己盒子的顶部画字，
+            // 所以标题看着"顶在上面"。单独把它垂直居中。
+            TextBlock title = Ui.Txt("REP → MP4  录制器   (OBS)", 13, MainForm.HudText, true);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            left.Children.Add(title);
             btnPanel = Ui.FlatButton("◀  收起面板", "btnPanel");
             btnPanel.Width = 112; btnPanel.Height = 24; btnPanel.Margin = new Thickness(8, 0, 0, 0);
             btnPanel.Click += delegate { SetPanelCollapsed(!collapsed); };
@@ -159,7 +198,9 @@ namespace RepRecorder
             left.Children.Add(btnBg);
             bar.Children.Add(left);
 
-            StackPanel caps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            // 窗口按钮要让开右上角那 6px 的缩放边带 —— 贴死角落的话，
+            // 右上角就拉不动了（另外三个角没被盖住所以正常）。
+            StackPanel caps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 6, 0) };
             caps.Children.Add(CapButton("─", "capMin", delegate { WindowState = WindowState.Minimized; }));
             caps.Children.Add(CapButton("▢", "capMax", delegate
             {
@@ -175,7 +216,7 @@ namespace RepRecorder
         {
             Button b = new Button();
             b.Content = glyph;
-            b.Width = 46; b.Height = 30;
+            b.Width = 46; b.Height = 24;
             b.Foreground = Ui.Br(MainForm.HudText);
             b.Background = Brushes.Transparent;
             b.BorderThickness = new Thickness(0);
@@ -202,9 +243,33 @@ namespace RepRecorder
   </ControlTemplate.Triggers>
 </ControlTemplate>";
 
+        // 分隔条最多能把左栏拖到哪儿：窗口宽 - 分隔条 - 右边最小宽。
+        // 不加这道栏杆的话能一路拖到底，右边（队列/终端）被挤成 0 宽就"找不到了"
+        // （2026-10-05 用户报的）。380 DIP 够队列那 6 列表头 + 终端正常显示。
+        const double MinRightPanel = 380;
+        Grid midGrid;
+
+        void OnPanelSplitterDelta(object sender, DragDeltaEventArgs e)
+        {
+            if (colLeft == null || midGrid == null) return;
+            double avail = midGrid.ActualWidth - (colSplit == null ? 0 : colSplit.Width.Value) - MinRightPanel;
+            if (avail < 0) avail = 0;
+            double w = colLeft.Width.Value + e.HorizontalChange;
+            if (w > avail) w = avail;
+            if (w < 0) w = 0;
+            colLeft.Width = new GridLength(w);
+            e.Handled = true;                 // 宽度由这里定，别让 GridSplitter 再自己算一遍
+            // ⚠ 这里**不要**调 ApplyBackground()。
+            //   「只铺内容区」时它会改 bgClip 的 Margin → 背景整层重新布局、ImageBrush 按新尺寸
+            //   重新采样，每一帧都做一次 → 整个窗口掉帧、看起来就是"背景一直在闪"
+            //   （2026-10-05 用户报的，就是这句话引进来的：原来的代码只在 DragCompleted 里刷一次）。
+            //   拖的过程中不跟，松手那一下由 OnPanelSplitterDone 一次刷到位。
+        }
+
         UIElement BuildMiddle()
         {
             Grid g = new Grid();
+            midGrid = g;
             colBar = new ColumnDefinition { Width = new GridLength(0) };
             colLeft = new ColumnDefinition { Width = new GridLength(PanelWidth()) };
             colSplit = new ColumnDefinition { Width = new GridLength(6) };
@@ -220,8 +285,9 @@ namespace RepRecorder
             splitterV.Width = 6;
             splitterV.HorizontalAlignment = HorizontalAlignment.Stretch;
             splitterV.VerticalAlignment = VerticalAlignment.Stretch;
-            splitterV.Style = Ui.SplitterStyle();
+            Ui.StyleSplitter(splitterV);
             Ui.Id(splitterV, "splitterV");
+            splitterV.DragDelta += OnPanelSplitterDelta;
             splitterV.DragCompleted += delegate { OnPanelSplitterDone(); };
             Grid.SetColumn(splitterV, 2);
             g.Children.Add(splitterV);
@@ -244,7 +310,7 @@ namespace RepRecorder
         UIElement BuildActivityBar()
         {
             activityBar = new Border();
-            activityBar.Background = Ui.Br(MainForm.HudPanel, 0xE6);
+            activityBar.Background = Ui.Scrim;               // 同上
             activityBar.BorderBrush = Ui.Br(MainForm.HudLine);
             activityBar.BorderThickness = new Thickness(0, 0, 1, 0);
             activityBar.Visibility = Visibility.Collapsed;
@@ -273,12 +339,32 @@ namespace RepRecorder
             return "约 " + (n * 550 / 1024.0).ToString("0.0") + " GB";
         }
 
+        // 左栏专用的滚动条样式：平时透明，鼠标划过所在 ScrollViewer 才浮现。
+        // ScrollBar 自己的 IsMouseOver 只管它那一竖条，鼠标在面板里别处时仍是 false，
+        // 所以绑的是 ScrollViewer 的悬停状态。
+        // 用代码拼而不是 XamlReader.Parse：BasedOn 的基样式在 Window.Resources 里，
+        // 孤立解析那段 XAML 时 StaticResource 是找不到的。
+        Style PanelBarStyle()
+        {
+            Style basedOn = Resources[typeof(ScrollBar)] as Style;
+            Style st = new Style(typeof(ScrollBar), basedOn);
+            st.Setters.Add(new Setter(UIElement.OpacityProperty, 0.0));
+            Binding b = new Binding("IsMouseOver");
+            b.RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(ScrollViewer), 1);
+            DataTrigger dt = new DataTrigger();
+            dt.Binding = b;                 // DataTrigger.Binding 是 BindingBase，RelativeSource 得先设好再赋
+            dt.Value = true;
+            dt.Setters.Add(new Setter(UIElement.OpacityProperty, 1.0));
+            st.Triggers.Add(dt);
+            return st;
+        }
+
         int MicIndex()
         {
             if (cfg == null) return 0;
-            if (cfg.MicMode == "micOnly") return 1;
-            if (cfg.MicMode == "both") return 2;
-            return 0;
+            // 「只录麦克风」2026-10-05 按用户要求从下拉里去掉，现在只有两项。
+            // 老设置文件里存着 "micOnly" 的会落到 0（只录游戏声音），不会出错。
+            return cfg.MicMode == "both" ? 1 : 0;
         }
 
         void OnPanelSplitterDone()
@@ -287,6 +373,9 @@ namespace RepRecorder
             double w = colLeft.Width.Value;
             if (w < 110) { SetPanelCollapsed(true); return; }
             if (cfg != null) { cfg.PanelWidth = (int)Math.Round(w); cfg.Save(); }
+            // 拖分隔条只改列宽、不改窗口大小，SizeChanged 不会触发 ——
+            // 不在这里补一次，背景图（只铺内容区时）就不会跟着面板宽度走。
+            ApplyBackground();
         }
 
         void SetPanelCollapsed(bool want)
@@ -310,6 +399,7 @@ namespace RepRecorder
                 if (btnPanel != null) btnPanel.Content = "◀  收起面板";
             }
             if (cfg != null) { cfg.PanelCollapsed = want; cfg.Save(); }
+            ApplyBackground();   // 列宽变了 → 背景的裁剪区（只铺内容区时）要跟着重算
         }
 
         // ---------------------------------------------------------------- 左栏五张卡片
@@ -318,10 +408,10 @@ namespace RepRecorder
             leftCol = new StackPanel { Margin = new Thickness(6, 6, 0, 6) };
 
             // ① 录制
-            btnStart = Ui.FlatButton("▶  开始录制", "btnStart");
+            btnStart = Ui.FlatButton("▶", "开始录制", "btnStart");
             btnStart.Background = Ui.Br(MainForm.HudOn);
             btnStart.Height = 26; btnStart.HorizontalAlignment = HorizontalAlignment.Stretch;
-            btnStop = Ui.FlatButton("■  停止", "btnStop");
+            btnStop = Ui.FlatButton("■", "停止", "btnStop");
             btnStop.Background = Ui.Br(MainForm.HudOff);
             btnStop.Height = 26; btnStop.HorizontalAlignment = HorizontalAlignment.Stretch; btnStop.Margin = new Thickness(0, 6, 0, 0);
             leftCol.Children.Add(Ui.Card("录 制", "◉", new StackPanel { Children = { btnStart, btnStop } }, "cardRecord", 8));
@@ -354,7 +444,7 @@ namespace RepRecorder
             par.Children.Add(lblMemHint);
             chkRound = Ui.HudCheck("轮录（录完一批自动接着录下一批）", "chkRound", cfg == null || cfg.RoundRecord, 8);
             par.Children.Add(chkRound);
-            leftCol.Children.Add(Ui.Card("并 行", "≡", par, "cardParallel", 8));
+            leftCol.Children.Add(Ui.Card("录制设置", "≡", par, "cardParallel", 8));
 
             // ③ 队列
             btnClear = Ui.FlatButton("清空队列", "btnClear");
@@ -378,7 +468,7 @@ namespace RepRecorder
             snd.Children.Add(btnBgm);
             TextBlock lblMic = Ui.Txt("录音模式：", 12.5, MainForm.HudText, false);
             lblMic.VerticalAlignment = VerticalAlignment.Center;
-            cbMic = Ui.HudCombo("cbMic", 150, new string[] { "只录游戏声音", "只录麦克风", "游戏 + 麦克风" }, MicIndex());
+            cbMic = Ui.HudCombo("cbMic", 150, new string[] { "只录游戏声音", "游戏 + 麦克风" }, MicIndex());
             snd.Children.Add(Ui.Row(6, lblMic, cbMic));
             leftCol.Children.Add(Ui.Card("声 音", "🔊", snd, "cardSound", 8));
 
@@ -389,10 +479,11 @@ namespace RepRecorder
             btnSet = Ui.FlatButton("设置…", "btnSet");
             btnOpenLog = Ui.FlatButton("日志", "btnOpenLog");
             env.Children.Add(EvenRow(btnPrepare, btnCheck, btnSet, btnOpenLog));
-            chkAuto = Ui.HudCheck("拖入后自动开始", "chkAuto", cfg != null && cfg.AutoStartOnDrop, 8);
-            chkPrepare = Ui.HudCheck("自动准备采集源并绑定游戏窗口", "chkPrepare", cfg == null || cfg.AutoPrepareObs, 4);
+            // 「拖入后自动开始」2026-10-05 用户要求整条删掉：拖进来只入队，
+            // 一定要用户自己点「开始录制」。设置项 AutoStartOnDrop 保留（老设置文件里可能有），
+            // 但程序里再也不读它了。
+            chkPrepare = Ui.HudCheck("自动准备采集源并绑定游戏窗口", "chkPrepare", cfg == null || cfg.AutoPrepareObs, 8);
             chkCloseObs = Ui.HudCheck("录完关闭 OBS", "chkCloseObs", cfg != null && cfg.CloseObsAfter, 4);
-            env.Children.Add(chkAuto);
             env.Children.Add(chkPrepare);
             env.Children.Add(chkCloseObs);
             leftCol.Children.Add(Ui.Card("环 境", "▍", env, "cardEnv", 8));
@@ -402,12 +493,19 @@ namespace RepRecorder
             Ui.Id(hintText, "hint");
             hintText.Visibility = Visibility.Collapsed;
             leftCol.Children.Add(hintText);
-            lblParHint = Ui.Note("", "lblParHint", 10);
-            leftCol.Children.Add(lblParHint);
+            // 左栏最下面那行「（= 你选中的 N 个）」2026-10-05 用户要求删掉。
+            // 字段留着、但不挂进可视树：Recorder 的 SyncParallelCountToSelection 还在给它
+            // 赋值（赋到一个没上树的 TextBlock 上是安全的，界面不显示而已，
+            // 各处调用都有 null 判断，不需要动录制逻辑）。
+            lblParHint = Ui.Note("", null, 0);
 
             ScrollViewer sv = new ScrollViewer();
             sv.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            // 左栏滚动条：不用时不显示，鼠标划过整个面板才露出来。
+            // 只挂左栏 —— 队列/终端要保持一直可见（全局隐形的版本用户以为滚动条坏了）。
+            sv.Resources.Add(typeof(ScrollBar), PanelBarStyle());
             sv.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            Ui.PinScrollBarWidth(sv, 10);
             sv.Content = leftCol;
             Ui.Id(sv, "panelLeft");
             Grid.SetColumn(sv, 1);
@@ -436,10 +534,15 @@ namespace RepRecorder
         UIElement BuildRight()
         {
             Grid g = new Grid();
-            g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(6) });
-            g.RowDefinitions.Add(new RowDefinition { Height = new GridLength(0.62, GridUnitType.Star) });
-            g.Margin = new Thickness(0, 6, 6, 6);
+            rowQueue = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
+            rowSplitH = new RowDefinition { Height = new GridLength(6) };
+            rowLogBody = new RowDefinition { Height = new GridLength(0.62, GridUnitType.Star) };
+            rowLogBar = new RowDefinition { Height = new GridLength(0) };      // 收起后那条窄条占的行
+            g.RowDefinitions.Add(rowQueue);
+            g.RowDefinitions.Add(rowSplitH);
+            g.RowDefinitions.Add(rowLogBody);
+            g.RowDefinitions.Add(rowLogBar);
+            g.Margin = new Thickness(0, 6, 6, 6);   // 照新设计稿：两块分开的圆角卡片，中间留缝
 
             g.Children.Add(Ui.Card("队列 / QUEUE", "▍", BuildQueueBody(), "cardQueue", 6));
 
@@ -447,14 +550,26 @@ namespace RepRecorder
             hs.Height = 6;
             hs.HorizontalAlignment = HorizontalAlignment.Stretch;
             hs.VerticalAlignment = VerticalAlignment.Stretch;
-            hs.Style = Ui.SplitterStyle();
+            Ui.StyleSplitter(hs);
             Ui.Id(hs, "splitterH");
             Grid.SetRow(hs, 1);
             g.Children.Add(hs);
 
-            UIElement logCard = Ui.Card("终端 / STDOUT", "▍", BuildLogPanel(), "cardLog", 6);
-            Grid.SetRow(logCard, 2);
-            g.Children.Add(logCard);
+            logCardEl = Ui.Card("终端 / STDOUT", "▍", BuildLogPanel(), "cardLog", 6);
+            Grid.SetRow(logCardEl, 2);
+            g.Children.Add(logCardEl);
+
+            // 收起终端之后，只在底边留的这一条：点它展开回来
+            logBar = Ui.FlatButton("▲  终端", "logExpand");
+            logBar.Height = 20;
+            logBar.FontSize = 11.5;
+            logBar.Background = Ui.Scrim;
+            logBar.BorderThickness = new Thickness(0);
+            logBar.HorizontalAlignment = HorizontalAlignment.Stretch;
+            logBar.Visibility = Visibility.Collapsed;
+            logBar.Click += delegate { ToggleLogCollapse(); };
+            Grid.SetRow(logBar, 3);
+            g.Children.Add(logBar);
             return g;
         }
 
@@ -465,7 +580,8 @@ namespace RepRecorder
             wrap.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
             wrap.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            Grid head = new Grid { Background = Ui.Br(MainForm.HudHead) };
+            Grid head = new Grid { Background = Ui.Scrim };   // 表头也走同一层淡底色
+            queueHead = head;
             AddListCols(head);
             string[] names = { "#", "文件", "状态", "用时", "大小", "说明" };
             for (int i = 0; i < names.Length; i++)
@@ -497,7 +613,17 @@ namespace RepRecorder
             queueList.PreviewMouseLeftButtonDown += OnListMouseDown;
             queueList.PreviewMouseMove += OnListMouseMove;
             queueList.PreviewMouseLeftButtonUp += OnListMouseUp;
+            queueList.LostMouseCapture += OnListLostCapture;
+            // 队列永远不出横向滚动条（旧版 FitListColumns 的规矩）：列宽本来就是星号，
+            // 但显式关掉更保险 —— 万一哪行内容撑出去，出来的横向条会把表头彻底顶歪。
+            ScrollViewer.SetHorizontalScrollBarVisibility(queueList, ScrollBarVisibility.Disabled);
+            queueList.Loaded += delegate { Ui.PinScrollBarWidth(FindChild<ScrollViewer>(queueList), 10); };
             body.Children.Add(queueList);
+
+            // 空队列**不显示任何提示文字**（2026-10-05 用户再次要求删掉）。
+            // 这条其实是旧版就定过的规矩：Core.cs 里那句
+            // 「2026-10-03：用户不要队列里这行字了（压在背景图上很碍眼）」还在，
+            // 移植时按设计稿又加回来了。
 
             marqueeLayer = new Canvas { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             marqueeRect = new Rectangle();
@@ -509,7 +635,71 @@ namespace RepRecorder
 
             Grid.SetRow(body, 1);
             wrap.Children.Add(body);
+            // 表头不在列表的 ScrollViewer 里，所以列表一冒出竖向滚动条，行内容的可用宽度就
+            // 少了那一条 —— 星号列（文件 / 说明）跟着变窄，第 2 列往右的固定列全部向左移。
+            // 2026-10-05 实测（300% DPI、60 行）：表头「状态」比行的状态点右了约 5 DIP。
+            // 让表头右边也留出同样宽的一条，两边重新对上。
+            queueList.Loaded += delegate
+            {
+                if (queueScroll != null) return;
+                queueScroll = FindChild<ScrollViewer>(queueList);
+                if (queueScroll == null) return;
+                queueScroll.ScrollChanged += delegate { SyncHeaderPad(); };
+                SyncHeaderPad();
+            };
             return wrap;
+        }
+
+        void SyncHeaderPad()
+        {
+            if (queueHead == null || queueScroll == null) return;
+            double pad = 0;
+            if (queueScroll.ComputedVerticalScrollBarVisibility == Visibility.Visible)
+                pad = QueueBarWidth();
+            if (Math.Abs(pad - headPadNow) < 0.5) return;
+            headPadNow = pad;
+            queueHead.Margin = new Thickness(0, 0, pad, 0);
+        }
+
+        // 滚动条实际占多宽：直接问模板里那根竖条，别硬编码 ——
+        // HudScrollBarXaml 里那个 Width 哪天改了，这里也不会对不上。
+        double QueueBarWidth()
+        {
+            ScrollBar sb = FindVerticalBar(queueScroll);
+            if (sb != null && sb.ActualWidth > 0) return sb.ActualWidth;
+            return 10;
+        }
+
+        static ScrollBar FindVerticalBar(DependencyObject root)
+        {
+            if (root == null) return null;
+            int n = 0;
+            try { n = VisualTreeHelper.GetChildrenCount(root); } catch { return null; }
+            for (int i = 0; i < n; i++)
+            {
+                DependencyObject c = VisualTreeHelper.GetChild(root, i);
+                ScrollBar sb = c as ScrollBar;
+                if (sb != null && sb.Orientation == Orientation.Vertical) return sb;
+                ScrollBar r = FindVerticalBar(c);
+                if (r != null) return r;
+            }
+            return null;
+        }
+
+        static T FindChild<T>(DependencyObject root) where T : DependencyObject
+        {
+            if (root == null) return null;
+            int n = 0;
+            try { n = VisualTreeHelper.GetChildrenCount(root); } catch { return null; }
+            for (int i = 0; i < n; i++)
+            {
+                DependencyObject c = VisualTreeHelper.GetChild(root, i);
+                T t = c as T;
+                if (t != null) return t;
+                T r = FindChild<T>(c);
+                if (r != null) return r;
+            }
+            return null;
         }
 
         void AddListCols(Grid g)
@@ -541,96 +731,80 @@ namespace RepRecorder
   </Grid>
 </DataTemplate>";
 
+        // 队列行的样子。配色抄 Win11 资源管理器：**同一个形状，只用半透明度分层次**，
+        // 三种状态一眼能分出"鼠标在这 / 我选中了 / 这是本批"。
+        //   · 悬停   白 8%          —— 很淡，只是「鼠标在这」
+        //   · 选中   白 20% + 蓝条   —— 和资源管理器选一行一样
+        //   · 本批   绿 25% + 绿条   —— 下一批要录的就是这几个
+// ⚠ WPF 的 8 位十六进制是 #AARRGGBB（透明度在最前面），不是 #RRGGBBAA 也不是 CSS 的 #RRGGBBAA。
+//   写成 #FFFFFF33 会被当成「不透明的黄」—— 2026-10-05 就这么黄了一大片，截图才看出来。
+        // ⚠ 触发器顺序要紧（后面的盖前面的）：以前是「本批→悬停→选中」，鼠标划过绿色行时
+        //   绿色被悬停色盖掉，看起来像标记丢了（2026-10-05 用户报的）。现在「本批」放最后。
+        // ⚠ 这些 Setter 全放在 ControlTemplate.Triggers 里、用 TargetName 指模板里的部件 ——
+        //   放到 Style.Triggers 里 TargetName 是解析不到的（不在同一个名字域）。
         const string ListRowStyleXaml = @"
 <Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
        xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='ListBoxItem'>
   <Setter Property='Padding' Value='0'/>
   <Setter Property='Margin' Value='0'/>
-  <Setter Property='Background' Value='Transparent'/>
   <Setter Property='Foreground' Value='#E6EBF4'/>
   <Setter Property='Template'>
     <Setter.Value>
       <ControlTemplate TargetType='ListBoxItem'>
         <Grid>
-          <Border x:Name='bg' Background='{TemplateBinding Background}'/>
-          <Rectangle x:Name='bar' Width='2' HorizontalAlignment='Left' Fill='#37C8A0' Visibility='Collapsed'/>
+          <Border x:Name='bg' Background='Transparent'/>
+          <Rectangle x:Name='bar' Width='3' HorizontalAlignment='Left' Fill='#4F74D8' Visibility='Collapsed'/>
           <ContentPresenter/>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property='IsSelected' Value='True'>
-            <Setter TargetName='bar' Property='Visibility' Value='Collapsed'/>
+          <Trigger Property='IsMouseOver' Value='True'>
+            <Setter TargetName='bg' Property='Background' Value='#14FFFFFF'/>
           </Trigger>
+          <Trigger Property='IsSelected' Value='True'>
+            <Setter TargetName='bg' Property='Background' Value='#33FFFFFF'/>
+            <Setter TargetName='bar' Property='Fill' Value='#4F74D8'/>
+            <Setter TargetName='bar' Property='Visibility' Value='Visible'/>
+          </Trigger>
+          <DataTrigger Binding='{Binding Batch}' Value='True'>
+            <Setter TargetName='bg' Property='Background' Value='#4037C8A0'/>
+            <Setter TargetName='bar' Property='Fill' Value='#37C8A0'/>
+            <Setter TargetName='bar' Property='Visibility' Value='Visible'/>
+          </DataTrigger>
         </ControlTemplate.Triggers>
       </ControlTemplate>
     </Setter.Value>
   </Setter>
-  <Style.Triggers>
-    <DataTrigger Binding='{Binding Batch}' Value='True'>
-      <Setter Property='Background' Value='#2E4A3E'/>
-    </DataTrigger>
-    <Trigger Property='IsMouseOver' Value='True'>
-      <Setter Property='Background' Value='#5A6E8C33'/>
-    </Trigger>
-    <Trigger Property='IsSelected' Value='True'>
-      <Setter Property='Background' Value='#3A4A6B'/>
-    </Trigger>
-  </Style.Triggers>
 </Style>";
 
-        const string HudScrollBarXaml = @"
-<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
-       xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='ScrollBar'>
-  <Setter Property='Width' Value='10'/>
-  <Setter Property='Background' Value='Transparent'/>
-  <Setter Property='Template'>
-    <Setter.Value>
-      <ControlTemplate TargetType='ScrollBar'>
-        <Grid Background='Transparent'>
-          <Track x:Name='PART_Track' IsDirectionReversed='True'>
-            <Track.DecreaseRepeatButton>
-              <RepeatButton Command='ScrollBar.PageUpCommand' Opacity='0' Focusable='False'/>
-            </Track.DecreaseRepeatButton>
-            <Track.Thumb>
-              <Thumb>
-                <Thumb.Template>
-                  <ControlTemplate TargetType='Thumb'>
-                    <Border x:Name='tb' Background='#475979' CornerRadius='4' Margin='2,0' Opacity='0.55'/>
-                    <ControlTemplate.Triggers>
-                      <Trigger Property='IsMouseOver' Value='True'>
-                        <Setter TargetName='tb' Property='Opacity' Value='1'/>
-                        <Setter TargetName='tb' Property='Background' Value='#4F74D8'/>
-                      </Trigger>
-                    </ControlTemplate.Triggers>
-                  </ControlTemplate>
-                </Thumb.Template>
-              </Thumb>
-            </Track.Thumb>
-            <Track.IncreaseRepeatButton>
-              <RepeatButton Command='ScrollBar.PageDownCommand' Opacity='0' Focusable='False'/>
-            </Track.IncreaseRepeatButton>
-          </Track>
-        </Grid>
-      </ControlTemplate>
-    </Setter.Value>
-  </Setter>
-</Style>";
 
-        // 框选：从行上按下拖出矩形，按住 Ctrl 是追加；空白处点击不清空选择
+        // 框选：从空白处按下拖出矩形，按住 Ctrl 是追加；空白处点击不清空选择
         void OnListMouseDown(object sender, MouseButtonEventArgs e)
         {
             marqueeFrom = e.GetPosition(queueList);
-            marqueeArmed = true;
             marqueeOn = false;
             marqueeAdd = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
-            if (HitItem(marqueeFrom) < 0) e.Handled = true;
+            marqueeBlank = HitItem(marqueeFrom) < 0;     // 按在"没有行"的空白处
+            // 从哪儿按下都能起手（以前只允许空白处起手，用户 2026-10-05 说太别扭）。
+            // 这里**不设 Handled**：单击选中、双击定位、Ctrl 点选都还要照常工作。
+            // 等拖动超过阈值、真进入框选了，再到 Move 里接管。
+            marqueeArmed = true;
         }
 
         void OnListMouseMove(object sender, MouseEventArgs e)
         {
             if (!marqueeArmed) return;
+            // 防御：左键已经松开却还收到 Move（漏了 MouseUp）就当场收尾
+            if (e.LeftButton != MouseButtonState.Pressed) { EndMarquee(e.GetPosition(queueList)); return; }
             Point p = e.GetPosition(queueList);
             if (!marqueeOn && Math.Abs(p.X - marqueeFrom.X) < 4 && Math.Abs(p.Y - marqueeFrom.Y) < 4) return;
-            marqueeOn = true;
+            if (!marqueeOn)
+            {
+                marqueeOn = true;
+                // 抢走 ListBoxItem 手里的鼠标捕获 —— 它那套"按住拖动扩选"就此停下；
+                // 光靠 e.Handled 不够，两者同时做，选框才不会被原生选择覆盖掉。
+                try { Mouse.Capture(queueList); } catch { }
+            }
+            e.Handled = true;
             marqueeLayer.Visibility = Visibility.Visible;
             Rect r = new Rect(marqueeFrom, p);
             Canvas.SetLeft(marqueeRect, r.Left);
@@ -642,13 +816,45 @@ namespace RepRecorder
 
         void OnListMouseUp(object sender, MouseButtonEventArgs e)
         {
-            marqueeArmed = false;
-            if (marqueeOn)
+            if (!marqueeArmed) return;
+            bool wasDrag = marqueeOn;
+            bool onBlank = marqueeBlank;
+            if (marqueeOn) e.Handled = true;    // 压掉原生收尾，别让它在框选之后又改一次选择
+            EndMarquee(e.GetPosition(queueList));
+            // 在列表下方的空白处点一下 = 把当前选中的几行钉成「本批」（蓝色取消、变绿）。
+            // 这是旧版里用户明确要求的交互（Core.cs 的 KeepSelectionOnEmptyClick：
+            // 「选中几行（蓝色）之后，点列表下方的空白处 → 蓝色取消、这几行变成绿色标记」），
+            // 交接文档把「空白处点一下标本批」列为别再改动的产品规则。
+            // 移植时整条丢掉了 —— 功能还在（左栏那个「标记本批」按钮），但这个手势没了。
+            // 这里是 PreviewMouseLeftButtonUp，跑在 ListBox 自己的收尾之前，所以读到的
+            // 还是完整的选中集合（旧版得等 120ms 正是因为 ListView 会在点击过程中一条条取消）。
+            if (!wasDrag && onBlank && queueList.SelectedItems.Count > 0)
             {
-                marqueeOn = false;
-                marqueeLayer.Visibility = Visibility.Collapsed;
-                ApplyMarquee(new Rect(marqueeFrom, e.GetPosition(queueList)));
+                rec.UiMarkBatch();
+                e.Handled = true;
             }
+        }
+
+        // 捕获被抢走（比如别处抢焦点）时也要收尾，否则选框会留在屏幕上
+        void OnListLostCapture(object sender, MouseEventArgs e)
+        {
+            if (!marqueeArmed) return;
+            // 只有捕获真的离开了整个列表才收尾。ListBox 按下时会把捕获从 ListBoxItem
+            // 挪到 ListBox 自己身上，这种"内部换手"也会冒泡到这里 —— 照收不误的话，
+            // 刚起手的框选会被当场掐断。捕获还在列表上就说明是换手，接着拖。
+            if (Mouse.Captured == queueList) return;
+            EndMarquee(marqueeFrom);
+        }
+
+        void EndMarquee(Point end)
+        {
+            bool wasOn = marqueeOn;
+            marqueeArmed = false;
+            marqueeOn = false;
+            marqueeHit.Clear();     // 下一轮框选从"没命中"重新算，免得拿上一轮的集合去比
+            marqueeLayer.Visibility = Visibility.Collapsed;
+            try { if (Mouse.Captured == queueList) Mouse.Capture(null); } catch { }
+            if (wasOn) ApplyMarquee(new Rect(marqueeFrom, end));
         }
 
         int HitItem(Point p)
@@ -681,11 +887,24 @@ namespace RepRecorder
                 }
                 catch { }
             }
+            // 命中集合和上一帧一样就什么都别做。
+            // ⚠ 这是"蓝色框不停闪烁"的根源（2026-10-05 用户报的，旧版也有类似的）：
+            //   以前鼠标每移动一点点都 Clear + 重加一遍选中，于是 SelectionChanged 连锁触发
+            //   → SyncParallelCountToSelection → HighlightBatchRows → queueList.Items.Refresh()，
+            //   整个列表的容器每移一像素就重建一次，蓝色框和整列都在闪。
+            //   顺带还省掉了每次移动都写一遍设置文件（数量跟随会 cfg.Save()）。
+            if (SameHits(hit)) return;
+            marqueeHit.Clear();
+            marqueeHit.AddRange(hit);
             if (!marqueeAdd) queueList.SelectedItems.Clear();
+            // ⚠ 必须往 SelectedItems 里 Add，不能写 ListBoxItem.IsSelected = true。
+            // 2026-10-05 实测：命中 4 行、IsSelected 设了 4 次，SelectedItems.Count 始终是 1 ——
+            // 那种写法在这里是"替换"不是"累加"，框选永远只能选中最后一行。
+            // 调试接口的 selectrange（验证WPF-10 一直在跑）用的就是 Add，那才是对的写法。
             foreach (int i in hit)
             {
-                ListBoxItem it = queueList.ItemContainerGenerator.ContainerFromIndex(i) as ListBoxItem;
-                if (it != null) it.IsSelected = true;
+                if (!queueList.SelectedItems.Contains(queueList.Items[i]))
+                    queueList.SelectedItems.Add(queueList.Items[i]);
             }
         }
 
@@ -717,7 +936,10 @@ namespace RepRecorder
             hdr.BorderThickness = new Thickness(0);
             Grid hdrIn = new Grid();
             TextBlock arrow = Ui.Txt("▼ 收起", 11.5, MainForm.HudDim, false);
+            // 靠左，和这张卡片的标题「▍ 终端 / STDOUT」同一个 x（2026-10-05 用户要求）。
+            // 卡片内容区的左内边距是 12，卡片标题在 12+2 的地方，所以这里给 2。
             arrow.Margin = new Thickness(2, 0, 0, 0);
+            arrow.HorizontalAlignment = HorizontalAlignment.Left;
             arrow.VerticalAlignment = VerticalAlignment.Center;
             Ui.Id(arrow, "logHeaderArrow");
             logHeaderArrow = arrow;
@@ -730,8 +952,6 @@ namespace RepRecorder
             Ui.Id(tail, "logHeaderTail");
             logHeaderTail = tail;
             hdrIn.Children.Add(tail);
-            Rectangle hl = new Rectangle { Height = 1, Fill = Ui.Br(MainForm.HudLine), VerticalAlignment = VerticalAlignment.Bottom };
-            hdrIn.Children.Add(hl);
             hdr.Content = hdrIn;
             hdr.Click += delegate { ToggleLogCollapse(); };
             g.Children.Add(hdr);
@@ -746,6 +966,16 @@ namespace RepRecorder
             logList.ItemTemplate = (DataTemplate)XamlReader.Parse(LogLineXaml);
             logList.ItemContainerStyle = (Style)XamlReader.Parse(LogLineStyleXaml);
             logList.Focusable = false;
+            // 横向滚动条一律不要：折行是我们按字符宽度自己算的，算准了就不该出现；
+            // 万一哪行差几像素顶出去，出来一条横向条反而把纵向的布局也搅乱。
+            ScrollViewer.SetHorizontalScrollBarVisibility(logList, ScrollBarVisibility.Disabled);
+            logList.SizeChanged += OnLogResized;    // 变宽/变窄后按新宽度重排折行
+            logList.Loaded += delegate
+            {
+                ScrollViewer lsv = FindChild<ScrollViewer>(logList);
+                Ui.PinScrollBarWidth(lsv, 10);
+                if (lsv != null) lsv.ScrollChanged += OnLogScrolled;   // 维护「是否跟随最新」
+            };
             Ui.Id(logList, "logBox");
             ContextMenu menu = new ContextMenu();
             MenuItem copy = new MenuItem();
@@ -786,34 +1016,98 @@ namespace RepRecorder
         public void AppendLog(string s)
         {
             if (string.IsNullOrEmpty(s)) return;
-            int visible = VisibleLogLines();
-            bool atBottom = !logCollapsed && logList != null &&
-                            (logList.Items.Count == 0 || logList.Items.Count - visible <= logLines.Count + 2);
+            bool atBottom = AtLogBottom();
             string[] parts = s.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
             int n = parts.Length;
             if (n > 0 && parts[n - 1].Length == 0) n--;
             for (int i = 0; i < n; i++)
             {
                 logRaw.Add(parts[i]);
-                foreach (string w in WrapLogLine(parts[i])) logLines.Add(w);
+                List<string> ws = WrapLogLine(parts[i]);
+                foreach (string w in ws) logLines.Add(w);
+                logWrapCount.Enqueue(ws.Count);
             }
-            if (logRaw.Count > 2000)
+            // 超出 2000 行就从队头丢。⚠ 以前这里是「RemoveRange + 整份重排」——
+            // 每来一行就重排一次全部（Clear + 几千次 Add，每次都发 CollectionChanged），
+            // 是 O(n²)：往终端灌 3000 行时界面会直接卡住不应答（2026-10-05 实测调试接口超时）。
+            // 现在按"这一行当初折成了几行"成对地丢，不重排、不发 Reset。
+            int guard = 4 * LogMaxRaw + 16;   // 防呆：计数一旦对不上也不会死循环
+            while (logRaw.Count > LogMaxRaw && guard-- > 0)
             {
-                logRaw.RemoveRange(0, logRaw.Count - 2000);
-                RebuildLogLines();
+                logRaw.RemoveAt(0);
+                int c = logWrapCount.Count > 0 ? logWrapCount.Dequeue() : 0;
+                for (int k = 0; k < c && logLines.Count > 0; k++) logLines.RemoveAt(0);
             }
             lastLogLine = s.Replace("\r", "").Replace("\n", " ");
             if (logHeaderTail != null) logHeaderTail.Text = lastLogLine;
             if (atBottom) ScrollLogToEnd();
         }
 
-        void RebuildLogLines()
+        // "来新日志之前，用户是不是已经在最底下了" —— 是才跟着往下滚。
+        // ⚠ 以前这里写的是 logList.Items.Count vs logLines.Count 相比 —— 那俩是同一个集合，
+        //   条件恒为真，等于"永远强制滚到底"：用户往上翻着看，来一行就被拽回去。
+        // ⚠ 后来改成直接读 ScrollViewer 的偏移量 —— 又踩了另一个坑：
+        //   ScrollIntoView 要等下一次布局才真的滚过去，**一次灌进来一大片日志时**
+        //   （比如 addlog:120、或者 ffmpeg 一次吐几十行），第一行之后偏移量还是 0，
+        //   于是每一行都判定"用户不在底部"、全都不滚 —— 终端就停在旧内容上
+        //   （2026-10-05 实测：一次加 120 行之后 scroll% 停在 1）。
+        //   现在改用"跟随标记"：默认跟随；用户自己滚走才取消；滚回底部自动恢复。
+        bool logFollowTail = true;
+
+        bool AtLogBottom()
+        {
+            if (logCollapsed || logList == null) return true;
+            if (LogScroll() == null) return true;
+            return logFollowTail;
+        }
+
+        // 由 ScrollChanged 更新：位置被滚走 → 不跟；滚回底部 → 恢复跟。
+        // 我们自己调的 ScrollIntoView 也会把位置带到最底，所以它会把标记恢复成"跟"。
+        void OnLogScrolled(object sender, ScrollChangedEventArgs e)
+        {
+            if (Math.Abs(e.VerticalChange) < 0.5) return;      // 只是内容变高/视口变高，不算滚动
+            double bottom = e.ExtentHeight - e.ViewportHeight;
+            logFollowTail = bottom <= 0 || e.VerticalOffset >= bottom - 2;
+        }
+
+        ScrollViewer LogScroll()
+        {
+            if (logScroll == null && logList != null) logScroll = FindChild<ScrollViewer>(logList);
+            return logScroll;
+        }
+
+        void RebuildLogLines(bool toEnd)
         {
             logLines.Clear();
+            logWrapCount.Clear();
             foreach (string s in logRaw)
-                foreach (string w in WrapLogLine(s)) logLines.Add(w);
-            ScrollLogToEnd();
+            {
+                List<string> ws = WrapLogLine(s);
+                foreach (string w in ws) logLines.Add(w);
+                logWrapCount.Enqueue(ws.Count);
+            }
+            if (toEnd) ScrollLogToEnd();
         }
+
+        // 终端是按"字符个数"手工折行的，折多宽取决于当时的宽度。窗口一变宽，
+        // 之前按窄宽度折好的那些行还留在列表里 —— 右边白白空一大块。
+        // 旧版 WinForms 在 OnSizeChanged 里做了重排，移植时漏了。
+        // 只在宽度真的变了才重排（拖边框会连着触发很多次）。
+        void OnLogResized(object sender, SizeChangedEventArgs e)
+        {
+            int w = LogTextWidth();
+            if (w == wrapWidth) return;
+            wrapWidth = w;
+            if (logRaw.Count == 0) return;
+            bool atBottom = AtLogBottom();
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (logRaw.Count == 0) return;
+                RebuildLogLines(atBottom);
+            }));
+        }
+
+        int wrapWidth = -1;
 
         List<string> WrapLogLine(string s)
         {
@@ -840,9 +1134,18 @@ namespace RepRecorder
 
         int LogTextWidth()
         {
-            double w = (logList == null ? 400 : logList.ActualWidth);
-            if (w <= 40) w = 400;
-            return Math.Max(32, (int)(w - 16));
+            // 有 ScrollViewer 就用它的视口宽度 —— 那已经扣掉了竖向滚动条，
+            // 再减 2 免得最宽那行正好顶出横向条。没有就退回旧那套估算。
+            ScrollViewer sv = LogScroll();
+            double w;
+            if (sv != null && sv.ViewportWidth > 40) w = sv.ViewportWidth - 2;
+            else
+            {
+                w = (logList == null ? 400 : logList.ActualWidth);
+                if (w <= 40) w = 400;
+                w -= 16;
+            }
+            return Math.Max(32, (int)w);
         }
 
         int LogCharW(char c)
@@ -856,46 +1159,52 @@ namespace RepRecorder
             return w;
         }
 
-        int VisibleLogLines()
-        {
-            double h = (logList == null ? 200 : logList.ActualHeight);
-            return Math.Max(1, (int)(h / 16.5));
-        }
-
         void ScrollLogToEnd()
         {
             if (logLines.Count == 0) return;
-            try { logList.ScrollIntoView(logLines[logLines.Count - 1]); } catch { }
+            logFollowTail = true;      // 我们主动滚到底了 → 继续跟随
+            // ⚠ 必须等布局跑完再滚：刚 Add 完就调 ScrollIntoView，它按**还没更新的**范围算，
+            //   只能滚下去一点点（实测一次加 120 行只走到 2%）。排到布局之后再滚才到位。
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (logLines.Count == 0) return;
+                try { logList.ScrollIntoView(logLines[logLines.Count - 1]); } catch { }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         void ToggleLogCollapse()
         {
             logCollapsed = !logCollapsed;
-            if (logList != null) logList.Visibility = logCollapsed ? Visibility.Collapsed : Visibility.Visible;
             if (logHeaderArrow != null) logHeaderArrow.Text = logCollapsed ? "▶ 展开" : "▼ 收起";
             if (logHeaderTail != null) logHeaderTail.Visibility = logCollapsed ? Visibility.Visible : Visibility.Collapsed;
+
+            // 收起 = 整块终端卡片让位（不只是把日志列表藏起来，那样只会剩一个空壳），
+            // 腾出的高度全给队列；底边留一条窄条可以点开。
+            if (logCardEl != null) logCardEl.Visibility = logCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            if (rowSplitH != null) rowSplitH.Height = logCollapsed ? new GridLength(0) : new GridLength(6);
+            if (rowLogBar != null) rowLogBar.Height = logCollapsed ? new GridLength(20) : new GridLength(0);
+            if (logBar != null) logBar.Visibility = logCollapsed ? Visibility.Visible : Visibility.Collapsed;
+
+            if (logCollapsed)
+            {
+                // 记下收起前的高度 —— 用户可能拖过分隔条，那时行高是像素值而不是星号
+                if (rowQueue != null) savedQueueH = rowQueue.Height;
+                if (rowLogBody != null) { savedLogH = rowLogBody.Height; rowLogBody.Height = new GridLength(0); }
+            }
+            else if (rowLogBody != null)
+            {
+                // 还原。但要是那次拖拽把某一行拖到几乎没高度，就退回默认比例 ——
+                // 不然展开后终端一点高度都分不到，看起来就是"终端区域不见了"。
+                rowQueue.Height = (savedQueueH.IsStar || savedQueueH.Value >= 60) ? savedQueueH : new GridLength(1, GridUnitType.Star);
+                rowLogBody.Height = (savedLogH.IsStar || savedLogH.Value >= 60) ? savedLogH : new GridLength(0.62, GridUnitType.Star);
+            }
         }
 
         // ---------------------------------------------------------------- 底栏
-        UIElement BuildStatus()
-        {
-            Grid g = new Grid();
-            g.Background = Ui.Br(MainForm.HudPanel, 0xE6);
-            TextBlock l = Ui.Txt("就绪", 12, MainForm.HudDim, false);
-            l.Margin = new Thickness(8, 0, 0, 0);
-            l.VerticalAlignment = VerticalAlignment.Center;
-            Ui.Id(l, "statusText");
-            statusText = l;
-            g.Children.Add(l);
-            TextBlock r = Ui.Txt("", 12, MainForm.HudDim, false);
-            r.HorizontalAlignment = HorizontalAlignment.Right;
-            r.Margin = new Thickness(0, 0, 10, 0);
-            r.VerticalAlignment = VerticalAlignment.Center;
-            Ui.Id(r, "statusEnv");
-            statusEnv = r;
-            g.Children.Add(r);
-            return g;
-        }
+        // 2026-10-05 按用户要求删掉（左右角那两行小字）。
+        // statusText / statusEnv 两个字段留着但不再挂进可视树：调试接口的 status 命令还在读它们
+        // （读到 null 就报空串，Ui.SetStatusEnv 那边也有 null 判断，不会崩）。
+        // 代价：OBS / 游戏的"已就绪"不再显示在界面上了。
 
         // ---------------------------------------------------------------- 行操作（门面用）
         public void AddRow(Job j)
@@ -960,10 +1269,18 @@ namespace RepRecorder
 
         public void HighlightBatchRows(List<Job> batch)
         {
-            foreach (RowVm r in rows) r.Batch = false;
+            // 先算出新的绿色集合，**只有真的变了**才 Refresh。
+            // Items.Refresh() 是整表重建容器 —— 框选拖动时每帧都调就是那阵闪烁。
+            List<RowVm> want = new List<RowVm>();
             if (batch != null && batch.Count > 0)
-                foreach (RowVm r in rows)
-                    if (batch.Contains(r.Job)) r.Batch = true;
+                foreach (RowVm r in rows) if (batch.Contains(r.Job)) want.Add(r);
+            bool changed = false;
+            foreach (RowVm r in rows)
+            {
+                bool b = want.Contains(r);
+                if (r.Batch != b) { r.Batch = b; changed = true; }
+            }
+            if (!changed) return;
             try { queueList.Items.Refresh(); } catch { }
         }
 
@@ -1011,11 +1328,20 @@ namespace RepRecorder
         // ---------------------------------------------------------------- 背景图层
         UIElement BuildBackgroundLayer()
         {
+            // 容器负责"铺在哪儿"（Margin）和"不许溢出"（ClipToBounds）；
+            // 里面的矩形负责画，位移用它的 RenderTransform。
+            // 以前直接把矩形当图层，位移是加在矩形上的，裁剪区管不住它，图会被推到控制面板上。
+            bgClip = new Grid();
+            bgClip.ClipToBounds = true;
+            Ui.Id(bgClip, "bgClip");
+
             bgLayer = new Rectangle();
             bgLayer.Fill = Ui.Br(MainForm.HudBg);
             Ui.Id(bgLayer, "bgLayer");
+            bgClip.Children.Add(bgLayer);
+
             ApplyBackground();
-            return bgLayer;
+            return bgClip;
         }
 
         public void ApplyBackground()
@@ -1024,7 +1350,9 @@ namespace RepRecorder
             {
                 if (bgLayer == null || cfg == null) return;
 
-                if (!string.IsNullOrEmpty(cfg.BgImage) && cfg.BgImage != bgLoadedPath && File.Exists(cfg.BgImage))
+                // 画刷 = 图片 + 放置方式，两个都得进 key，否则换了放置方式不会重建画刷
+                string bgKey = cfg.BgImage + "|" + cfg.BgLayout;
+                if (!string.IsNullOrEmpty(cfg.BgImage) && bgKey != bgLoadedKey && File.Exists(cfg.BgImage))
                 {
                     BitmapImage bi = new BitmapImage();
                     bi.BeginInit();
@@ -1045,27 +1373,51 @@ namespace RepRecorder
                         br.AlignmentY = AlignmentY.Center;
                     }
                     bgLayer.Fill = br;
-                    bgLoadedPath = cfg.BgImage;
+                    bgLoadedKey = bgKey;
                 }
                 else if (string.IsNullOrEmpty(cfg.BgImage))
                 {
                     bgLayer.Fill = Ui.Br(MainForm.HudBg);
-                    bgLoadedPath = null;
+                    bgLoadedKey = null;
                 }
 
                 int a = Math.Max(0, Math.Min(100, cfg.BgOpacity));
                 bgLayer.Opacity = a / 100.0;
                 bgLayer.Visibility = a > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-                double w = ActualWidth > 0 ? ActualWidth : 1180;
-                double h = ActualHeight > 0 ? ActualHeight : 648;
-                if (cfg.BgOffsetX != 0 || cfg.BgOffsetY != 0)
+                // 位移作用在**画刷**上（RelativeTransform），不是整块图层上。
+                // 作用在图层上时等于把整张图推走、容器再从另一边裁掉 —— 「铺满」本身裁掉的那部分
+                // 永远回不来（用户 2026-10-05 报的"裁边之后动 xy 轴，裁掉的边真的不见了，
+                // 而我正是想让裁掉的边回到画面上"）。
+                // 作用在画刷上，图是在容器**内部**平移，铺满裁掉的上下/左右就能露出来。
+                ImageBrush ib = bgLayer.Fill as ImageBrush;
+                if (ib != null)
                 {
-                    TransformGroup tg = new TransformGroup();
-                    tg.Children.Add(new TranslateTransform(w * cfg.BgOffsetX / 100.0, h * cfg.BgOffsetY / 100.0));
-                    bgLayer.RenderTransform = tg;
+                    if ((cfg.BgOffsetX != 0 || cfg.BgOffsetY != 0) && bgLayer.ActualWidth < 1)
+                    {
+                        // 尺寸还没算出来 → 算不出"可移动余量"，等布局完再来一次
+                        Dispatcher.BeginInvoke(new Action(delegate { ApplyBackground(); }));
+                    }
+                    double sx, sy;
+                    BgPanSlack(out sx, out sy);
+                    if (sx > 0.5 || sy > 0.5)
+                    {
+                        // 「铺满」：图比窗口大，多出来的那点就是可移动的余量。
+                        // 把 X/Y 的 ±100% 映射到这段余量上 —— 拉满正好把被裁掉的那条边
+                        // 露出来，再拉也不会露白（2026-10-05 用户选的方案）。
+                        ib.Transform = new TranslateTransform(sx * cfg.BgOffsetX / 100.0, sy * cfg.BgOffsetY / 100.0);
+                        ib.RelativeTransform = Transform.Identity;
+                    }
+                    else
+                    {
+                        // 其它放置方式（拉伸/居中/平铺/完整放下）本来就不裁边，位移是自由的
+                        ib.Transform = Transform.Identity;
+                        if (cfg.BgOffsetX != 0 || cfg.BgOffsetY != 0)
+                            ib.RelativeTransform = new TranslateTransform(cfg.BgOffsetX / 100.0, cfg.BgOffsetY / 100.0);
+                        else ib.RelativeTransform = Transform.Identity;
+                    }
                 }
-                else bgLayer.RenderTransform = Transform.Identity;
+                bgLayer.RenderTransform = Transform.Identity;   // 图层自己不动（位移已经交给画刷了）
 
                 if (cfg.BgBlur > 0)
                 {
@@ -1075,13 +1427,17 @@ namespace RepRecorder
                 }
                 else bgLayer.Effect = null;
 
-                if (cfg.BgScope == "global") bgLayer.Margin = new Thickness(0);
-                else
+                // Margin 设在裁剪容器上（不是矩形上），这样位移的 RenderTransform 会被容器裁住
+                if (bgClip != null)
                 {
-                    double left = (colBar == null ? 0 : colBar.Width.Value)
-                                + (colLeft == null ? 0 : colLeft.Width.Value)
-                                + (colSplit == null ? 0 : colSplit.Width.Value);
-                    bgLayer.Margin = new Thickness(left, 30, 0, 22);
+                    if (cfg.BgScope == "global") bgClip.Margin = new Thickness(0);
+                    else
+                    {
+                        double left = (colBar == null ? 0 : colBar.Width.Value)
+                                    + (colLeft == null ? 0 : colLeft.Width.Value)
+                                    + (colSplit == null ? 0 : colSplit.Width.Value);
+                        bgClip.Margin = new Thickness(left, 30, 0, 0);   // 底部原来要给状态栏留 22，底栏删了就不用留
+                    }
                 }
             }
             catch (Exception ex) { Log.Write("背景层出错：" + ex.Message); }
@@ -1093,6 +1449,35 @@ namespace RepRecorder
             if (layout == "stretch") return Stretch.Fill;
             if (layout == "center" || layout == "tile") return Stretch.None;
             return Stretch.UniformToFill;
+        }
+
+        // 画刷上的位移量（DIP 或相对比例）。bgstate 用它证明"位移真的加在画刷上"。
+        static string BgBrushOffset(ImageBrush b, bool x)
+        {
+            if (b == null) return "null";
+            TranslateTransform t = b.Transform as TranslateTransform;
+            if (t == null) t = b.RelativeTransform as TranslateTransform;
+            if (t == null) return "0";
+            return (x ? t.X : t.Y).ToString("0.###");
+        }
+
+        // 「铺满」时被裁掉多少 = 可移动的余量（DIP）。别的放置方式返回 0（不裁边，位移自由）。
+        void BgPanSlack(out double sx, out double sy)
+        {
+            sx = 0; sy = 0;
+            try
+            {
+                ImageBrush ib = bgLayer.Fill as ImageBrush;
+                BitmapImage bi = ib == null ? null : ib.ImageSource as BitmapImage;
+                double aw = bgLayer.ActualWidth, ah = bgLayer.ActualHeight;
+                if (bi == null || aw < 1 || ah < 1 || bi.PixelWidth < 1 || bi.PixelHeight < 1) return;
+                // 只有"铺满"（UniformToFill）会裁边 —— 拉满/撑满/居中/平铺都不会
+                if (cfg == null || cfg.BgLayout != "fill") return;
+                double k = Math.Max(aw / bi.PixelWidth, ah / bi.PixelHeight);
+                sx = Math.Max(0, (bi.PixelWidth * k - aw) / 2);
+                sy = Math.Max(0, (bi.PixelHeight * k - ah) / 2);
+            }
+            catch { }
         }
 
         public string BgState()
@@ -1107,11 +1492,19 @@ namespace RepRecorder
             catch { }
             return "{\"image\":" + (cfg == null || string.IsNullOrEmpty(cfg.BgImage) ? "false" : "true")
                  + ",\"stretch\":\"" + StretchOf(cfg == null ? "" : cfg.BgLayout).ToString() + "\""
+                 // brushStretch 是画刷上**真正生效**的那个值。上面那个是从配置算出来的，
+                 // 两者不一致就说明"改了放置方式但画刷没重建"——2026-10-04 那个 bug 就是因为
+                 // 验收脚本只查了前者，所以一直是绿的。验收脚本现在两条都比。
+                 + ",\"brushStretch\":\"" + (b == null ? "" : b.Stretch.ToString()) + "\""
+                 // 位移到底加在哪儿：加在画刷上（bx/by）才对 —— 那样「铺满」裁掉的边能露回来；
+                 // 加在图层上（bgLayer.RenderTransform）就只是把整块图推走。验收脚本两条都比。
+                 + ",\"bx\":" + BgBrushOffset(b, true) + ",\"by\":" + BgBrushOffset(b, false)
                  + ",\"opacity\":" + (bgLayer == null ? 0 : (int)Math.Round(bgLayer.Opacity * 100))
                  + ",\"blur\":" + (cfg == null ? 0 : cfg.BgBlur)
                  + ",\"ox\":" + (cfg == null ? 0 : cfg.BgOffsetX)
                  + ",\"oy\":" + (cfg == null ? 0 : cfg.BgOffsetY)
                  + ",\"scope\":\"" + (cfg == null ? "" : cfg.BgScope) + "\""
+                 + ",\"scrim\":" + (cfg == null ? 0 : cfg.PanelScrim)
                  + ",\"pixels\":\"" + px + "\"}";
         }
 
@@ -1136,14 +1529,13 @@ namespace RepRecorder
             // 旧版 MainForm 里 list.ItemSelectionChanged 那根线（选中几个 → 「同时录制数量」跟着变）
             if (queueList != null) queueList.SelectionChanged += delegate { rec.UiOnSelectionChanged(); };
 
-            if (chkAuto != null) chkAuto.Click += delegate { if (cfg != null) { cfg.AutoStartOnDrop = chkAuto.IsChecked == true; cfg.Save(); } };
             if (chkPrepare != null) chkPrepare.Click += delegate { if (cfg != null) { cfg.AutoPrepareObs = chkPrepare.IsChecked == true; cfg.Save(); } };
             if (chkCloseObs != null) chkCloseObs.Click += delegate { if (cfg != null) { cfg.CloseObsAfter = chkCloseObs.IsChecked == true; cfg.Save(); } };
             if (chkRound != null) chkRound.Click += delegate { if (cfg != null) { cfg.RoundRecord = chkRound.IsChecked == true; cfg.Save(); } };
             if (cbMic != null) cbMic.SelectionChanged += delegate
             {
                 if (cfg == null) return;
-                cfg.MicMode = cbMic.SelectedIndex == 1 ? "micOnly" : (cbMic.SelectedIndex == 2 ? "both" : "gameOnly");
+                cfg.MicMode = cbMic.SelectedIndex == 1 ? "both" : "gameOnly";
                 cfg.Save();
             };
 
@@ -1177,7 +1569,29 @@ namespace RepRecorder
             soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } };
             soundTimer.Start();
 
-            rec.UiOnShown(args);
+            // 旧版这段挂在 MainForm 的 Shown 事件上。移植时改成了"构造完直接调" —— 那时候
+            // 可视树还没建起来，Ui 门面里"按 AutomationId 找控件再赋值"的那些（按钮宽度、
+            // 前景/背景色）会**全部静默落空**；等两秒后声音状态定时器第一次跑才真正生效，
+            // 于是看起来就是"开软件后控制面板里的声音按钮闪一下"（2026-10-05 用户报的）。
+            // 挂到 Loaded 上，在第一次绘制之前就把状态设好，就不会有这一下。
+            if (!IsLoaded) Loaded += delegate { rec.UiOnShown(args); };
+            else rec.UiOnShown(args);
+        }
+
+        // 关窗口要先问录制逻辑：还在录的话不能直接退，否则 OBS 会一直在后台录下去。
+        // 旧版是 MainForm 的 FormClosing += OnFormClosing（Core.cs），移植时整块漏了。
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            try
+            {
+                if (rec != null && !rec.UiOnClosing())
+                {
+                    e.Cancel = true;    // 拦住，等收尾线程把 worker 收干净再关
+                    return;
+                }
+            }
+            catch { }
+            base.OnClosing(e);
         }
 
         // ---------------------------------------------------------------- 最大化别盖任务栏
@@ -1188,6 +1602,21 @@ namespace RepRecorder
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
         [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr hMon, ref MONITORINFO mi);
 
+        const int GWL_STYLE = -16;
+        const int WS_CAPTION = 0x00C00000;
+        [DllImport("user32.dll", SetLastError = true)] static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", SetLastError = true)] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        // WindowStyle=None 的窗口会被 Windows 当成"没有标题栏"，连 WS_CAPTION 一起丢掉 ——
+        // 而没有 CAPTION，DWM 就不给放最小化 / 还原 / 最大化的那套动画。
+        // 把这一位补回去动画就回来了；标题栏仍然由 WindowChrome 自己画，用户看到的样子不变。
+        static void AddCaptionStyle(IntPtr hwnd)
+        {
+            int style = GetWindowLong(hwnd, GWL_STYLE);
+            if ((style & WS_CAPTION) == WS_CAPTION) return;
+            SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
+        }
+
         IntPtr Hook(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
         {
             if (msg == 0x0024)
@@ -1197,15 +1626,33 @@ namespace RepRecorder
                     MINMAXINFO mmi = (MINMAXINFO)Marshal.PtrToStructure(l, typeof(MINMAXINFO));
                     MONITORINFO mi = new MONITORINFO();
                     mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+                    // ⚠ 这条消息【必须】自己把 ptMinTrackSize 也写上。
+                    //   在 WPF 里，Window 的 MinWidth/MinHeight 是它自己处理 WM_GETMINMAXINFO
+                    //   时换算成 ptMinTrackSize 的；这里 handled = true 把消息吞了，那个换算就
+                    //   永远不会发生 —— 最小尺寸限制直接消失，窗口能拖到 700x500 还更小。
+                    //   旧版 WinForms 那边为同一件事专门留过一句警告：
+                    //   「拦下来不调 base 的话最小尺寸限制就没了（还能拖到比 760x520 更小）」。
+                    //   移植时原样又踩了一遍（2026-10-05 实测：设了 MinWidth 仍然能缩到 700x500）。
+                    double sc = 1.0;
+                    try
+                    {
+                        HwndSource hs = HwndSource.FromHwnd(hwnd);
+                        if (hs != null && hs.CompositionTarget != null)
+                            sc = hs.CompositionTarget.TransformToDevice.M11;
+                    }
+                    catch { }
+                    if (MinWidth > 0) mmi.ptMinTrackSize.X = (int)Math.Ceiling(MinWidth * sc);
+                    if (MinHeight > 0) mmi.ptMinTrackSize.Y = (int)Math.Ceiling(MinHeight * sc);
+
                     if (GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref mi))
                     {
                         mmi.ptMaxPosition.X = mi.rcWork.L - mi.rcMonitor.L;
                         mmi.ptMaxPosition.Y = mi.rcWork.T - mi.rcMonitor.T;
                         mmi.ptMaxSize.X = mi.rcWork.R - mi.rcWork.L;
                         mmi.ptMaxSize.Y = mi.rcWork.B - mi.rcWork.T;
-                        Marshal.StructureToPtr(mmi, l, false);
-                        handled = true;
                     }
+                    Marshal.StructureToPtr(mmi, l, false);
+                    handled = true;
                 }
                 catch { }
             }

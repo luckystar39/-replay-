@@ -49,7 +49,9 @@ Check 'status answers' ($st -ne $null) ("raw=" + $raw)
 if ($st -ne $null) {
   Check 'status.wpf' ($st.wpf -eq $true) ('wpf=' + $st.wpf)
   Check 'status.parallel' ($st.parallel -eq 6) ('parallel=' + $st.parallel)
-  Check 'status.statusText non-empty' ($st.statusText.Length -gt 0) ('len=' + $st.statusText.Length + ' statusText=' + $st.statusText)
+  # status.statusText is empty now: the bottom status bar (and its TextBlock) was removed
+  # on 2026-10-05. The field is still reported by the debug API, just with no widget behind it.
+  Check 'status.statusText is a string' ($st.statusText -ne $null) ('len=' + $st.statusText.Length)
 }
 
 $f = Dbg 'find:btnPanel' | ConvertFrom-Json

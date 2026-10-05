@@ -8,6 +8,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -35,6 +36,7 @@ namespace RepRecorder
             Background = Ui.Br(MainForm.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "askDialog");
+            Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
 
             StackPanel col = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
             TextBlock tb = Ui.Txt(info, 12.5, MainForm.HudText, false);
@@ -94,73 +96,318 @@ namespace RepRecorder
         }
     }
 
-    // ================================================================ 设置窗（反射版）
-    //  旧版是个 PropertyGrid 对话框；WPF 没有现成控件，反射列 Settings 的公开属性自己搭。
+    // ================================================================ 设置窗
+    //  旧版是个 PropertyGrid，WPF 版一开始是"反射列出所有公开属性 + 一个文本框"。
+    //  2026-10-05 用户要求重做，现在：
+    //   · 全中文标签；**只列用户真该改的项**（面板宽度、背景图那些有自己的入口，不再堆在这里）
+    //   · 取值固定的都用下拉（同时录制数量、录音模式、编码器、帧率…），是非题用勾选框
+    //   · 路径自动填好（Settings.Load → FillDefaults 会探测游戏目录 / OBS / 端口 / 密码），
+    //     旁边给「浏览」按钮；顶部还有一个「重新自动检测」
+    //   · 密码用密码框 —— 原来明文印在输入框里
     class SettingsBox : Window
     {
         public bool Ok = false;
-        readonly List<TextBox> boxes = new List<TextBox>();
-        readonly List<System.Reflection.PropertyInfo> props = new List<System.Reflection.PropertyInfo>();
+        readonly Settings cfg;
 
-        public SettingsBox(Settings cfg)
+        class Field
         {
+            public System.Reflection.PropertyInfo Pi;
+            public Func<string> Read;      // 统一给字符串，确定时按属性类型转换
+            public TextBox Box;            // 路径类才有（「浏览」和「自动检测」要改它）
+        }
+        readonly List<Field> fields = new List<Field>();
+
+        System.Reflection.PropertyInfo Prop(string name)
+        {
+            return typeof(Settings).GetProperty(name);
+        }
+
+        void Add(Field f) { if (f.Pi != null) fields.Add(f); }
+
+        Grid MakeRow(string label, double top)
+        {
+            Grid g = new Grid { Margin = new Thickness(0, top, 0, 0) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(196) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            TextBlock lb = Ui.Txt(label, 12.5, MainForm.HudText, false);
+            lb.VerticalAlignment = VerticalAlignment.Center;
+            lb.TextWrapping = TextWrapping.Wrap;
+            lb.Margin = new Thickness(0, 0, 10, 0);
+            Grid.SetColumn(lb, 0);
+            g.Children.Add(lb);
+            return g;
+        }
+
+        void Hint(Grid g, string text)
+        {
+            TextBlock h = Ui.Txt(text, 11, MainForm.HudDim, false);
+            h.VerticalAlignment = VerticalAlignment.Center;
+            h.Margin = new Thickness(8, 0, 0, 0);
+            Grid.SetColumn(h, 2);
+            g.Children.Add(h);
+        }
+
+        void Section(StackPanel col, string title)
+        {
+            TextBlock t = Ui.Txt(title, 12, MainForm.HudAccent, true);
+            t.Margin = new Thickness(0, 14, 0, 2);
+            col.Children.Add(t);
+            Rectangle r = new Rectangle { Height = 1, Fill = Ui.Br(MainForm.HudLine), HorizontalAlignment = HorizontalAlignment.Stretch };
+            r.Margin = new Thickness(0, 2, 0, 2);
+            col.Children.Add(r);
+        }
+
+        void ToggleRow(StackPanel col, string label, string name, string hint)
+        {
+            CheckBox cb = Ui.HudCheck("", "set_" + name, cfg != null && Convert.ToBoolean(Prop(name).GetValue(cfg, null)), 0);
+            Field f = new Field();
+            f.Pi = Prop(name);
+            f.Read = delegate { return cb.IsChecked == true ? "true" : "false"; };
+            Add(f);
+            Grid g = MakeRow(label, 5);
+            Grid.SetColumn(cb, 1);
+            cb.HorizontalAlignment = HorizontalAlignment.Left;
+            g.Children.Add(cb);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            col.Children.Add(g);
+        }
+
+        void ChoiceRow(StackPanel col, string label, string name, string[] displays, string[] values)
+        {
+            string cur = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
+            int idx = Array.IndexOf(values, cur);
+            if (idx < 0) idx = 0;
+            ComboBox cb = Ui.HudCombo("set_" + name, 210, displays, idx);
+            cb.HorizontalAlignment = HorizontalAlignment.Left;
+            Field f = new Field();
+            f.Pi = Prop(name);
+            f.Read = delegate { return values[cb.SelectedIndex < 0 ? 0 : cb.SelectedIndex]; };
+            Add(f);
+            Grid g = MakeRow(label, 5);
+            Grid.SetColumn(cb, 1);
+            g.Children.Add(cb);
+            col.Children.Add(g);
+        }
+
+        void NumberRow(StackPanel col, string label, string name, string hint)
+        {
+            TextBox tb = new TextBox();
+            tb.Width = 120; tb.Height = 24;
+            tb.FontFamily = new FontFamily("Consolas"); tb.FontSize = 12;
+            tb.Background = Ui.Br(MainForm.HudPanel2);
+            tb.Foreground = Ui.Br(MainForm.HudText);
+            tb.BorderBrush = Ui.Br(MainForm.HudLine);
+            tb.Text = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
+            Ui.Id(tb, "set_" + name);
+            Field f = new Field();
+            f.Pi = Prop(name);
+            f.Read = delegate { return tb.Text; };
+            Add(f);
+            Grid g = MakeRow(label, 5);
+            Grid.SetColumn(tb, 1);
+            tb.HorizontalAlignment = HorizontalAlignment.Left;
+            g.Children.Add(tb);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            col.Children.Add(g);
+        }
+
+        void PasswordRow(StackPanel col, string label, string name, string hint)
+        {
+            PasswordBox pb = new PasswordBox();
+            pb.Width = 240; pb.Height = 24;
+            pb.FontFamily = new FontFamily("Consolas"); pb.FontSize = 12;
+            pb.Background = Ui.Br(MainForm.HudPanel2);
+            pb.Foreground = Ui.Br(MainForm.HudText);
+            pb.BorderBrush = Ui.Br(MainForm.HudLine);
+            pb.Password = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
+            Ui.Id(pb, "set_" + name);
+            Field f = new Field();
+            f.Pi = Prop(name);
+            f.Read = delegate { return pb.Password; };
+            Add(f);
+            Grid g = MakeRow(label, 5);
+            Grid.SetColumn(pb, 1);
+            pb.HorizontalAlignment = HorizontalAlignment.Left;
+            g.Children.Add(pb);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            col.Children.Add(g);
+        }
+
+        void PathRow(StackPanel col, string label, string name, bool folder, string hint)
+        {
+            TextBox tb = new TextBox();
+            tb.Height = 24;
+            tb.FontFamily = new FontFamily("Consolas"); tb.FontSize = 11.5;
+            tb.Background = Ui.Br(MainForm.HudPanel2);
+            tb.Foreground = Ui.Br(MainForm.HudText);
+            tb.BorderBrush = Ui.Br(MainForm.HudLine);
+            tb.Text = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
+            Ui.Id(tb, "set_" + name);
+
+            Field f = new Field();
+            f.Pi = Prop(name);
+            f.Box = tb;
+            f.Read = delegate { return tb.Text; };
+            Add(f);
+
+            Grid g = MakeRow(label, 5);
+            // 用 Grid 而不是横向 StackPanel：路径一般都很长，要让输入框把剩余宽度吃掉，
+            // 不然 300 宽一截根本看不全（用户 2026-10-05 截图里游戏目录就是这么被截断的）。
+            Grid right = new Grid();
+            right.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            right.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            tb.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(tb, 0);
+            right.Children.Add(tb);
+            Button br = Ui.FlatButton("浏览…", "setBrowse_" + name);
+            br.Width = 62; br.Height = 24; br.Margin = new Thickness(6, 0, 0, 0);
+            br.Click += delegate
+            {
+                // 认不出来就让用户在资源管理器里自己指一个（不去猜、不去改别人的磁盘）
+                try
+                {
+                    if (folder)
+                    {
+                        System.Windows.Forms.FolderBrowserDialog d = new System.Windows.Forms.FolderBrowserDialog();
+                        d.Description = label;
+                        if (!string.IsNullOrEmpty(tb.Text) && Directory.Exists(tb.Text)) d.SelectedPath = tb.Text;
+                        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) tb.Text = d.SelectedPath;
+                    }
+                    else
+                    {
+                        System.Windows.Forms.OpenFileDialog d = new System.Windows.Forms.OpenFileDialog();
+                        d.Filter = "程序|*.exe|所有文件|*.*";
+                        if (!string.IsNullOrEmpty(tb.Text) && File.Exists(tb.Text))
+                        {
+                            d.InitialDirectory = System.IO.Path.GetDirectoryName(tb.Text);
+                            d.FileName = System.IO.Path.GetFileName(tb.Text);
+                        }
+                        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) tb.Text = d.FileName;
+                    }
+                }
+                catch (Exception ex) { RepRecorder.Log.Write("选路径失败：" + ex.Message); }
+            };
+            right.Children.Add(br);
+            Grid.SetColumn(br, 1);
+            Grid.SetColumn(right, 1);
+            g.Children.Add(right);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            col.Children.Add(g);
+        }
+
+        public SettingsBox(Settings c)
+        {
+            cfg = c;
             Title = "设置";
             WindowStyle = WindowStyle.None;
-            Width = 520; Height = 560;
+            ResizeMode = ResizeMode.NoResize;
+            Width = 640; Height = 620;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             Background = Ui.Br(MainForm.HudBg);
             Ui.Id(this, "settingsDialog");
+            Ui.MakeDraggable(this);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            // 对话框是独立窗口，不会继承主窗口的 Resources —— 不显式给这一句，
+            // 这里露出的是系统原生那条浅灰滚动条（2026-10-05 用户报的"非常不好看"）。
+            Resources.Add(typeof(ScrollBar), Ui.HudScrollBar(8));
 
             Grid root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(44) });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
 
-            StackPanel col = new StackPanel { Margin = new Thickness(14, 12, 14, 8) };
-            foreach (System.Reflection.PropertyInfo pi in typeof(Settings).GetProperties())
+            StackPanel head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(18, 14, 18, 4) };
+            TextBlock title = Ui.Txt("设置", 13.5, MainForm.HudText, true);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            head.Children.Add(title);
+            Button auto = Ui.FlatButton("重新自动检测", "setAuto");
+            auto.Width = 108; auto.Height = 24; auto.Margin = new Thickness(16, 0, 0, 0);
+            auto.Click += delegate
             {
-                if (!pi.CanRead || !pi.CanWrite) continue;
-                if (pi.PropertyType != typeof(string) && pi.PropertyType != typeof(int)
-                    && pi.PropertyType != typeof(bool) && pi.PropertyType != typeof(double)) continue;
-                StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 0) };
-                TextBlock lb = Ui.Txt(pi.Name, 12, MainForm.HudDim, false);
-                lb.Width = 150;
-                row.Children.Add(lb);
-                TextBox tb = new TextBox();
-                tb.Width = 320; tb.Height = 22;
-                tb.FontFamily = new FontFamily("Consolas");
-                tb.FontSize = 12;
-                tb.Background = Ui.Br(MainForm.HudPanel2);
-                tb.Foreground = Ui.Br(MainForm.HudText);
-                tb.BorderBrush = Ui.Br(MainForm.HudLine);
-                object v = pi.GetValue(cfg, null);
-                tb.Text = v == null ? "" : v.ToString();
-                Ui.Id(tb, "set_" + pi.Name);
-                row.Children.Add(tb);
-                props.Add(pi);
-                boxes.Add(tb);
-                col.Children.Add(row);
-            }
+                cfg.FillDefaults();
+                foreach (Field f in fields)
+                    if (f.Box != null) f.Box.Text = Convert.ToString(f.Pi.GetValue(cfg, null));
+                RepRecorder.Log.Write("设置窗：已重新自动检测游戏目录 / OBS / 端口 / 密码");
+            };
+            head.Children.Add(auto);
+            root.Children.Add(head);
+
+            StackPanel col = new StackPanel { Margin = new Thickness(18, 0, 12, 8) };
+
+            Section(col, "OBS 与游戏");
+            PathRow(col, "OBS 程序", "ObsExe", false, "");
+            PathRow(col, "游戏目录", "GameDir", true, "（里面要有 th123.exe）");
+            NumberRow(col, "obs-websocket 端口", "Port", "");
+            PasswordRow(col, "obs-websocket 密码", "Password", "（自动从 OBS 里读）");
+
+            Section(col, "录制");
+            ChoiceRow(col, "同时录制数量", "ParallelCount",
+                      new string[] { "1", "2", "3", "4", "5", "6" },
+                      new string[] { "1", "2", "3", "4", "5", "6" });
+            ToggleRow(col, "轮录（录完一批自动接着录下一批）", "RoundRecord", "");
+            ChoiceRow(col, "录音模式", "MicMode",
+                      new string[] { "只录游戏声音", "游戏 + 麦克风" },
+                      new string[] { "gameOnly", "gameAndMic" });
+            ToggleRow(col, "录打击音效（视频里带游戏声音）", "RecordGameAudio", "关了 = 视频完全无声");
+            ToggleRow(col, "录 BGM（背景音乐）", "RecordBgm", "只在「录打击音效」开着时可用");
+            ToggleRow(col, "录制时静音系统里其他声音", "GameAudioOnly", "");
+            NumberRow(col, "录像音量", "RecordVolume", "（1.0 = 原样）");
+            NumberRow(col, "单个 rep 最长录制（分钟）", "MaxMinutes", "");
+            NumberRow(col, "开录前等待（秒）", "PreRollSeconds", "");
+            NumberRow(col, "录完再多录（秒）", "PostRollSeconds", "");
+            ToggleRow(col, "旁边已有录像就跳过", "SkipExisting", "");
+            ToggleRow(col, "录完关闭 OBS", "CloseObsAfter", "");
+            PathRow(col, "视频默认保存位置", "LastSaveFolder", true, "（留空 = 和 rep 放一起）");
+
+            Section(col, "并行与画面");
+            ToggleRow(col, "自动准备采集源并绑定游戏窗口", "AutoPrepareObs", "并行录制必须开");
+            ToggleRow(col, "用专用场景", "UseDedicatedScene", "");
+            ToggleRow(col, "防止游戏窗口被最小化", "KeepGameCapturable", "最小化那一格会录成黑屏");
+            ToggleRow(col, "单录自动设画布 1440×1080@60", "AutoCanvas", "");
+            ChoiceRow(col, "单录画布宽", "CanvasWidth",
+                      new string[] { "1280", "1440", "1920", "2560" },
+                      new string[] { "1280", "1440", "1920", "2560" });
+            ChoiceRow(col, "单录画布高", "CanvasHeight",
+                      new string[] { "720", "1080", "1440" },
+                      new string[] { "720", "1080", "1440" });
+            ChoiceRow(col, "单录帧率", "CanvasFps",
+                      new string[] { "30", "60" },
+                      new string[] { "30", "60" });
+            NumberRow(col, "单录裁边（像素）", "SingleEdgeInset", "");
+            NumberRow(col, "并行裁边（像素）", "ParallelEdgeInset", "");
+
+            Section(col, "切分");
+            ChoiceRow(col, "同时跑几个 ffmpeg", "SplitParallel",
+                      new string[] { "1", "2", "3", "4", "5", "6" },
+                      new string[] { "1", "2", "3", "4", "5", "6" });
+            ChoiceRow(col, "切分编码器", "ParallelSplitEncoder",
+                      new string[] { "NVIDIA 显卡（快）", "CPU 软编（兼容）" },
+                      new string[] { "h264_nvenc", "libx264" });
+            NumberRow(col, "切分质量 CQ", "ParallelSplitCQ", "（越小越清晰、文件越大，23 是常用值）");
+
             ScrollViewer sv = new ScrollViewer();
             sv.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+            sv.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
             sv.Content = col;
+            Ui.PinScrollBarWidth(sv, 8);
+            Grid.SetRow(sv, 1);
             root.Children.Add(sv);
 
-            StackPanel bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 14, 0) };
+            StackPanel bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 18, 0) };
             Button ok = Ui.FlatButton("确定", "setOk");
             ok.Width = 84; ok.Height = 28; ok.Margin = new Thickness(0, 0, 8, 0);
             ok.Click += delegate
             {
-                for (int i = 0; i < props.Count; i++)
+                foreach (Field f in fields)
                 {
-                    System.Reflection.PropertyInfo pi = props[i];
-                    string t = boxes[i].Text;
+                    string t = f.Read();
                     try
                     {
-                        if (pi.PropertyType == typeof(string)) pi.SetValue(cfg, t, null);
-                        else if (pi.PropertyType == typeof(int)) { int n; if (int.TryParse(t, out n)) pi.SetValue(cfg, n, null); }
-                        else if (pi.PropertyType == typeof(double)) { double d; if (double.TryParse(t, out d)) pi.SetValue(cfg, d, null); }
-                        else if (pi.PropertyType == typeof(bool)) pi.SetValue(cfg, t == "true" || t == "True" || t == "1", null);
+                        if (f.Pi.PropertyType == typeof(string)) f.Pi.SetValue(cfg, t, null);
+                        else if (f.Pi.PropertyType == typeof(int)) { int n; if (int.TryParse(t, out n)) f.Pi.SetValue(cfg, n, null); }
+                        else if (f.Pi.PropertyType == typeof(double)) { double d; if (double.TryParse(t, out d)) f.Pi.SetValue(cfg, d, null); }
+                        else if (f.Pi.PropertyType == typeof(bool)) f.Pi.SetValue(cfg, t == "true", null);
                     }
                     catch { }
                 }
@@ -172,8 +419,9 @@ namespace RepRecorder
             cancel.Width = 84; cancel.Height = 28;
             cancel.Click += delegate { Close(); };
             bar.Children.Add(cancel);
-            Grid.SetRow(bar, 1);
+            Grid.SetRow(bar, 2);
             root.Children.Add(bar);
+
             Content = root;
         }
     }
@@ -185,7 +433,7 @@ namespace RepRecorder
         readonly ShellWindow owner;
         readonly Settings cfg;
         readonly string oImg, oLay, oScope;
-        readonly int oOp, oBlur, oOx, oOy;
+        readonly int oOp, oBlur, oOx, oOy, oScrim;
         TextBox txtPath;
 
         public BackgroundBox(ShellWindow w)
@@ -193,6 +441,7 @@ namespace RepRecorder
             owner = w; cfg = w.CfgPublic;
             oImg = cfg.BgImage; oLay = cfg.BgLayout; oScope = cfg.BgScope;
             oOp = cfg.BgOpacity; oBlur = cfg.BgBlur; oOx = cfg.BgOffsetX; oOy = cfg.BgOffsetY;
+            oScrim = cfg.PanelScrim;
 
             Title = "背景设置";
             WindowStyle = WindowStyle.None;
@@ -203,6 +452,7 @@ namespace RepRecorder
             Background = Ui.Br(MainForm.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "bgDialog");
+            Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
 
             StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
 
@@ -248,7 +498,12 @@ namespace RepRecorder
             r0.Children.Add(bClear);
             col.Children.Add(r0);
 
-            col.Children.Add(SliderRow("图片不透明度", "bgOpacity", 0, 100, cfg.BgOpacity, "%", delegate(double v) { cfg.BgOpacity = (int)v; }));
+            // 滑块显示的是「透明度」（0 = 图片最清晰、100 = 图片完全看不见），
+            // 存盘的 BgOpacity 仍然是不透明度——只在滑块这一层翻转，老设置和调试接口都不受影响。
+            col.Children.Add(SliderRow("图片透明度", "bgOpacity", 0, 100, 100 - cfg.BgOpacity, "%", delegate(double v) { cfg.BgOpacity = (int)(100 - v); }));
+            // 面板底色强度：0 = 面板全透明、图片零遮挡；越大文字越好读。
+            // 走共享画刷，改完所有面板立刻跟着变，不用重建界面。
+            col.Children.Add(SliderRow("面板暗化", "panelScrim", 0, 100, cfg.PanelScrim, "%", delegate(double v) { cfg.PanelScrim = (int)v; Ui.SetScrim(cfg.PanelScrim); }));
             col.Children.Add(SliderRow("模糊", "bgBlur", 0, 60, cfg.BgBlur, "", delegate(double v) { cfg.BgBlur = (int)v; }));
             col.Children.Add(SliderRow("水平移动 X", "bgOffX", -100, 100, cfg.BgOffsetX, "%", delegate(double v) { cfg.BgOffsetX = (int)v; }));
             col.Children.Add(SliderRow("垂直移动 Y", "bgOffY", -100, 100, cfg.BgOffsetY, "%", delegate(double v) { cfg.BgOffsetY = (int)v; }));
@@ -267,7 +522,7 @@ namespace RepRecorder
             {
                 cfg.Save();
                 Log.Write("背景设置：图片=" + (string.IsNullOrEmpty(cfg.BgImage) ? "<无>" : cfg.BgImage)
-                    + "  不透明度=" + cfg.BgOpacity + "%  模糊=" + cfg.BgBlur
+                    + "  透明度=" + (100 - cfg.BgOpacity) + "%  面板暗化=" + cfg.PanelScrim + "%  模糊=" + cfg.BgBlur
                     + "  放置=" + cfg.BgLayout + "  位移=" + cfg.BgOffsetX + "," + cfg.BgOffsetY
                     + "  范围=" + (cfg.BgScope == "global" ? "全局" : "内容区"));
                 Close();
@@ -279,6 +534,7 @@ namespace RepRecorder
             {
                 cfg.BgImage = oImg; cfg.BgLayout = oLay; cfg.BgScope = oScope;
                 cfg.BgOpacity = oOp; cfg.BgBlur = oBlur; cfg.BgOffsetX = oOx; cfg.BgOffsetY = oOy;
+                cfg.PanelScrim = oScrim; Ui.SetScrim(cfg.PanelScrim);
                 owner.ApplyBackground();
                 Close();
             };

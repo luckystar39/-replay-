@@ -29,12 +29,21 @@ function Check([string]$what, [bool]$ok, [string]$detail) {
   if (-not $ok) { $script:fail = 1 }
 }
 # the top-level window owned by a given pid, via UIA
+# Skip shell helper windows: Windows creates a 'SysShadow' top-level window per process
+# for window drop shadows, and FindFirst sometimes returns THAT instead of the real
+# window -- which made the WinForms check below fail intermittently (2026-10-04).
 function WinOf([int]$pid_) {
   try {
     $cond = New-Object System.Windows.Automation.PropertyCondition(
               [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $pid_)
-    return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+    $all = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
              [System.Windows.Automation.TreeScope]::Children, $cond)
+    foreach ($e in $all) {
+      $cls = ''
+      try { $cls = $e.Current.ClassName } catch { }
+      if ($cls -ne 'SysShadow') { return $e }
+    }
+    return $null
   } catch { return $null }
 }
 function KillAll {

@@ -109,17 +109,12 @@ namespace RepRecorder
                 string info = "这次要录 " + count + " 个 rep" + (count > 6 ? "（会按「同时录制数量」自动分批）" : "") + "。\r\n"
                             + "先选好视频放在哪里，选完就开始录。\r\n\r\n"
                             + "上次用的位置：" + (cfg == null || string.IsNullOrEmpty(cfg.LastSaveFolder) ? "（还没选过）" : cfg.LastSaveFolder);
-                AskResult res = Ui.ShowAskDialog(true, info, cfg == null ? "" : cfg.LastSaveFolder,
-                                                    "以后不再询问（都用这次的选择；可在「设置…」里重新打开）");
+                // 没有「以后不再询问」那个勾了 —— 用户要求每次开录都问一遍
+                AskResult res = Ui.ShowAskDialog(true, info, cfg == null ? "" : cfg.LastSaveFolder, null);
                 if (res == null || res.Choice == 2) go = false;
                 else
                 {
                     if (res.Choice == 1 && res.Picked != null) queueSaveFolder = res.Picked;
-                    if (res.Checked)
-                    {
-                        cfg.AskSaveLocation = false;
-                        Log.Write("已记住：以后不再询问保存位置（可在「设置…」里重新打开）");
-                    }
                     queueSaveDecided = true;
                     cfg.Save();
                 }
@@ -210,6 +205,16 @@ namespace RepRecorder
 
         // 旧版是挂在 list.ItemSelectionChanged 上的那句「列表里选中几个 rep，「同时录制数量」就跟着变（用户要求）」。
         // 移植时这根线漏接了（WPF 的 ListBox 没有原生句柄，没人提醒），靠 验证WPF-10 抓出来 —— 补在 HookRecorder 里。
+        // 设置窗里改了音频相关的项 → 立刻生效并刷新那几个按钮（Ui.ShowSettings 里调）
+        public void UiApplyAudioSettings()
+        {
+            try { ApplyBgmSetting(true); } catch { }
+            try { ApplyGameAudioSetting(); } catch { }
+            try { RefreshSoundButtons(); } catch { }
+            try { RefreshGameAudioButton(); } catch { }
+            try { RefreshBgmButton(); } catch { }
+        }
+
         public void UiOnSelectionChanged()
         {
             try
@@ -219,6 +224,33 @@ namespace RepRecorder
                 SyncParallelCountToSelection();
             }
             catch { }
+        }
+
+        // 旧版 MainForm.OnFormClosing 的移植（2026-10-05 补）。
+        // ⚠ 移植时整块漏了 —— `closing` 这个字段搬过来了却没人用，编译器都报了 CS0414
+        //   （"已赋值但从未使用"），当时的收尾没注意到那句话。
+        //   后果：录到一半点右上角 ✕，进程直接退，OBS 在后台**一直录下去**；
+        //   之后所有 SetVideoSettings / StartRecord 都会失败（交接文档 §十 记过这条）。
+        // 返回 true = 现在可以关；false = 已经拦下来去做收尾，窗口先别关（收尾完自己再关一次）。
+        public bool UiOnClosing()
+        {
+            try { cancel = true; } catch { }        // 让正在跑的那一轮尽快收手
+            if (!closing && worker != null && worker.IsAlive)
+            {
+                closing = true;
+                Ui.Status("正在停止录制并收尾…");
+                Log.Write("关闭窗口：先停止录制并收尾…");
+                Thread t = new Thread(delegate()
+                {
+                    try { worker.Join(20000); } catch { }
+                    Ui.CloseMain();                 // 收尾完了再关（那时候 closing 已是 true，放行）
+                });
+                t.IsBackground = true;
+                t.Start();
+                return false;
+            }
+            try { cfg.Save(); } catch { }
+            return true;
         }
 
         // 启动那一段（旧版写在 MainForm 的 Shown 里，顺序照搬）
@@ -241,8 +273,9 @@ namespace RepRecorder
                 SyncBgmFromIni();
                 if (args != null && args.Length > 0)
                 {
+                    // 只入队，不自动开录 —— 2026-10-05 用户要求「拖入后自动开始」整条去掉，
+                    // 一律由用户自己点「开始录制」。
                     AddPaths(args);
-                    if (cfg.AutoStartOnDrop) StartRecording();
                 }
             }
             catch (Exception ex) { Log.Write("启动初始化出错：" + ex); }
@@ -509,8 +542,7 @@ namespace RepRecorder
                     }
                 }
                 catch { }
-                Log.Write("并行：第 " + idx + " 格摆到 (" + x + "," + y + ") 并用边界框缩放到 " + cw + "×" + ch +
-                          "（OBS 报的源尺寸 " + sw + "×" + sh + "，只是参考值）");
+                Log.Write("并行：第 " + idx + " 格摆到 (" + x + "," + y + ")，缩放到 " + cw + "×" + ch);
             }
             catch (Exception ex) { Log.Write("并行：第 " + idx + " 格设置位置失败 " + ex.Message); }
         }
@@ -669,13 +701,13 @@ namespace RepRecorder
                     if (p.ExitCode == 0 && File.Exists(target) && new FileInfo(target).Length > 4096)
                     {
                         if (attemptNo > 1)
-                            Log.Write("并行切分：第 " + attemptNo + " 种参数组合才成功（" +
-                                      (attemptNo > 2 ? "这台机器多半没有 NVIDIA 显卡，" + enc + " 用不了 → 已自动换成 libx264 软件编码" : "退化成不带音频") + "）");
+                            Log.Write("并行切分：第 " + attemptNo + " 种参数才成功（"
+                                      + (attemptNo > 2 ? "多半没 NVIDIA 显卡，已换 libx264 软编" : "退化成不带音频") + "）");
                         return true;
                     }
                     err = "ffmpeg 退出码 " + p.ExitCode;
                     if (p.ExitCode != 0 && attemptNo == 1 && encArgs.Count > 1)
-                        Log.Write("并行切分：" + enc + " 失败（可能是这台机器没有对应显卡），正在自动改用 libx264 软件编码重试…");
+                        Log.Write("并行切分：" + enc + " 失败（多半没对应显卡），改用 libx264 软编重试…");
                 }
                 catch (Exception ex) { err = ex.Message; }
             }
@@ -749,12 +781,47 @@ namespace RepRecorder
             }
             if (batch.Count == 0)
             {
-                Log.Write("并行录制：没有待录制的 rep（都录过了？可以点「刷新」看看；或者先选中几行再点「录制选中的」）");
+                Log.Write("没有待录制的 rep（都录过了？点「刷新」看看）");
                 return;
             }
             obsStuckRetried = false;
             RunParallelBatch(batch);
         }
+        // 某个窗口所在显示器的 DPI 缩放（1.0 = 100%）。用来把 GetClientRect 的物理像素
+        // 换算成逻辑像素 —— 见 RunParallelBatch 里量窗口尺寸那段。
+        //
+        // ⚠ 这里**不能**用 GetDpiForWindow。2026-10-05 用一个"假装是游戏"的 DPI 不感知探针
+        //   实测过：那个窗口自己看到的是 640×480、GetDpiForWindow 报 96；
+        //   从感知进程去问同一个窗口，GetDpiForWindow 仍然报 96 —— 拿它去除等于没除，
+        //   画布还是 1920×1440，掉帧照旧。
+        //   GetDpiForMonitor 返回的是显示器真实 DPI（300% 屏 = 288），这才对。
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+        [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr mon, int type, out uint x, out uint y);
+
+        static double WindowDpiScale(IntPtr hwnd)
+        {
+            try
+            {
+                IntPtr mon = MonitorFromWindow(hwnd, 2);   // MONITOR_DEFAULTTONEAREST
+                uint dx, dy;
+                if (mon != IntPtr.Zero && GetDpiForMonitor(mon, 0, out dx, out dy) == 0
+                    && dx >= 48 && dx <= 480)
+                    return dx / 96.0;
+            }
+            catch { }   // 老系统没有 shcore.dll 就是这个 catch
+            return 1.0;
+        }
+
+        // 某个"cols 列 × rows 行"的排法下，每格最多能占 OBS 画布上限的几成（1.0 = 不用缩）。
+        // 见 RunParallelBatch 里挑排法的那段。
+        static double GridScaleToFit(int cols, int rows, int cw, int ch, int maxCanvas)
+        {
+            double s = 1.0;
+            if ((long)cols * cw > maxCanvas) s = Math.Min(s, (double)maxCanvas / ((double)cols * cw));
+            if ((long)rows * ch > maxCanvas) s = Math.Min(s, (double)maxCanvas / ((double)rows * ch));
+            return s;
+        }
+
         // ---- moved from MainForm ----
         void RunParallelBatch(List<Job> batch)
         {
@@ -788,8 +855,7 @@ namespace RepRecorder
             // OBS 最多 6 条音轨：超过 6 格时每格的声音没法分开，整批录成无声，避免出现"画面是这局、声音是那局"
             bool cellAudio = cfg.RecordGameAudio && batch.Count <= 6;
             if (batch.Count > 6 && cfg.RecordGameAudio)
-                Log.Write("⚠ 同时录 " + batch.Count + " 个，但 OBS 最多只有 6 条音轨 —— 每格的声音没法分开，"
-                          + "这一批会录成【无声】视频（想要每格各自的声音，请把「同时录制数量」降到 6 以内）");
+                Log.Write("⚠ 同时录 " + batch.Count + " 个超过 6 条音轨上限，这一批会是无声视频");
 
             Log.Write("==== 并行录制开始：同时录 " + batch.Count + " 个 ====");
             List<Process> games = new List<Process>();
@@ -934,23 +1000,78 @@ namespace RepRecorder
                     RECT cr;
                     if (GetClientRect(handles2[i], out cr) && cr.Right > 0 && cr.Bottom > 0 && CW == 0)
                     {
-                        CW = cr.Right; CH = cr.Bottom;
+                        // ⚠ 必须换算成**逻辑尺寸**再用。
+                        //   非想天则是 DPI 不感知的老程序，Windows 会把它的 640×480 画面**位图拉伸**
+                        //   到物理尺寸再显示（300% 屏上就是 1920×1440）。按物理尺寸采等于把"已经糊掉的
+                        //   放大图"再存一遍：像素多 9 倍、一点真细节都没有，还把编码器直接压垮。
+                        //   2026-10-05 实测：画布 3640×4095 时 OBS 报「编码丢帧 98.1%」，
+                        //   而老版本（同一段逻辑、但进程 DPI 不感知，量到的就是 640×480）
+                        //   画布 1920×960，丢帧 0.2%。
+                        //   —— 也就是说：老版本一直是对的，是 WPF 版设了 DPI 感知之后这里才量错的。
+                        double sc = WindowDpiScale(handles2[i]);
+                        CW = (int)Math.Round(cr.Right / sc);
+                        CH = (int)Math.Round(cr.Bottom / sc);
                         if (CW > 1920 || CH > 1440) { CW = 640; CH = 480; }   // 异常大就按游戏原生尺寸
+                        // 每格不需要比"切分后的输出尺寸"更大 —— 切分那一步反正会缩到
+                        // CanvasWidth×CanvasHeight。这同时也是一道保险：万一上面 DPI 那一步
+                        // 没测准（或者哪天换个游戏窗口特别大），画布也不会失控到把编码器压垮。
+                        int capW = cfg.CanvasWidth > 0 ? cfg.CanvasWidth : 1440;
+                        int capH = cfg.CanvasHeight > 0 ? cfg.CanvasHeight : 1080;
+                        if (CW > capW || CH > capH)
+                        {
+                            double k = Math.Min((double)capW / CW, (double)capH / CH);
+                            int nw = Math.Max(2, (int)Math.Floor(CW * k));
+                            int nh = Math.Max(2, (int)Math.Floor(CH * k));
+                            Log.Write("并行：游戏窗口 " + CW + "×" + CH + " 比输出尺寸 " + capW + "×" + capH
+                                      + " 还大，每格按 " + nw + "×" + nh + " 采（切分后反正要缩到这个尺寸）");
+                            CW = nw; CH = nh;
+                        }
                     }
                 }
                 if (CW <= 0 || CH <= 0) { CW = 640; CH = 480; }
 
                 // 网格排布：让中继画布尽量方正（6 格 = 3×2 = 1920×960，而不是 3840×480 那种 8:1 的长条，
-                // 后者在 OBS 预览里看着就像"画面没摆好"）。OBS 画布上限 4096，超了就折行。
+                // 后者在 OBS 预览里看着就像"画面没摆好"）。
+                // ⚠ OBS 画布上限 4096 —— 光靠"换列数"是躲不掉的。2026-10-05 用户的
+                //   并行+轮录一次全废（20 个 rep，前 18 个每批都报
+                //   「SetVideoSettings 失败：402 baseWidth 超过 4096」）根因就在这段：
+                //   6 格 × 1920×1440 无论怎么排都超（3×2 = 5760×2880、2×3 = 3840×4320），
+                //   而旧代码只会写一句警告然后照样往下走 → 整批报废。
+                //   （旧版 WinForms 是 DPI 不感知的，读到的是 640×480 逻辑像素，
+                //    6 格 = 3×2 = 1920×960 正好放得下，所以"老版本是好的"。详见 MakeDpiAware。）
+                //   现在：装不下就把**每格等比缩小**（保持长宽比，不然游戏会被拉变形），
+                //   并且在所有列数里挑"每格能留得最大"的那种排法。
+                //   上面改成逻辑尺寸之后，这里基本不会再触发（6 格 640×480 = 1920×960），
+                //   留着当安全网：万一哪天游戏窗口真的很大，宁可缩格子也不能让整批报废。
                 {
                     int maxCanvas = 4096;
                     cols = (int)Math.Ceiling(Math.Sqrt(batch.Count * (double)CH / CW));
                     if (cols < 1) cols = 1;
                     rows = (batch.Count + cols - 1) / cols;
-                    while (cols * CW > maxCanvas && cols > 1) { cols--; rows = (batch.Count + cols - 1) / cols; }
-                    while (rows * CH > maxCanvas && rows > 1) { rows--; cols = (batch.Count + rows - 1) / rows; }
+                    double sc = GridScaleToFit(cols, rows, CW, CH, maxCanvas);
+                    if (sc < 1.0)
+                    {
+                        double best = -1; int bc = cols, br = rows;
+                        for (int c = 1; c <= batch.Count; c++)
+                        {
+                            int r = (batch.Count + c - 1) / c;
+                            double t = GridScaleToFit(c, r, CW, CH, maxCanvas);
+                            bool better = t > best + 1e-9
+                                       || (Math.Abs(t - best) <= 1e-9 && Math.Abs(c - r) < Math.Abs(bc - br));
+                            if (better) { best = t; bc = c; br = r; }
+                        }
+                        cols = bc; rows = br; sc = best;
+                    }
+                    if (sc < 1.0)
+                    {
+                        int nw = Math.Max(2, (int)Math.Floor(CW * sc));
+                        int nh = Math.Max(2, (int)Math.Floor(CH * sc));
+                        Log.Write("并行：中继画布 " + (cols * CW) + "×" + (rows * CH) + " 放不进 OBS 上限 "
+                                  + maxCanvas + "，每格缩到 " + nw + "×" + nh);
+                        CW = nw; CH = nh;
+                    }
                     if (rows * CH > maxCanvas || cols * CW > maxCanvas)
-                        Log.Write("⚠ 并行：画布 " + (cols * CW) + "×" + (rows * CH) + " 超过 OBS 上限 " + maxCanvas +
+                        Log.Write("⚠ 并行：画布 " + (cols * CW) + "×" + (rows * CH) + " 仍超过 OBS 上限 " + maxCanvas +
                                   "，可能会失败（把「同时录制数量」调小一点）");
                     Dictionary<string, object> nv = new Dictionary<string, object>();
                     nv["baseWidth"] = cols * CW;
@@ -1030,8 +1151,7 @@ namespace RepRecorder
                 }
                 if (!reallyRecording)
                 {
-                    Log.Write("并行：❌ OBS 没有真正开始录像（StartRecord 返回成功但 outputActive=false）。" +
-                              "常见原因：OBS 里还有一段没停干净的录像、OBS 卡住、录制目录不可写、或录制格式/音轨设置异常。");
+                    Log.Write("并行：❌ OBS 没真正开录（outputActive=false）。可能：有残留录像 / OBS 卡住 / 录制目录不可写");
                     // 自动救一次：杀掉卡住的 OBS → 重新拉起 → 重建场景/采集源 → 把这一批完整重跑一遍。
                     // （用户实测就是这样白录一批的；能自动救回来最好，救不回来也明确报错，不再白等。）
                     if (!obsStuckRetried)
@@ -1131,9 +1251,8 @@ namespace RepRecorder
                     catch { }
                 }
                 Log.Write("并行：游戏声音进录像 = " + (cellAudio
-                    ? "开（每格各自一条音轨，切分后各带自己的原声）"
-                    : (cfg.RecordGameAudio ? "关（同时录的格数超过 6，OBS 音轨不够分，这一批无声）"
-                                           : "关（各格音源已静音，切分出来的视频是无声的）")));
+                    ? "开（每格一条音轨）"
+                    : (cfg.RecordGameAudio ? "关（超过 6 格，音轨不够分）" : "关（音源已静音）")));
                 if (!cellAudio)
                 {
                     // 超过 6 格时把标准采集源也静音，否则它会把其中一局的声音漏进所有格子
@@ -1226,8 +1345,7 @@ namespace RepRecorder
                         if (games2[i] == null || games2[i].HasExited) continue;
                         if (IsBlank(ShotOf(vNames[i])))
                         {
-                            Log.Write("并行：⚠ 第 " + (i + 1) + " 格开播后一直是黑屏（重新绑定也没救回来）——这一格很可能没录上，" +
-                                      "建议停止后单独重录这一条");
+                            Log.Write("并行：⚠ 第 " + (i + 1) + " 格一直黑屏，很可能没录上 —— 建议单独重录");
                         }
                     }
                     catch { }
@@ -1294,9 +1412,8 @@ namespace RepRecorder
                                 if (wh == IntPtr.Zero || !IsIconic(wh)) continue;
                                 ShowWindow(wh, SW_RESTORE);
                                 minimizedFixCount++;
-                                Log.Write("并行：检测到第 " + (i + 1) + " 格游戏窗口被最小化 —— 最小化后 Windows 不再合成画面、" +
-                                          "那一格会变黑；已自动把窗口还原（第 " + minimizedFixCount + " 次）。" +
-                                          "录制期间请用别的窗口【盖住】它，不要最小化。");
+                                Log.Write("并行：⚠ 第 " + (i + 1) + " 格窗口被最小化（会录成黑屏）—— 已还原（第 "
+                                          + minimizedFixCount + " 次）");
                             }
                             catch { }
                         }
@@ -1343,11 +1460,9 @@ namespace RepRecorder
                             if (newest != null)
                             {
                                 gridFile = newest.FullName;
-                                Log.Write("并行：StopRecord 没给出文件，但我在录像目录里找到了刚录的：" +
-                                          newest.Name + "（" + (newest.Length / 1048576.0).ToString("0.0") + " MB）");
+                                Log.Write("并行：StopRecord 没给文件，但在录像目录里找到了刚录的：" + newest.Name);
                             }
-                            else Log.Write("并行：录像目录里也找不到刚录出来的文件：" + dir +
-                                           "（很可能 OBS 根本没在录 —— 请看上面有没有「OBS 没有真正开始录像」那行）");
+                            else Log.Write("并行：录像目录里找不到刚录的文件：" + dir + "（多半是 OBS 没在录）");
                         }
                     }
                     catch (Exception ex2) { Log.Write("并行：找合并文件失败：" + ex2.Message); }
@@ -1482,7 +1597,7 @@ namespace RepRecorder
                 // 录完问用户要把视频放哪 —— 并行这条路以前从来不问（用户实测就是在等这个弹窗）
                 if (okCount > 0)
                 {
-                    if (cfg.AskSaveLocation && !queueSaveDecided)
+                    if (!queueSaveDecided)
                     {
                         string choice = AskSaveLocationDialog(batch[0], okCount);
                         if (!string.IsNullOrEmpty(choice) && choice != "keep")
@@ -1539,7 +1654,7 @@ namespace RepRecorder
                 manualSel = !round && sel.Count > 0;
                 if (round && sel.Count == 0)
                 {
-                    Log.Write("轮录：队列里没有待录的 rep（都录过了？点「刷新」重新检查，或先在列表里选中要重录的）");
+                    Log.Write("轮录：没有待录的 rep（都录过了？点「刷新」或选中几行要重录的）");
                     return;
                 }
                 if (!round && sel.Count == 0 && jobs.Count == 0) { Log.Write("队列是空的，先把 rep 拖进来"); return; }
@@ -1553,13 +1668,14 @@ namespace RepRecorder
 
             if (round)
             {
-                Log.Write("==== 轮录开始：从队列第一个 rep 开始数，共 " + sel.Count + " 个待录，每批 " + per + " 个" +
-                          (per == 1 ? "（每批 1 个 → 走单录，依次录）" : "（最后不足 " + per + " 个的按实际数量录）") +
-                          "  ※ 轮录模式下不看你的选中/绿色标记，一律从队列最前面开始 ====");
+                Log.Write("==== 轮录开始：共 " + sel.Count + " 个，每批 " + per + " 个"
+                          + (per == 1 ? "（依次单录）" : "") + "，从队列最前面数 ====");
             }
 
-            // 需求 0：保存位置提前问，选好了再开录
-            if (cfg.AskSaveLocation)
+            // 需求 0：保存位置提前问，选好了再开录。
+            // 2026-10-05 用户要求：**不论单录 / 并行 / 并行+轮录，一律先问**，
+            // 不再受设置里那个「AskSaveLocation」开关和「以后不再询问」的影响
+            // （以前点过一次「以后不再询问」就再也不问了，用户找不到地方改回来）。
             {
                 int n = manualSel ? sel.Count : (round ? sel.Count : pending);
                 if (!AskSaveLocationUpFront(n)) return;
@@ -1577,9 +1693,9 @@ namespace RepRecorder
             {
                 selectedBatch = null;
                 if (pending == 0) { Log.Write("没有待录制的 rep（都录过了？点「刷新」重新检查，或先在列表里选中要重录的）"); return; }
-                Log.Write("开始录制：待录 " + pending + " 个，同时录 " + per + " 个" +
-                          (pending > per ? "（只录这一批 " + per + " 个，想全录完请勾「轮录」）" : "") +
-                          (pending == 1 ? "（只有 1 个，按普通单录走）" : ""));
+                Log.Write("开始录制：待录 " + pending + " 个，同时录 " + per + " 个"
+                          + (pending > per ? "（只录这一批，想全录完请勾「轮录」）" : "")
+                          + (pending == 1 ? "（只有 1 个，走单录）" : ""));
             }
             parallelRequested = true;
             Ui.Post(delegate { btnStart.Enabled = false; btnStop.Enabled = true; });
@@ -2034,7 +2150,7 @@ namespace RepRecorder
                             s["inputName"] = name;
                             s["inputMuted"] = true;
                             obs.Request("SetInputMute", s);
-                            Log.Write("已静音 OBS 桌面音频（" + (cfg.RecordGameAudio ? "避免录进其他系统声音/重复" : "「录打击音效」已关，保证录像无声") + "）：" + name);
+                            Log.Write("已静音 OBS 桌面音频：" + name);
                         }
                         catch (Exception ex) { Log.Write("静音桌面音频 " + name + " 失败：" + ex.Message); }
                     }
@@ -2060,8 +2176,7 @@ namespace RepRecorder
 
                 ShowWindow(h, SW_RESTORE);
                 minimizedFixCount++;
-                Log.Write("检测到你把游戏窗口最小化了 —— 最小化后 Windows 不再为它合成画面，录出来会是黑屏；" +
-                          "已自动把窗口还原（第 " + minimizedFixCount + " 次）。录制期间请用别的窗口【盖住】它，不要最小化。");
+                Log.Write("⚠ 游戏窗口被最小化（会录成黑屏）—— 已还原（第 " + minimizedFixCount + " 次）。录制期间请【盖住】它，别最小化");
             }
             catch { }
         }
@@ -2310,7 +2425,7 @@ namespace RepRecorder
                     return true;
                 }
             }
-            Log.Write("警告：采集画面仍然是黑的，录像可能是黑屏 —— 请在 OBS 里手动换捕获方式/源；可看 " + LastFramePath);
+            Log.Write("采集画面还是黑的，录像可能是黑屏 —— 请在 OBS 里换捕获方式；截图：" + LastFramePath);
             return false;
         }
         // ---- moved from MainForm ----
@@ -2341,7 +2456,7 @@ namespace RepRecorder
                 if (!Convert.ToBoolean(obs.Request("GetSceneItemEnabled", q)["sceneItemEnabled"]))
                 {
                     SetSceneItemEnabled(RecSceneName, id, true);
-                    Log.Write("画面采集源原本是隐藏的（上次并行录制被强制结束留下的），已重新显示 —— 否则这段录像会是全黑");
+                    Log.Write("采集源上次被隐藏了（并行被强杀留下），已恢复显示");
                 }
             }
             catch { }
@@ -2546,7 +2661,7 @@ namespace RepRecorder
                 bool picGone = false;
                 try { picGone = captureSource != null && IsBlank(ShotOf(captureSource)); } catch { }
                 if (picGone && cfg.PostRollSeconds > 0)
-                    Log.Write("游戏已退出、画面已经黑了：不再等 " + cfg.PostRollSeconds + " 秒收尾（免得结尾拖一段黑）");
+                    Log.Write("游戏已退出，不再等 " + cfg.PostRollSeconds + " 秒收尾");
                 for (int i = 0; i < cfg.PostRollSeconds && !picGone; i++) Thread.Sleep(1000);
                 recTotalSec = (DateTime.Now - t0).TotalSeconds;   // 必须在收尾等待之后算，否则漏掉这段黑
 
@@ -2634,8 +2749,8 @@ namespace RepRecorder
                         Log.Write("音频自检：没有收到电平数据，无法判断（不影响录制）");
                     else if (jobMaxGameLevel < 0.002)
                     {
-                        Log.Write("⚠ 音频自检：整段几乎没有游戏声音（最大电平 " + jobMaxGameLevel.ToString("0.000") +
-                                  "）—— 录像可能是静音，检查 OBS 里「" + AudioSourceName + "」源有没有绑上游戏窗口");
+                        Log.Write("⚠ 音频自检：整段几乎没声音（最大电平 " + jobMaxGameLevel.ToString("0.000")
+                                  + "），检查 OBS 里「" + AudioSourceName + "」有没有绑上游戏窗口");
                         if (note == "") note = "录成了静音？(音频自检)";
                     }
                     else
@@ -2650,7 +2765,7 @@ namespace RepRecorder
 
                 // 需求：录完问用户要把视频放哪
                 string saveNote = "";
-                if (cfg.AskSaveLocation && !queueSaveDecided)
+                if (!queueSaveDecided)
                 {
                     string choice = AskSaveLocationDialog(job);
                     if (!string.IsNullOrEmpty(choice) && choice != "keep")
@@ -2970,8 +3085,7 @@ namespace RepRecorder
                         cfg.ParallelCount = want;
                         cfg.Save();
                         if (Ui.ParallelCount != want) Ui.SetParallel(want);
-                        Log.Write("放进来 " + added + " 个 rep → 「同时录制数量」自动设为 " + want +
-                                  (added > 6 ? "（一次最多 6 个，剩下的会自动排到下一批）" : ""));
+                        Log.Write("放进来 " + added + " 个 rep → 同时录制数量设为 " + want + (added > 6 ? "（上限 6）" : ""));
                     }
                 }
                 HighlightBatchRows();
@@ -3045,7 +3159,7 @@ namespace RepRecorder
                 {
                     string m2;
                     if (GameAudio.SetSystemMute(false, out m2))
-                        Log.Write("检测到上次录制期间静音了系统声音、程序没来得及恢复（可能是被强制结束）——已自动帮你把声音打开");
+                        Log.Write("上次静音后没恢复（多半被强杀），已自动把声音打开");
                     else
                         Log.Write("想恢复上次的静音但失败了：" + m2);
                 }
@@ -3219,17 +3333,15 @@ namespace RepRecorder
                 {
                     cfg.RecordBgm = false;
                     ApplyBgmSetting(true);
-                    Log.Write("因为「录打击音效」是关的，已把 BGM 一并关掉（MuteMusic 改回 1），保证录出来完全无声");
+                    Log.Write("录打击音效关了 → BGM 一并关掉（MuteMusic=1）");
                 }
                 RefreshBgmButton();
-                Log.Write("BGM 录制：" + (cfg.RecordBgm
-                    ? "开（ReplayDnD.ini 里 MuteMusic=0，录像会带背景音乐）"
-                    : "关（ReplayDnD.ini 里 MuteMusic=1，录像只有音效）") + "；想改就点界面上的「录BGM」按钮");
+                Log.Write("BGM：" + (cfg.RecordBgm ? "开（MuteMusic=0，带 BGM）" : "关（MuteMusic=1，只有音效）"));
             }
             else
             {
                 RefreshBgmButton();
-                Log.Write("没找到 ReplayDnD.ini，读不到也改不了 BGM 开关（检查「设置…」里的游戏目录）");
+                Log.Write("找不到 ReplayDnD.ini，BGM 开关读不到（检查「设置…」里的游戏目录）");
             }
         }
         // ---- moved from MainForm ----
@@ -3282,14 +3394,14 @@ namespace RepRecorder
                 {
                     cfg.RecordBgm = false;
                     ApplyBgmSetting(true);
-                    Log.Write("因为关掉了「录打击音效」，已自动把「录BGM」也关掉（连游戏里的 BGM 都不放），确保录出来完全无声");
+                    Log.Write("录打击音效关了 → 录BGM 一并关掉（保证完全无声）");
                 }
                 else ApplyBgmSetting(false);
             }
             cfg.Save();
             Log.Write(cfg.RecordGameAudio
-                ? "【录打击音效：开】录出来的视频会包含游戏声音（音效/BGM 都照实录；BGM 有没有由「录BGM」单独决定）"
-                : "【录打击音效：关】录出来的视频将完全没有声音，「录BGM」同时被锁住（不可点）");
+                ? "录打击音效：开（视频含游戏声音）"
+                : "录打击音效：关（视频完全无声，录BGM 被锁）");
             if (obs != null && obs.IsConnected)
             {
                 Thread t = new Thread(delegate()
@@ -3316,8 +3428,8 @@ namespace RepRecorder
             ApplyBgmSetting(true);
             RefreshBgmButton();
             Log.Write(cfg.RecordBgm
-                ? "【录BGM：开】录像里会带背景音乐（已把 ReplayDnD.ini 的 MuteMusic 改成 0）"
-                : "【录BGM：关】录像里只有音效、没有背景音乐（已把 MuteMusic 改回 1）");
+                ? "录BGM：开（MuteMusic 改成 0，带背景音乐）"
+                : "录BGM：关（MuteMusic 改成 1，只有音效）");
             if (cfg.RecordBgm)
                 Log.Write("提醒：BGM 有版权风险（B 站等平台会检测），用不用你自己判断。");
         }
@@ -3335,7 +3447,7 @@ namespace RepRecorder
             bool running = worker != null && worker.IsAlive;
             if (!running)
             {
-                Log.Write("现在没有在录制，不需要停止" + (Ui.RowCount == 0 ? "（队列是空的）" : "") + "。要点开始录制请按「开始录制」");
+                Log.Write("现在没有在录，不需要停止" + (Ui.RowCount == 0 ? "（队列也是空的）" : ""));
                 cancel = false;
                 Ui.Status("就绪");
                 Ui.Post(delegate { btnStop.Enabled = false; btnStart.Enabled = true; });
@@ -3475,7 +3587,7 @@ namespace RepRecorder
             {
                 string ff = FindFfmpeg();
                 Log.Write("ffmpeg  ：" + (ff == null
-                    ? "找不到！并行录制会失败 —— 把 ffmpeg.exe 放到本程序同一个文件夹里就行"
+                    ? "找不到！并行录制会失败 —— 把 ffmpeg.exe 放到程序同目录"
                     : ff));
             }
             catch { }
@@ -3505,11 +3617,9 @@ namespace RepRecorder
                                     on = true;
                             }
                         }
-                        Log.Write("ReplayDnD mod（游戏能不能「带 rep 直接播放」靠它）：" +
-                                  (on ? "已启用 ✓" : (found ? "没有启用 ⚠" : "整合包里没有这个 mod ⚠")));
+                        Log.Write("ReplayDnD mod：" + (on ? "已启用 ✓" : (found ? "没启用 ⚠" : "整合包里没有 ⚠")));
                         if (!on)
-                            Log.Write("  ⚠ 请在整合包的 mod 配置菜单里启用 ReplayDnD（或 ReplayDnD-old），" +
-                                      "否则点开始录制后游戏只会停在标题画面、录出来的不是对局。本程序只读不改这个文件。");
+                            Log.Write("  ⚠ 请在 mod 配置菜单里启用 ReplayDnD，否则录出来的不是对局");
                     }
                     else Log.Write("ReplayDnD mod：找不到 " + mls + "（游戏目录可能不对）");
                 }

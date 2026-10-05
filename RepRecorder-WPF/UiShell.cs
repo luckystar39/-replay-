@@ -14,6 +14,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Input;
 using System.Windows.Shapes;
 using Drawing = System.Drawing;
 
@@ -21,15 +22,42 @@ namespace RepRecorder
 {
     static partial class Ui
     {
-        // 分隔条：平时是暗缝，鼠标压上去亮一档（和旧版手感一致）
-        public static Style SplitterStyle()
+        // 让无边框对话框能像普通窗口一样拖着走（主窗口靠 WindowChrome，不需要这个）。
+        // 挂在整个窗口上，但鼠标按在滑块 / 按钮 / 下拉框 / 输入框上时不拖 ——
+        // 否则调一下滑块就把整个对话框拖跑了。
+        public static void MakeDraggable(Window w)
         {
-            Style st = new Style(typeof(GridSplitter));
-            st.Setters.Add(new Setter(GridSplitter.BackgroundProperty, Br(MainForm.HudBg)));
-            Trigger h = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-            h.Setters.Add(new Setter(GridSplitter.BackgroundProperty, Br(MainForm.HudAccent, 0xCC)));
-            st.Triggers.Add(h);
-            return st;
+            w.MouseLeftButtonDown += delegate(object s, MouseButtonEventArgs e)
+            {
+                if (e.ButtonState != MouseButtonState.Pressed) return;
+                if (HitInteractive(e.OriginalSource as DependencyObject, w)) return;
+                try { w.DragMove(); }
+                catch { }   // 按下到进入 DragMove 之间鼠标已经松开的话会抛，忽略即可
+            };
+        }
+
+        static bool HitInteractive(DependencyObject d, Window stop)
+        {
+            while (d != null && d != stop)
+            {
+                if (d is Slider || d is ButtonBase || d is ComboBox || d is TextBox || d is ScrollBar) return true;
+                d = VisualTreeHelper.GetParent(d);
+            }
+            return false;
+        }
+
+        // 分隔条：平时跟面板同一层淡底色，鼠标压上去亮一档（和旧版手感一致）。
+        // ⚠ 这里【不能】用 Style 的 Setter 来设背景：Style 密封时会把 Setter 里的画刷冻结，
+        //   而面板底色是共享的可变画刷（拖滑块要实时改），一冻结再改就抛
+        //   InvalidOperationException，整个界面直接崩（2026-10-04 踩过）。
+        //   所以背景直接赋在实例上，悬停高亮用鼠标事件做。
+        public static void StyleSplitter(GridSplitter s)
+        {
+            // 平时完全透明 —— 新设计稿里卡片之间就是一道空隙，没有可见的分隔条。
+            // 光标会变成双向箭头，鼠标压上去也有一档高亮，知道这里能拖。
+            s.Background = Brushes.Transparent;
+            s.MouseEnter += delegate { s.Background = Br(MainForm.HudAccent, 0xCC); };
+            s.MouseLeave += delegate { s.Background = Brushes.Transparent; };
         }
 
         // 永远异步：press/set 用这个 —— 按钮可能打开模态对话框，
@@ -81,6 +109,19 @@ namespace RepRecorder
                 if (cur is string || cur == null) b.Content = text;
                 else
                 {
+                    // 带图标的按钮（开始录制 / 停止）内容是一个 Grid：第 0 列图标、第 1 列文字。
+                    // 不认这个形状的话，SetButtonText 会一声不响地什么都不做 —— 逻辑那边
+                    // 写了 btnXxx.Text = "..." 也看不出没生效。
+                    Grid g = cur as Grid;
+                    if (g != null)
+                    {
+                        foreach (UIElement u in g.Children)
+                        {
+                            TextBlock t2 = u as TextBlock;
+                            if (t2 != null && Grid.GetColumn(t2) == 1) { t2.Text = text; return; }
+                        }
+                        return;
+                    }
                     TextBlock t = cur as TextBlock;
                     if (t != null) t.Text = text;
                 }
@@ -93,7 +134,17 @@ namespace RepRecorder
             if (b == null) return "";
             if (b.Content is string) return (string)b.Content;
             TextBlock t = b.Content as TextBlock;
-            return t == null ? "" : t.Text;
+            if (t != null) return t.Text;
+            Grid g = b.Content as Grid;
+            if (g != null)
+            {
+                foreach (UIElement u in g.Children)
+                {
+                    TextBlock t2 = u as TextBlock;
+                    if (t2 != null && Grid.GetColumn(t2) == 1) return t2.Text;
+                }
+            }
+            return "";
         }
 
         public static void SetButtonEnabled(string id, bool on)
@@ -378,6 +429,37 @@ namespace RepRecorder
             return sb.ToString();
         }
 
+        // 按钮内容是 Grid（图标 + 文字）时，把里面的文字拼出来 ——
+        // 不然 Content.ToString() 只会返回 "System.Windows.Controls.Grid"，
+        // 调试接口的 text: 命令（验收脚本在用）就变成一句废话。
+        static string TextIn(object content)
+        {
+            if (content == null) return "";
+            TextBlock tb0 = content as TextBlock;
+            if (tb0 != null) return tb0.Text;
+            DependencyObject d = content as DependencyObject;
+            if (d == null) return content.ToString();
+            StringBuilder sb = new StringBuilder();
+            CollectText(d, sb);
+            return sb.Length > 0 ? sb.ToString() : content.ToString();
+        }
+
+        static void CollectText(DependencyObject d, StringBuilder sb)
+        {
+            int n = VisualTreeHelper.GetChildrenCount(d);
+            for (int i = 0; i < n; i++)
+            {
+                DependencyObject c = VisualTreeHelper.GetChild(d, i);
+                TextBlock tb = c as TextBlock;
+                if (tb != null)
+                {
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append(tb.Text);
+                }
+                else CollectText(c, sb);
+            }
+        }
+
         static string Text(string id)
         {
             return Ui.OnUi<string>(delegate
@@ -392,7 +474,7 @@ namespace RepRecorder
                 if (combo != null) return "{\"text\":" + Json(combo.SelectedItem == null ? "" : combo.SelectedItem.ToString())
                     + ",\"index\":" + combo.SelectedIndex + "}";
                 Button b = fe as Button;
-                if (b != null) return "{\"text\":" + Json(b.Content == null ? "" : b.Content.ToString()) + "}";
+                if (b != null) return "{\"text\":" + Json(TextIn(b.Content)) + "}";
                 TextBox box = fe as TextBox;
                 if (box != null) return "{\"text\":" + Json(box.Text) + "}";
                 Slider sl = fe as Slider;

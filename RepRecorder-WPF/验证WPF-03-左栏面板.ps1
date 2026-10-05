@@ -46,8 +46,10 @@ Check 'app alive' (-not $p.HasExited) ('pid=' + $p.Id)
 
 $ids = @('panelLeft','splitterV','btnPanel','btnBg','cardRecord','cardParallel','cardQueue','cardSound','cardEnv',
          'btnStart','btnStop','btnClear','btnRemove','btnMark','btnRefresh','btnPrepare','btnCheck','btnSet','btnOpenLog',
-         'btnSound','btnGameAudio','btnBgm','cbParallel','cbMic','chkAuto','chkPrepare','chkCloseObs','chkRound',
-         'lblMemHint','lblParHint','hint','activityBar','btnExpand')
+         # chkAuto / lblParHint removed 2026-10-05 at the user's request
+         # (no more "drag in then auto start"; no more "(= the N you selected)" line).
+         'btnSound','btnGameAudio','btnBgm','cbParallel','cbMic','chkPrepare','chkCloseObs','chkRound',
+         'lblMemHint','hint','activityBar','btnExpand')
 $missing = @()
 foreach ($id in $ids) {
   $r = Dbg "find:$id" | ConvertFrom-Json

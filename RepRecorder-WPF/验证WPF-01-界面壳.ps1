@@ -41,7 +41,8 @@ if ($win -eq $null) { Write-Host 'FAIL: no UIA element with AutomationId=win'; $
 else { Write-Host ('OK  window found by AutomationId=win, name="{0}"' -f $win.Current.Name) }
 
 # --- the shell's AutomationIds ---
-$want = @('btnPanel', 'btnBg', 'capMin', 'capMax', 'capClose', 'panelLeft', 'splitterV', 'splitterH', 'logBox', 'statusText', 'statusEnv')
+# statusText / statusEnv dropped 2026-10-05: the user had the bottom status bar removed.
+$want = @('btnPanel', 'btnBg', 'capMin', 'capMax', 'capClose', 'panelLeft', 'splitterV', 'splitterH', 'logBox')
 foreach ($id in $want) {
   $c = New-Object System.Windows.Automation.PropertyCondition($auto::AutomationIdProperty, $id)
   $e = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $c)

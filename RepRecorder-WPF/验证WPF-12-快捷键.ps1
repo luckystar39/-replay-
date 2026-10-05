@@ -25,6 +25,23 @@ public class W12 {
   public const byte VK_CONTROL = 0x11;
   public const byte VK_B = 0x42;
   public const uint KEYUP = 0x0002;
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr h);
+  // Hold Ctrl for real (that is what WPF's Keyboard.Modifiers reads), then post the B key
+  // straight at the window's HWND. 2026-10-05: the old version pressed both keys globally and
+  // relied on the window being foreground -- on a machine where nothing owns the foreground
+  // (this one reports Shell_TrayWnd) SetForegroundWindow is refused by design and the keys go
+  // to the taskbar, so the test failed while the feature was fine. Posting is deterministic.
+  public static void CtrlBTo(IntPtr h) {
+    keybd_event(VK_CONTROL, 0, 0, IntPtr.Zero);
+    System.Threading.Thread.Sleep(80);
+    SetFocus(h);
+    PostMessage(h, 0x0100, (IntPtr)VK_B, IntPtr.Zero);   // WM_KEYDOWN
+    System.Threading.Thread.Sleep(80);
+    PostMessage(h, 0x0101, (IntPtr)VK_B, IntPtr.Zero);   // WM_KEYUP
+    System.Threading.Thread.Sleep(60);
+    keybd_event(VK_CONTROL, 0, KEYUP, IntPtr.Zero);
+  }
   public static void CtrlB() {
     keybd_event(VK_CONTROL, 0, 0, IntPtr.Zero);
     System.Threading.Thread.Sleep(60);
@@ -81,16 +98,28 @@ if ($w -ne $null) { $hwnd = [IntPtr]$w.Current.NativeWindowHandle }
 Check 'the window has a native handle' ($hwnd -ne [IntPtr]::Zero) ('hwnd=' + $hwnd)
 [W12]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 800
-Check 'the window is now foreground' ([W12]::GetForegroundWindow() -eq $hwnd) ('fg=' + [W12]::GetForegroundWindow())
+# Informational only: Windows refuses foreground stealing when the calling process is not
+# already foreground, so this can legitimately be false on an unattended machine. The keys
+# below are posted to the HWND directly, so the test does not depend on this.
+Write-Host ('info  foreground is ' + [W12]::GetForegroundWindow() + ' (ours=' + $hwnd + ')')
 
 $s = Dbg 'status' | ConvertFrom-Json
+# The collapsed state is a persisted setting, so a previous run (or the user) can leave the
+# panel collapsed -- which made this test report four failures while Ctrl+B was working fine.
+# Normalise to expanded first, then test the toggle from a known state.
+if ($s.collapsed -eq $true) {
+  Write-Host 'info  panel was left collapsed - expanding once to get a known start state'
+  [W12]::CtrlBTo($hwnd)
+  Start-Sleep -Milliseconds 1200
+  $s = Dbg 'status' | ConvertFrom-Json
+}
 Check 'panel starts expanded' ($s.collapsed -eq $false) ('collapsed=' + $s.collapsed)
 $w0 = [int]$s.panel
 Check 'panel has a real width' ($w0 -gt 100) ('panel=' + $w0)
 
 # --- Ctrl+B collapses ---
 Add-Content -LiteralPath $runLog -Value 'step: Ctrl+B (collapse)' -Encoding UTF8
-[W12]::CtrlB()
+[W12]::CtrlBTo($hwnd)
 Start-Sleep -Milliseconds 1200
 $s = Dbg 'status' | ConvertFrom-Json
 Check 'Ctrl+B collapses the panel' ($s.collapsed -eq $true) ('collapsed=' + $s.collapsed)
@@ -100,7 +129,7 @@ Check 'the toggle button now offers to expand' ($t.text.Length -gt 0 -and $t.tex
 
 # --- Ctrl+B expands again ---
 Add-Content -LiteralPath $runLog -Value 'step: Ctrl+B (expand)' -Encoding UTF8
-[W12]::CtrlB()
+[W12]::CtrlBTo($hwnd)
 Start-Sleep -Milliseconds 1200
 $s = Dbg 'status' | ConvertFrom-Json
 Check 'Ctrl+B expands it again' ($s.collapsed -eq $false) ('collapsed=' + $s.collapsed)
@@ -108,7 +137,7 @@ Check 'the width came back' ([int]$s.panel -eq $w0) ('panel=' + $s.panel + ' exp
 
 # --- the collapse state survives a restart (same setting the old panel-memory scripts checked) ---
 Add-Content -LiteralPath $runLog -Value 'step: collapse then restart' -Encoding UTF8
-[W12]::CtrlB()
+[W12]::CtrlBTo($hwnd)
 Start-Sleep -Milliseconds 1200
 $s = Dbg 'status' | ConvertFrom-Json
 Check 'collapsed before the restart' ($s.collapsed -eq $true) ('collapsed=' + $s.collapsed)

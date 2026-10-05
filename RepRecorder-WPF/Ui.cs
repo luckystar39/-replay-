@@ -116,6 +116,34 @@ namespace RepRecorder
         static Drawing.Color CAccent { get { return MainForm.HudAccent; } }
         static Drawing.Color CAccent2 { get { return MainForm.HudAccent2; } }
         static FontFamily UiFont { get { return new FontFamily("Microsoft YaHei UI, Microsoft YaHei, Segoe UI"); } }
+
+        // 面板底色：一个【不冻结】的共享画刷 —— 顶栏 / 底栏 / 队列表头 / 每张卡片全都用这一个实例。
+        // 改它的颜色，所有面板立刻跟着变，不用重建界面（缩放的性能就是靠这个才没被拖垮：
+        // 之前试过给每个 TextBlock 挂 Effect 做描边，窗口缩放直接从 17ms 掉到 35ms）。
+        // 强度来自设置里的「面板暗化」：0 = 完全透明（图片零遮挡），100 = 最暗。
+        static readonly SolidColorBrush ScrimBrush = new SolidColorBrush();
+        public static SolidColorBrush Scrim { get { return ScrimBrush; } }
+
+        // 窗口底色（不透明）：左栏那种"底下没有背景图"的区域就是它。
+        // 它也跟「面板暗化」走 —— 只铺右侧时左栏本来是一块固定的深色底，
+        // 滑块拉到底也没反应（用户 2026-10-04 报的"面板暗化对控制面板不生效"）。
+        static readonly SolidColorBrush BaseBrush = new SolidColorBrush();
+        public static SolidColorBrush Base { get { return BaseBrush; } }
+
+        public static void SetScrim(int percent)
+        {
+            int p = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+            Drawing.Color c = CPanel;
+            ScrimBrush.Color = Color.FromArgb((byte)(p * 255 / 100), c.R, c.G, c.B);
+
+            // 底色 = 在 HudBg 上按同样的比例掺入面板色，这样左右两边"掺的量"一致
+            Drawing.Color b = MainForm.HudBg;
+            BaseBrush.Color = Color.FromArgb(255,
+                (byte)(b.R + (c.R - b.R) * p / 100),
+                (byte)(b.G + (c.G - b.G) * p / 100),
+                (byte)(b.B + (c.B - b.B) * p / 100));
+        }
+
         static FontFamily MonoFont { get { return new FontFamily("Consolas, Courier New"); } }
 
         // ---------------------------------------------------------------- 小零件
@@ -142,30 +170,40 @@ namespace RepRecorder
 
         public static Grid Card(string title, string icon, UIElement content, string automationId, double pad)
         {
+            return Card(title, icon, content, automationId, pad, false);
+        }
+
+        // flush = true：卡片严丝合缝铺满自己那一格 —— 去掉下沿留白、去掉圆角。
+        // 右侧的队列 / 终端用这个：几块 + 中间那条可拖分隔条拼起来正好是一整块完整的板，
+        // 背景不会从卡片下沿和圆角处漏出来（以前就是漏在那里的）。
+        public static Grid Card(string title, string icon, UIElement content, string automationId, double pad, bool flush)
+        {
             Grid outer = new Grid();
-            outer.Margin = new Thickness(0, 0, 0, 12);
+            outer.Margin = flush ? new Thickness(0) : new Thickness(0, 0, 0, 12);
 
             Border bd = new Border();
-            bd.Background = Br(CPanel, 0x9E);       // ← 半透明，背景图从这儿透出来
-            bd.BorderBrush = Br(CLineDim);
+            bd.Background = Scrim;                  // 淡淡一层（强度见设置里的「面板暗化」）
+            bd.BorderBrush = Br(CLineDim);          // 极淡的一圈描边，别抢背景图
             bd.BorderThickness = new Thickness(1);
-            bd.CornerRadius = new CornerRadius(3);
+            bd.CornerRadius = flush ? new CornerRadius(0) : new CornerRadius(10);
             outer.Children.Add(bd);
 
-            StackPanel body = new StackPanel();
-            body.Margin = new Thickness(8, 6, 8, 8);
+            // ⚠ 必须是 Grid，不能是 StackPanel：StackPanel 在堆叠方向上给子元素**无限高度**，
+            // 队列/终端里的 ListBox 于是永远不觉得自己需要滚动条，会一路撑到内容那么高。
+            // 2026-10-05 实测：塞 12 行时 ListBox 高度 882 DIP，而窗口才 648 DIP ——
+            // 底下几行既滚不到也点不到；列表被行铺满没有空白处，框选也没法起手。
+            // 两个毛病同一个根因。Grid 的星号行会把"剩余高度"交给内容，ListBox 才受约束。
+            Grid body = new Grid();
+            body.Margin = new Thickness(12, 10, 12, 12);   // 新设计稿：内边距更宽松
+            body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            StackPanel head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2, 0, 0, 2) };
+            StackPanel head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(2, 0, 0, 6) };
             string caption = string.IsNullOrEmpty(icon) ? title : icon + " " + title;
             head.Children.Add(Txt(caption, 12.5, CText, false));
             body.Children.Add(head);
-            Rectangle line = new Rectangle();
-            line.Height = 1;
-            line.Fill = Br(CLine);
-            line.Margin = new Thickness(0, 2, 0, 6);
-            line.HorizontalAlignment = HorizontalAlignment.Stretch;
-            body.Children.Add(line);
 
+            Grid.SetRow(content, 1);
             body.Children.Add(content);
             outer.Children.Add(body);
 
@@ -313,6 +351,11 @@ namespace RepRecorder
             pb.SetValue(Border.BorderBrushProperty, Br(CLine));
             pb.SetValue(Border.BorderThicknessProperty, new Thickness(1));
             pb.SetValue(Border.PaddingProperty, new Thickness(0, 2, 0, 2));
+            // 弹出列表至少和上面的框一样宽 —— 不然选项行只有文字那么宽，能点中的范围太小
+            // （用户 2026-10-05 报的"选数字鼠标能点到的范围太小"）。
+            // 用 TemplatedParent 而不是 FindAncestor：弹出内容不在 ComboBox 的可视树里。
+            pb.SetValue(FrameworkElement.MinWidthProperty,
+                        new Binding("ActualWidth") { RelativeSource = RelativeSource.TemplatedParent });
             FrameworkElementFactory ip = new FrameworkElementFactory(typeof(ItemsPresenter));
             pb.AppendChild(ip);
             pop.AppendChild(pb);
@@ -334,7 +377,38 @@ namespace RepRecorder
             return t;
         }
 
-        // 扁平按钮：鼠标划过平滑变色，按下去再深一档
+        // 带图标的按钮（目前只有"开始录制 / 停止"这一对）。
+        //  ① 内容块整体**居中**，不顶在最左边（2026-10-05 用户第二次提的）。
+        //  ② 图标列固定宽 + 文字列固定宽，两块加起来是同一个宽度，
+        //     所以两个按钮的 ▶ 和 ■ 落在同一个 x 上（第一次提的"图标不是对齐的"）。
+        //     两列都用 Auto 的话，文字长的那个整体就宽，居中了以后图标还是会错开。
+        const double IconColW = 20;   // 图标列：▶ / ■ 都居中在这一列里
+        const double TextColW = 52;   // 文字列：够放下最长的"开始录制"（4 个汉字 @12px = 48）
+        public static Button FlatButton(string icon, string text, string automationId)
+        {
+            Button b = FlatButton("", automationId);
+            // 光给内层 Grid 设对齐没用：外层 ContentPresenter 是模板里的，
+            // 要对齐得设按钮自己的 HorizontalContentAlignment（模板已把它绑到 ContentPresenter）。
+            b.HorizontalContentAlignment = HorizontalAlignment.Center;
+            Grid g = new Grid
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Width = IconColW + TextColW,
+            };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IconColW) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(TextColW) });
+            TextBlock ic = new TextBlock { Text = icon, FontSize = 11, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(ic, 0);
+            g.Children.Add(ic);
+            // 文字在它那 52 宽的列里也居中：这样"停止"（2 个字）不会比"开始录制"（4 个字）
+            // 更靠左，两个按钮看上去才是一对。
+            TextBlock tx = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center };
+            Grid.SetColumn(tx, 1);
+            g.Children.Add(tx);
+            b.Content = g;
+            return b;
+        }
+
         public static Button FlatButton(string text, string automationId)
         {
             Button b = new Button();
@@ -361,7 +435,10 @@ namespace RepRecorder
             bd.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Button.BorderThicknessProperty));
             bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
             FrameworkElementFactory cp = new FrameworkElementFactory(typeof(ContentPresenter));
-            cp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            // 绑到按钮自己的 HorizontalContentAlignment，别写死 Center ——
+            // 写死的话，带图标的按钮想左对齐都做不到（2026-10-05 图标对不齐就是这个）。
+            cp.SetValue(ContentPresenter.HorizontalAlignmentProperty,
+                        new TemplateBindingExtension(Control.HorizontalContentAlignmentProperty));
             cp.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
             bd.AppendChild(cp);
             t.VisualTree = bd;
@@ -408,6 +485,12 @@ namespace RepRecorder
         public static void Log(string s)
         {
             Post(delegate { if (W != null) W.AppendLog(s); });
+        }
+
+        // 收尾线程用它再关一次窗（那时候 ShellWindow.OnClosing 会放行）
+        public static void CloseMain()
+        {
+            Post(delegate { if (W != null) W.Close(); });
         }
 
         public static void Hint(string s)
@@ -544,6 +627,9 @@ namespace RepRecorder
             {
                 try { w.CfgPublic.Save(); } catch { }
                 w.ComboParallelSelectedIndexRefresh();
+                // 音频那几项（录打击音效 / 录BGM / 录音模式）改了要立刻生效，
+                // 不然设置里写着"开"、按钮却还显示"关"，要等下一次动作才对上。
+                try { if (w.RecPublic != null) w.RecPublic.UiApplyAudioSettings(); } catch { }
                 RepRecorder.Log.Write("设置已保存");
             }
         }
@@ -608,6 +694,107 @@ namespace RepRecorder
     </Track>
   </Grid>
 </ControlTemplate>";
+
+        // ---------------------------------------------------------------- 滚动条样式
+        // 主窗口和所有对话框共用这一套（对话框是独立窗口，不会自动继承主窗口的 Resources ——
+        // 设置窗原来就因此露出了系统原生那条浅灰的，在深色底上很扎眼，2026-10-05 用户报的）。
+        static Style scrollBarBase;
+
+        const string HudScrollBarXaml = @"
+<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+       xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='ScrollBar'>
+  <Setter Property='Background' Value='Transparent'/>
+  <Setter Property='Template'>
+    <Setter.Value>
+      <ControlTemplate TargetType='ScrollBar'>
+        <Grid Background='Transparent'>
+          <Track x:Name='PART_Track' IsDirectionReversed='True'>
+            <Track.DecreaseRepeatButton>
+              <RepeatButton Command='ScrollBar.PageUpCommand' Opacity='0' Focusable='False'/>
+            </Track.DecreaseRepeatButton>
+            <!-- 滑块**不画圆角**（CornerRadius=0）。
+                 终端行数一多，滑块的自然长度只有 8 DIP 左右；圆角在这种矮矩形上渲染出来
+                 是「上面圆、下面被切平」的半椭圆（2026-10-05 用户报的就是这个）。
+                 试过 Thumb 的 MinHeight、Border 的 MinHeight、ClipToBounds=False，
+                 在真程序里都没能让它变长或者变圆 —— 所以直接用实心小方块，
+                 形状至少是完整的、不会看着像坏了。
+                 ⚠ 本段是 C# 逐字字符串，注释里不能出现双引号，只能用「」。 -->
+            <Track.Thumb>
+              <Thumb>
+                <Thumb.Template>
+                  <ControlTemplate TargetType='Thumb'>
+                    <Border x:Name='tb' Background='#5A6E8C' CornerRadius='0' Margin='2,0' Opacity='0.85'/>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property='IsMouseOver' Value='True'>
+                        <Setter TargetName='tb' Property='Opacity' Value='1'/>
+                        <Setter TargetName='tb' Property='Background' Value='#4F74D8'/>
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Thumb.Template>
+              </Thumb>
+            </Track.Thumb>
+            <Track.IncreaseRepeatButton>
+              <RepeatButton Command='ScrollBar.PageDownCommand' Opacity='0' Focusable='False'/>
+            </Track.IncreaseRepeatButton>
+          </Track>
+        </Grid>
+      </ControlTemplate>
+    </Setter.Value>
+  </Setter>
+</Style>";
+
+        public static Style HudScrollBar(double width)
+        {
+            if (scrollBarBase == null) scrollBarBase = (Style)XamlReader.Parse(HudScrollBarXaml);
+            Style st = new Style(typeof(ScrollBar), scrollBarBase);
+            st.Setters.Add(new Setter(FrameworkElement.WidthProperty, width));
+            // ⚠ 光加 Setter 没用：ScrollBar 自带样式的宽度是靠**触发器**（Orientation=Vertical）
+            //   设成 SystemParameters.VerticalScrollBarWidth（17）的，优先级压过应用层的 Setter，
+            //   于是滚动条一直是 17 DIP 宽（2026-10-05 用"把滑块涂成红的"量出来的：39px = 13 DIP
+            //   加上左右各 2 的 Margin 正好 17）。应用层也放一个同属性的触发器才压得住。
+            Trigger tg = new Trigger { Property = ScrollBar.OrientationProperty, Value = Orientation.Vertical };
+            tg.Setters.Add(new Setter(FrameworkElement.WidthProperty, width));
+            st.Triggers.Add(tg);
+            return st;
+        }
+
+        public static ScrollBar FindVerticalScrollBar(DependencyObject root)
+        {
+            if (root == null) return null;
+            int n = 0;
+            try { n = VisualTreeHelper.GetChildrenCount(root); } catch { return null; }
+            for (int i = 0; i < n; i++)
+            {
+                DependencyObject c = VisualTreeHelper.GetChild(root, i);
+                ScrollBar sb = c as ScrollBar;
+                if (sb != null && sb.Orientation == Orientation.Vertical) return sb;
+                ScrollBar r = FindVerticalScrollBar(c);
+                if (r != null) return r;
+            }
+            return null;
+        }
+
+        // ⚠ ScrollBar 的宽度**光靠样式压不住**：它自带样式的宽度是 Orientation 触发器设的
+        //   （SystemParameters.VerticalScrollBarWidth = 17），实测无论我们把 Width 写成
+        //   应用层 Setter 还是应用层触发器，量出来都还是 17 DIP（39px 的滑块减去左右各 2 的
+        //   Margin 正好 17 —— 2026-10-05 把滑块涂成红色量出来的）。
+        //   只有**局部值**压得住。所以等它进了可视树之后直接改 Width，
+        //   并挂在 ScrollChanged 上兜底（模板重建过也会补回来）。
+        public static void PinScrollBarWidth(ScrollViewer sv, double w)
+        {
+            if (sv == null) return;
+            // ⚠ 判断里必须先处理 NaN：Width 默认就是 NaN，而 Math.Abs(NaN - w) > 0.1 是 **false**
+            //   —— 2026-10-05 第一版就栽在这，等于一次都没设过。
+            Action pin = delegate
+            {
+                ScrollBar b = FindVerticalScrollBar(sv);
+                if (b == null) return;
+                if (double.IsNaN(b.Width) || Math.Abs(b.Width - w) > 0.1) b.Width = w;
+            };
+            sv.ScrollChanged += delegate { pin(); };
+            sv.Loaded += delegate { pin(); };
+        }
 
         public static Slider HudSlider(double min, double max, double val, string id)
         {
