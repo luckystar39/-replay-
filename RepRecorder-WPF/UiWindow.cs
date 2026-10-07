@@ -30,6 +30,16 @@ namespace RepRecorder
         readonly Settings cfg;
         readonly Recorder rec;
 
+        // ---------------------------------------------------------------- 顶栏高度
+        // 2026-10-07 用户要求"照着 VS Code 的排布来"：原来是 30，显矮；改成 36，
+        // 最右边三个窗口按钮也改成整块高（鼠标划过整块变色），底下再加一条 1px 分隔线。
+        // CaptionH 是【可拖动区】的高度，要和 WindowChrome.CaptionHeight 一致；
+        // TopBarH 才是顶栏占的总高（多出来的 1px 是分隔线）—— 背景铺"内容区"时，
+        // 内容是从分隔线【下面】开始的，所以算 Margin 用 TopBarH。
+        // 别把这两个数写死在别处：改一处、别处没跟上，背景就会差一行。
+        const double CaptionH = 36;
+        const double TopBarH = CaptionH + 1;
+
         // 左栏 / 顶栏 / 底栏
         ColumnDefinition colBar, colLeft, colSplit;
         StackPanel leftCol;
@@ -90,10 +100,27 @@ namespace RepRecorder
         // 于是放置方式怎么选都不生效（2026-10-04 用户报的"放置位置功能都用不了"就是这个）。
         string bgLoadedKey = null;
         Grid bgClip;                     // 背景图层的裁剪容器：位移不许把图推出内容区
-        bool bgRepanned;                 // 布局还没出来时的补算闸门（防止反复排队）
+        Rect bgViewport = Rect.Empty;    // 画刷视口 = 背景图当前占的矩形（位移就是挪它）
+        // 布局还没出来时的补算次数（封顶，见 ApplyBackground 里的说明）。
+        // 以前是个 bool 闸门，但它在回调里被清掉 → 尺寸一直为 0 时就成了死循环。
+        int bgRepanTries;
+        bool bgReapplyQueued;            // 合并排队：一次布局里尺寸变多次也只补算一次
+
+        // 布局完成后补算一次背景。bgLayer.SizeChanged 挂在 BuildBackgroundLayer 里，
+        // 覆盖"改了列宽 / 改了背景范围 / 收起左栏"等所有会让图层尺寸变动的路径。
+        void QueueBackgroundReapply()
+        {
+            if (bgReapplyQueued) return;
+            bgReapplyQueued = true;
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                bgReapplyQueued = false;
+                ApplyBackground();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
 
         // 当前摆放方式下，位移滑块的上限（百分比，按图层尺寸算）。
-        //   -1 = 不限（free / tile，滑块给 ±100）
+        //   -1 = 不限（只有 tile 了，滑块给 ±100）
         //    0 = 没东西可挪（拉伸、或比例刚好吻合）→ 设置窗里那一行直接不显示
         // 这两个值是 ApplyBackground() 算出来的，设置窗读它们来决定滑块量程和显不显示。
         public double PanXNow { get; private set; }
@@ -146,7 +173,7 @@ namespace RepRecorder
 
             // 无边框窗口的拖动/缩放/双击最大化/贴边分屏，WPF 自带
             WindowChrome chrome = new WindowChrome();
-            chrome.CaptionHeight = 30;
+            chrome.CaptionHeight = CaptionH;
             chrome.ResizeBorderThickness = new Thickness(6);
             chrome.GlassFrameThickness = new Thickness(0);
             chrome.CornerRadius = new CornerRadius(0);
@@ -163,6 +190,7 @@ namespace RepRecorder
                 {
                     src.AddHook(Hook);
                     AddCaptionStyle(src.Handle);        // 补回 WS_CAPTION，否则没有最小化/还原动画
+                    ApplyDwmWindowLooks(src.Handle);    // 四角圆角 + 染掉 DWM 那 1px 外描边
                 }
             };
         }
@@ -174,7 +202,7 @@ namespace RepRecorder
             root.Children.Add(BuildBackgroundLayer());
 
             Grid body = new Grid();
-            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(30) });
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TopBarH) });
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             // 2026-10-05 按用户要求删掉底部状态栏（左右角那两行小字），所以这里只有两行
             UIElement top = BuildTopBar();
@@ -213,7 +241,10 @@ namespace RepRecorder
 
             // 窗口按钮要让开右上角那 6px 的缩放边带 —— 贴死角落的话，
             // 右上角就拉不动了（另外三个角没被盖住所以正常）。
-            StackPanel caps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 6, 0) };
+            // 2026-10-07：只留右边那 6px。原来上下也留 6（按钮 24 高、沉在下面），
+            // 那是"小方块"的样子；现在按 VS Code 做成**整块高**，按钮 36 高、顶到顶栏上下边。
+            // 顶边那 6px 缩放带虽然被按钮盖住一截，但右上角那块（右 6 × 上 6）还空着，拉得动。
+            StackPanel caps = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
             caps.Children.Add(CapButton("─", "capMin", delegate { WindowState = WindowState.Minimized; }));
             caps.Children.Add(CapButton("▢", "capMax", delegate
             {
@@ -222,14 +253,22 @@ namespace RepRecorder
             caps.Children.Add(CapButton("✕", "capClose", delegate { Close(); }));
             Grid.SetColumn(caps, 1);
             bar.Children.Add(caps);
-            return bar;
+
+            // VS Code 的顶栏底下压着一条 1px 的线，把"标题栏"和"内容"分开。
+            // 用 Border 的边框画：边框画在边界【内侧】，所以这个 Border 总高 = TopBarH(37)
+            // 时，里面正好剩 36 给 bar、最底下 1px 是线。
+            Border wrap = new Border();
+            wrap.BorderBrush = Ui.Br(MainForm.HudLine);
+            wrap.BorderThickness = new Thickness(0, 0, 0, 1);
+            wrap.Child = bar;
+            return wrap;
         }
 
         Button CapButton(string glyph, string id, Action onClick)
         {
             Button b = new Button();
             b.Content = glyph;
-            b.Width = 46; b.Height = 24;
+            b.Width = 46; b.Height = CaptionH;
             b.Foreground = Ui.Br(MainForm.HudText);
             b.Background = Brushes.Transparent;
             b.BorderThickness = new Thickness(0);
@@ -251,10 +290,15 @@ namespace RepRecorder
   </Border>
   <ControlTemplate.Triggers>
     <Trigger Property='IsMouseOver' Value='True'>
-      <Setter TargetName='b' Property='Background' Value='#4F74D866'/>
+      <Setter TargetName='b' Property='Background' Value='#664F74D8'/>
     </Trigger>
   </ControlTemplate.Triggers>
 </ControlTemplate>";
+        // ⚠ 上面那个色原来是写反的：'#4F74D866' —— 想表达"强调蓝 #4F74D8、透明度 66"，
+        //   但 WPF 的 8 位写法是 **#AARRGGBB**（透明度在前）。写成 #4F74D866 就成了
+        //   A=4F / R=74 / G=D8 / B=66，一个半透明【绿】。原来是 24px 的小方块没人注意，
+        //   2026-10-07 改成整块高之后一 hover 一大片绿，一眼就看出来了。
+        //   同一个坑本文件 795 行踩过一次（那次是把 #33FFFFFF 理解成"白 33%"）。
 
         // 分隔条最多能把左栏拖到哪儿：窗口宽 - 分隔条 - 右边最小宽。
         // 不加这道栏杆的话能一路拖到底，右边（队列/终端）被挤成 0 宽就"找不到了"
@@ -387,7 +431,7 @@ namespace RepRecorder
             if (w < 110) { SetPanelCollapsed(true); return; }
             if (cfg != null) { cfg.PanelWidth = (int)Math.Round(w); cfg.Save(); }
             // 拖分隔条只改列宽、不改窗口大小，SizeChanged 不会触发 ——
-            // 不在这里补一次，背景图（只铺内容区时）就不会跟着面板宽度走。
+            // 补一次让背景跟上；拿新尺寸算视口那次同样由 bgLayer.SizeChanged 兜底。
             ApplyBackground();
         }
 
@@ -412,7 +456,10 @@ namespace RepRecorder
                 if (btnPanel != null) btnPanel.Content = "◀  收起面板";
             }
             if (cfg != null) { cfg.PanelCollapsed = want; cfg.Save(); }
-            ApplyBackground();   // 列宽变了 → 背景的裁剪区（只铺内容区时）要跟着重算
+            // 列宽变了 → 让背景跟着重算。这里立刻调一次是为了让 bgClip.Margin 尽快生效
+            // （只铺内容区时 Margin 由列宽算出来）；真正拿新尺寸算视口的那一次，
+            // 由 bgLayer.SizeChanged → QueueBackgroundReapply() 兜底（见 BuildBackgroundLayer）。
+            ApplyBackground();
         }
 
         // ---------------------------------------------------------------- 左栏五张卡片
@@ -1351,6 +1398,17 @@ namespace RepRecorder
             bgLayer = new Rectangle();
             bgLayer.Fill = Ui.Br(MainForm.HudBg);
             Ui.Id(bgLayer, "bgLayer");
+            // ⚠ 图层尺寸一变就必须重算背景 —— 这是【通用】兜底，别再逐个调用点去补。
+            //   背景的尺寸/位移是靠画刷视口做的，视口尺寸 = bgLayer.ActualWidth。
+            //   而改列宽、改「背景范围」、收起左栏这些操作，都是先改属性、**布局还没跑**，
+            //   于是调用点里紧接着的那次 ApplyBackground() 拿到的是旧尺寸，视口就停在旧值上。
+            //   实测两个症状（用户 2026-10-07 各报一次）：
+            //     · 左栏收起再展开 → 图被放大 1.19 倍、顶部被切
+            //     · 范围从「内容区」切「全局」→ 图只画在中间一条竖带里，两边是空白
+            //   挂在这里就都自动跟上了：布局一完成，图层尺寸变化会自己通知过来。
+            //   不会死循环：ApplyBackground 只改 bgClip.Margin，而 Margin 只由 cfg.BgScope
+            //   和列宽决定 —— 第二次算出来一模一样，不会再触发尺寸变化。
+            bgLayer.SizeChanged += delegate { QueueBackgroundReapply(); };
             bgClip.Children.Add(bgLayer);
 
             ApplyBackground();
@@ -1373,25 +1431,13 @@ namespace RepRecorder
                     bi.UriSource = new Uri(cfg.BgImage, UriKind.Absolute);
                     bi.EndInit();
                     ImageBrush br = new ImageBrush(bi);
-                    br.Stretch = StretchOf(cfg.BgLayout);
-                    if (cfg.BgLayout == "tile")
-                    {
-                        br.TileMode = TileMode.Tile;
-                        br.ViewportUnits = BrushMappingMode.Absolute;
-                        br.Viewport = new Rect(0, 0, bi.PixelWidth, bi.PixelHeight);
-                    }
-                    if (cfg.BgLayout == "center")
-                    {
-                        // 「原尺寸居中」= Stretch.None。光设 Stretch=None 是**画不出东西**的：
-                        // 默认的 Viewbox 是"相对整个包围盒"（0,0,1,1），而不缩放时这个框没有意义，
-                        // 结果整块背景是空的（2026-10-07 实测：选它之后窗口里一点图都没有）。
-                        // 必须把 Viewbox 换成**图片自己的像素尺寸**（绝对单位），
-                        // 内容才是"这张图的原尺寸"，再靠 Alignment 居中。
-                        br.ViewboxUnits = BrushMappingMode.Absolute;
-                        br.Viewbox = new Rect(0, 0, bi.PixelWidth, bi.PixelHeight);
-                        br.AlignmentX = AlignmentX.Center;
-                        br.AlignmentY = AlignmentY.Center;
-                    }
+                    // 所有对齐方式统一成「绝对单位的视口 + Stretch.Fill」：
+                    //   视口 = 这张图在当前窗口里该占的矩形（可能比图层大，也可能小），
+                    //   位移就是把视口整体挪一挪（见下面那段长注释）。
+                    // Stretch.Fill 不会把图拉变形：除了「拉伸」模式，视口的宽高比就是图片的宽高比。
+                    br.Stretch = Stretch.Fill;
+                    br.ViewportUnits = BrushMappingMode.Absolute;
+                    if (cfg.BgLayout == "tile") br.TileMode = TileMode.Tile;
                     bgLayer.Fill = br;
                     bgLoadedKey = bgKey;
                 }
@@ -1405,47 +1451,86 @@ namespace RepRecorder
                 bgLayer.Opacity = a / 100.0;
                 bgLayer.Visibility = a > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-                // 位移作用在**画刷**上（RelativeTransform），不是整块图层上。
-                // 作用在图层上时等于把整张图推走、容器再从另一边裁掉 —— 「铺满」本身裁掉的那部分
-                // 永远回不来（用户 2026-10-05 报的"裁边之后动 xy 轴，裁掉的边真的不见了，
-                // 而我正是想让裁掉的边回到画面上"）。
-                // 作用在画刷上，图是在容器**内部**平移，铺满裁掉的上下/左右就能露出来。
+                // 先算好裁剪容器的 Margin（它决定图层的实际大小），**排在视口计算之前**。
+                // 它是下面"这一帧布局过没过期"的信号。
+                Thickness wantMargin = new Thickness(0);
+                if (cfg.BgScope != "global")
+                {
+                    double left = (colBar == null ? 0 : colBar.Width.Value)
+                                + (colLeft == null ? 0 : colLeft.Width.Value)
+                                + (colSplit == null ? 0 : colSplit.Width.Value);
+                    wantMargin = new Thickness(left, TopBarH, 0, 0);   // 底部原来要给状态栏留 22，底栏删了就不用留
+                }
+                bool marginChanged = bgClip != null && !SameMargin(bgClip.Margin, wantMargin);
+                if (marginChanged) bgClip.Margin = wantMargin;
+
+                // 位移做在**画刷的视口**上，不是 Transform，也不是图层的 RenderTransform。
+                //
+                // ⚠ 这里以前是把位移做成画刷的 RelativeTransform 的 ——**那是错的**（2026-10-07 查实）：
+                //   ImageBrush 的 UniformToFill 先把图片裁到视口里，RelativeTransform 再把
+                //   **已经裁好的结果**平移，空出来的那块不会补上。实测：全屏下 Y 拉到 +12%，
+                //   顶部出现一条 129 DIP 的窗口底色 —— 用户要的"看到被裁掉的那部分"根本没发生，
+                //   只是整张图往下挪、上面空了一条。之前"看到被裁的边露出来"是看的缩略图看岔了。
+                //   挪视口就没有这个问题：图和视口一起走，永远没有"空出来的地方"，
+                //   超出容器的部分由 bgClip（ClipToBounds）裁掉 —— 这正是"滑到头正好贴边"。
                 ImageBrush ib = bgLayer.Fill as ImageBrush;
                 if (ib != null)
                 {
-                    // 量程要等布局出来才算得准。还没尺寸就先不管，等这一轮布局完再来一次。
-                    if (bgLayer.ActualWidth < 1 && !bgRepanned)
+                    // 量程要等布局出来才算得准，所以尺寸还没有时补算一次。
+                    //
+                    // ⚠ 这里以前是「入队 → 回调里把闸门清掉 → 再调 ApplyBackground」，
+                    //   只要 ActualWidth 一直是 0 就会【无限自我重排】，把 UI 线程灌满：
+                    //   消息队列还在回控制消息（所以 Responding 仍是 True、探针测不出来），
+                    //   但输入被饿死 —— 鼠标变成漏斗、整个软件点不动。
+                    //   2026-10-07 用户报的"重进软件后鼠标一直是漏斗"就是这个，
+                    //   触发条件：BgOpacity == 0 → 下面把图层设成 Collapsed → 宽度**永远**是 0。
+                    //   两道闸：折叠态直接不补算（补也没用），另外补算次数封顶，
+                    //   免得别的未知原因（最小化之类）再造一个同样的死循环。
+                    if (bgLayer.Visibility == Visibility.Visible && bgLayer.ActualWidth < 1 && bgRepanTries < 5)
                     {
-                        bgRepanned = true;
-                        Dispatcher.BeginInvoke(new Action(delegate { bgRepanned = false; ApplyBackground(); }));
+                        bgRepanTries++;
+                        Dispatcher.BeginInvoke(new Action(delegate { ApplyBackground(); }));
                     }
-                    ComputePanRange(ib);
-                    ClampPan();
+                    else if (bgLayer.ActualWidth >= 1) bgRepanTries = 0;
 
-                    // 位移作用在**画刷**上（RelativeTransform），不是整块图层上。
-                    // 作用在图层上时等于把整张图推走、容器再从另一边裁掉 —— 裁掉的那部分
-                    // 永远回不来（用户 2026-10-05 报的"动 xy 轴之后裁掉的边真的不见了"）。
-                    // 作用在画刷上，图是在容器**内部**平移，裁掉的部分就能露回来，
-                    // 「只铺内容区」时也不会把图推到控制面板上。
+                    // 图层尺寸 = 窗口客户区 − bgClip 的 Margin。
+                    // 实测核对过：window 1721x1033、Margin(left=304, top=30) → layer 1417x1003，分毫不差。
+                    //
+                    // ⚠ 不能直接用 bgLayer.ActualWidth：只要 Margin / 列宽刚改过，**布局就还没跑**，
+                    //   ActualWidth 还是旧尺寸 —— 拿它算出来的视口是错的，会先按旧尺寸画一帧、
+                    //   布局完再跳过去，看起来就是"闪一下"（用户 2026-10-07 报的
+                    //   "展开面板时背景一闪再跑到右边"）。
+                    //   用窗口尺寸反推就不必等布局。
+                    //   这里**每次都推算、只在两者不一致时采信推算值**，不依赖任何"这次改没改过"
+                    //   的标志位 —— 先前那版用 marginChanged 判断，实测仍会漏（视口算出个
+                    //   新旧混合的 1144x858：宽按收起的、高按展开的）。
+                    //   万一树结构以后变了，ActualWidth 会和推算值一致、于是走 ActualWidth；
+                    //   而且 SizeChanged 那次补算还会再纠正一遍。
+                    double expectW = Math.Max(1, ActualWidth - wantMargin.Left - wantMargin.Right);
+                    double expectH = Math.Max(1, ActualHeight - wantMargin.Top - wantMargin.Bottom);
+                    double lw = Math.Abs(bgLayer.ActualWidth - expectW) > 0.5 ? expectW : bgLayer.ActualWidth;
+                    double lh = Math.Abs(bgLayer.ActualHeight - expectH) > 0.5 ? expectH : bgLayer.ActualHeight;
+                    // 量程和渲染尺寸都拿这同一个 lw/lh 算 —— 上面已经确定它就是这一帧要用的尺寸，
+                    // 绝不能让它们内部再去读一次 ActualWidth（那就是两种尺寸混用）。
+                    ComputePanRange(ib, lw, lh);
+                    double rw, rh;
+                    if (!RenderedExtent(ib, lw, lh, out rw, out rh)) { rw = lw; rh = lh; }
+                    // 位移量：PanFraction 返回的是「占图层尺寸的比例」，乘回去得到 DIP
+                    double dx = PanFraction(panXExact, PanXNow, EffectivePan(PanXNow, cfg.BgOffsetX)) * lw;
+                    double dy = PanFraction(panYExact, PanYNow, EffectivePan(PanYNow, cfg.BgOffsetY)) * lh;
+                    // 视口 = 居中位置 + 位移。比图层大就往外扩，小就缩在中间（适应/居中的留边）。
+                    bgViewport = new Rect((lw - rw) / 2.0 + dx, (lh - rh) / 2.0 + dy, rw, rh);
+                    ib.Viewport = bgViewport;
+
+                    // 翻转仍是变换（它不产生空白，图还是铺满整个视口），绕视口中心镜像。
+                    // 缩放已经进了 rw/rh，所以这里只放 ±1。
                     ib.Transform = Transform.Identity;
-                    double z = ZoomScale();
-                    double sx = (cfg.BgFlipH ? -1 : 1) * z;
-                    double sy = (cfg.BgFlipV ? -1 : 1) * z;
-                    double dx = PanFraction(panXExact, PanXNow, cfg.BgOffsetX);
-                    double dy = PanFraction(panYExact, PanYNow, cfg.BgOffsetY);
-                    if (sx != 1 || sy != 1 || dx != 0 || dy != 0)
-                    {
-                        TransformGroup tg = new TransformGroup();
-                        // 先镜像/缩放（绕图层中心），**再**平移。
-                        // 顺序不能反：平移放在后面，它的位移量就不受缩放影响 ——
-                        // 正数永远往右/往下，勾了翻转之后滑块也不会反着走。
-                        tg.Children.Add(new ScaleTransform(sx, sy, 0.5, 0.5));
-                        tg.Children.Add(new TranslateTransform(dx, dy));
-                        ib.RelativeTransform = tg;
-                    }
+                    if (cfg.BgFlipH || cfg.BgFlipV)
+                        ib.RelativeTransform = new ScaleTransform(cfg.BgFlipH ? -1 : 1, cfg.BgFlipV ? -1 : 1, 0.5, 0.5);
                     else ib.RelativeTransform = Transform.Identity;
                 }
-                bgLayer.RenderTransform = Transform.Identity;   // 图层自己不动（位移已经交给画刷了）
+                else bgViewport = Rect.Empty;
+                bgLayer.RenderTransform = Transform.Identity;   // 图层自己不动
 
                 if (cfg.BgBlur > 0)
                 {
@@ -1455,18 +1540,7 @@ namespace RepRecorder
                 }
                 else bgLayer.Effect = null;
 
-                // Margin 设在裁剪容器上（不是矩形上），这样位移的 RenderTransform 会被容器裁住
-                if (bgClip != null)
-                {
-                    if (cfg.BgScope == "global") bgClip.Margin = new Thickness(0);
-                    else
-                    {
-                        double left = (colBar == null ? 0 : colBar.Width.Value)
-                                    + (colLeft == null ? 0 : colLeft.Width.Value)
-                                    + (colSplit == null ? 0 : colSplit.Width.Value);
-                        bgClip.Margin = new Thickness(left, 30, 0, 0);   // 底部原来要给状态栏留 22，底栏删了就不用留
-                    }
-                }
+                // Margin 已经在上面算好并设过了（要排在视口之前，见那里的说明）
             }
             catch (Exception ex) { Log.Write("背景层出错：" + ex.Message); }
         }
@@ -1476,8 +1550,8 @@ namespace RepRecorder
             if (layout == "fit") return Stretch.Uniform;
             if (layout == "stretch") return Stretch.Fill;
             if (layout == "center" || layout == "tile") return Stretch.None;
-            // fill 和 free 画的都是"等比放大到盖住"；
-            // 两者只差在**位移限不限**（fill 夹在余量内、free 随便拖），渲染本身同一套。
+            // fill（覆盖）走这里：等比放大到盖住。
+            // 2026-10-07 之前还有个 free 模式共用这条分支（区别只在位移限不限），已合并掉。
             return Stretch.UniformToFill;
         }
 
@@ -1491,15 +1565,26 @@ namespace RepRecorder
 
         // 背景图按当前摆放方式渲染出来，在图层里占多大（DIP）。
         // 位移的上限完全由它推出来：能挪的距离 = |渲染尺寸 - 图层尺寸| / 2。
-        bool RenderedExtent(ImageBrush b, out double rw, out double rh)
+        //
+        // ⚠ lw/lh 必须由调用方传进来，**不要在这里读 bgLayer.ActualWidth**。
+        //   布局没跟上时 ActualWidth 是旧值，而调用方可能已经在用推算的新尺寸 ——
+        //   两套尺寸混在一起会算出个"宽按旧、高按新"的视口（实测 1144x858），
+        //   画出来就是错倍数的那一帧，也就是用户看到的"闪一下"。
+        bool RenderedExtent(ImageBrush b, double lw, double lh, out double rw, out double rh)
         {
             rw = rh = 0;
             if (cfg == null || bgLayer == null) return false;
-            double lw = bgLayer.ActualWidth, lh = bgLayer.ActualHeight;
             if (lw < 1 || lh < 1) return false;             // 布局还没出来，算不了
             double z = ZoomScale();
             string lay = cfg.BgLayout;
             if (lay == "stretch") { rw = lw * z; rh = lh * z; return true; }
+            // 平铺：视口就是"一块砖"的尺寸（图片原始尺寸 × 缩放），TileMode 自己去重复
+            if (lay == "tile")
+            {
+                BitmapImage tb = b == null ? null : b.ImageSource as BitmapImage;
+                if (tb == null || tb.PixelWidth < 1 || tb.PixelHeight < 1) { rw = lw; rh = lh; return true; }
+                rw = tb.PixelWidth * z; rh = tb.PixelHeight * z; return true;
+            }
             BitmapImage bi = b == null ? null : b.ImageSource as BitmapImage;
             if (bi == null || bi.PixelWidth < 1 || bi.PixelHeight < 1)
             {
@@ -1517,19 +1602,26 @@ namespace RepRecorder
         //   覆盖/适应/居中 → 只给有东西可挪的那根轴，量程正好是余量的一半
         //                    （滑到头图边正好贴住框边，**永远滑不出底色**）
         //   拉伸          → 没东西可挪，两根轴都是 0
-        //   自由/平铺      → 不设限。平铺是无限循环的，怎么挪都不会露底
-        void ComputePanRange(ImageBrush b)
+        //   平铺          → 不设限。平铺是无限循环的，压根没有"边"可贴，怎么挪都不会露底
+        // 2026-10-07：「自由」模式已按用户要求合并进「覆盖」并删除，
+        // 所以现在**没有任何摆放方式能拖出空白**（唯一的例外是平铺，它没有边）。
+        void ComputePanRange(ImageBrush b, double lw, double lh)
         {
             string lay = cfg == null ? "" : cfg.BgLayout;
-            if (lay == "free" || lay == "tile") { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
+            if (lay == "tile") { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
             double rw, rh;
-            if (!RenderedExtent(b, out rw, out rh)) { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
-            double lw = bgLayer.ActualWidth, lh = bgLayer.ActualHeight;
+            if (!RenderedExtent(b, lw, lh, out rw, out rh)) { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
             // 向下取整：上限是 17.6 却存了 18 的话，会露出一条不到 1 像素的底色
             panXExact = Math.Abs(rw - lw) / 2.0 / lw * 100.0;
             panYExact = Math.Abs(rh - lh) / 2.0 / lh * 100.0;
             PanXNow = Math.Floor(panXExact);
             PanYNow = Math.Floor(panYExact);
+        }
+
+        static bool SameMargin(Thickness a, Thickness b)
+        {
+            return Math.Abs(a.Left - b.Left) < 0.01 && Math.Abs(a.Top - b.Top) < 0.01 &&
+                   Math.Abs(a.Right - b.Right) < 0.01 && Math.Abs(a.Bottom - b.Bottom) < 0.01;
         }
 
         // 把整数百分比的位移换算成画刷要用的比例。
@@ -1542,22 +1634,36 @@ namespace RepRecorder
             return val / 100.0;
         }
 
-        void ClampPan()
+        // 画的时候真正用的位移：把存下来的值夹进当前量程，但**绝不写回 cfg**。
+        //
+        // ⚠ 这里以前是 ClampPan()，直接改 cfg.BgOffsetX/Y —— 那是个真 bug（2026-10-07 查实）：
+        //   量程（PanXNow/PanYNow）是随窗口大小走的，所以每拖动一下窗口，
+        //   就会把用户的位移夹掉一点，**而且窗口缩回去也不恢复**（实测：oy 18→17 之后就一直是 17）。
+        //   用户看到的就是"伸缩软件的时候背景图会闪几下，之后就不闪了"——
+        //   一直拖一直夹，夹到 0 就没得可夹、也就不闪了。
+        //   存下来的值是用户的意图（"我要看图的这个位置"），换个窗口大小不该把它抹掉。
+        //   夹在渲染这一层仍然保证"滑到头图边正好贴边、永不露底"这个承诺。
+        static int EffectivePan(double limit, int val)
         {
-            if (cfg == null) return;
-            if (PanXNow >= 0) cfg.BgOffsetX = (int)Math.Max(-PanXNow, Math.Min(PanXNow, cfg.BgOffsetX));
-            if (PanYNow >= 0) cfg.BgOffsetY = (int)Math.Max(-PanYNow, Math.Min(PanYNow, cfg.BgOffsetY));
+            if (limit < 0) return val;              // 不限（只剩平铺）
+            int m = (int)limit;
+            return Math.Max(-m, Math.Min(m, val));
         }
 
         // 画刷上的位移量（图层尺寸的比例）。bgstate 用它证明"位移真的加在画刷上"。
         // 2026-10-07 起 RelativeTransform 变成了 TransformGroup（先缩放/镜像、再平移），
         // 所以要钻进组里找，不能再直接 as TranslateTransform —— 那样翻转一勾就全读成 0。
-        static string BgBrushOffset(ImageBrush b, bool x)
+        // 2026-10-07 起位移做在**视口**上（不再是 TranslateTransform），所以这里换算成
+        // "相对居中的偏移 ÷ 图层尺寸" —— 数值含义和以前完全一样，验收脚本不用改口径。
+        string BgBrushOffset(bool x)
         {
-            Transform t = FindBrushTransform(b, typeof(TranslateTransform));
-            TranslateTransform tr = t as TranslateTransform;
-            if (tr == null) return "0";
-            return (x ? tr.X : tr.Y).ToString("0.###");
+            if (bgLayer == null || bgViewport.IsEmpty) return "0";
+            double lw = bgLayer.ActualWidth, lh = bgLayer.ActualHeight;
+            if (lw < 1 || lh < 1) return "0";
+            double size = x ? lw : lh;
+            double centered = ((x ? lw : lh) - (x ? bgViewport.Width : bgViewport.Height)) / 2.0;
+            double off = (x ? bgViewport.X : bgViewport.Y) - centered;
+            return (off / size).ToString("0.###");
         }
 
         static string BgBrushScale(ImageBrush b)
@@ -1583,13 +1689,15 @@ namespace RepRecorder
         }
 
         // 背景图渲染出来在图层里占多大（DIP），只给 bgstate 看。
+        // 这里要的是"**此刻**该是多大"，给 bgstate 当参照物用（viewport 和它对不上就是过期），
+        // 所以用图层当前的实际尺寸算 —— 布局还没跟上时它会滞后，那正是我们要看出来的东西。
         string RenderedNow()
         {
             try
             {
                 ImageBrush b = bgLayer == null ? null : bgLayer.Fill as ImageBrush;
                 double rw, rh;
-                if (!RenderedExtent(b, out rw, out rh)) return "\"?\"";
+                if (!RenderedExtent(b, bgLayer.ActualWidth, bgLayer.ActualHeight, out rw, out rh)) return "\"?\"";
                 return "\"" + (int)Math.Round(rw) + "x" + (int)Math.Round(rh) + "\"";
             }
             catch { return "\"?\""; }
@@ -1613,7 +1721,12 @@ namespace RepRecorder
                  + ",\"brushStretch\":\"" + (b == null ? "" : b.Stretch.ToString()) + "\""
                  // 位移到底加在哪儿：加在画刷上（bx/by）才对 —— 那样「铺满」裁掉的边能露回来；
                  // 加在图层上（bgLayer.RenderTransform）就只是把整块图推走。验收脚本两条都比。
-                 + ",\"bx\":" + BgBrushOffset(b, true) + ",\"by\":" + BgBrushOffset(b, false)
+                 + ",\"bx\":" + BgBrushOffset(true) + ",\"by\":" + BgBrushOffset(false)
+                 // 视口 = 背景图当前占的矩形。位移就是挪它 —— 位移做在视口上没有"空出来的地方"，
+                 // 所以「滑到头正好贴边、露出被裁掉的那部分」才真的成立。
+                 + ",\"viewport\":\"" + (bgViewport.IsEmpty ? "" :
+                       ((int)Math.Round(bgViewport.X) + "," + (int)Math.Round(bgViewport.Y) + "," +
+                        (int)Math.Round(bgViewport.Width) + "x" + (int)Math.Round(bgViewport.Height))) + "\""
                  // 画刷上**真正生效**的缩放/镜像。跟 cfg 比：cfg 说翻了但 brushScale 还是 1,1，
                  // 就说明变换没落到画刷上（翻转一勾就失效的 bug 会在这里现形）。
                  + ",\"brushScale\":\"" + BgBrushScale(b) + "\""
@@ -1621,10 +1734,14 @@ namespace RepRecorder
                  + ",\"blur\":" + (cfg == null ? 0 : cfg.BgBlur)
                  + ",\"ox\":" + (cfg == null ? 0 : cfg.BgOffsetX)
                  + ",\"oy\":" + (cfg == null ? 0 : cfg.BgOffsetY)
+                 // 原始的对齐方式字符串。光看 stretch 分不清 cover 和已删除的 free
+                 // （两者都是 UniformToFill），所以"老设置里的 free 有没有被迁移掉"
+                 // 只能靠这个字段验证。
+                 + ",\"layout\":\"" + (cfg == null ? "" : cfg.BgLayout) + "\""
                  + ",\"flipH\":" + (cfg != null && cfg.BgFlipH ? "true" : "false")
                  + ",\"flipV\":" + (cfg != null && cfg.BgFlipV ? "true" : "false")
                  + ",\"zoom\":" + (cfg == null ? 100 : cfg.BgZoom)
-                 // 当前位移滑块的上限（百分比）。-1 = 不限（free/tile），0 = 没东西可挪。
+                 // 当前位移滑块的上限（百分比）。-1 = 不限（只有平铺），0 = 没东西可挪。
                  + ",\"panx\":" + PanXNow.ToString("0.#") + ",\"pany\":" + PanYNow.ToString("0.#")
                  // 量程是拿图层尺寸和"渲染尺寸"算出来的，这两个数报出来才能核对量程对不对。
                  + ",\"layer\":\"" + (bgLayer == null ? "?" : (int)Math.Round(bgLayer.ActualWidth) + "x" + (int)Math.Round(bgLayer.ActualHeight)) + "\""
@@ -1722,6 +1839,7 @@ namespace RepRecorder
 
         // ---------------------------------------------------------------- 最大化别盖任务栏
         [StructLayout(LayoutKind.Sequential)] struct MPOINT { public int X, Y; }
+
         [StructLayout(LayoutKind.Sequential)] struct MRECT { public int L, T, R, B; }
         [StructLayout(LayoutKind.Sequential)] struct MINMAXINFO { public MPOINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
         [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public MRECT rcMonitor, rcWork; public uint dwFlags; }
@@ -1741,6 +1859,38 @@ namespace RepRecorder
             int style = GetWindowLong(hwnd, GWL_STYLE);
             if ((style & WS_CAPTION) == WS_CAPTION) return;
             SetWindowLong(hwnd, GWL_STYLE, style | WS_CAPTION);
+        }
+
+        // ---------------------------------------------------------------- DWM 外观
+        [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int val, int size);
+
+        // 把旧版 Core.cs 的 EnableDarkTitleBar() 搬过来 —— WPF 版一直没调用过它，
+        // 所以窗口的四角一直是方的（实测 GWL_STYLE 有 WS_CAPTION/WS_THICKFRAME，
+        // 但 DWMWA_WINDOW_CORNER_PREFERENCE 是 0=DEFAULT，DWM 就没给圆角）。
+        //
+        // 旧版还设了 attr 19/20（深色标题栏），那是给【系统标题栏】用的；
+        // 这里的标题栏完全由 WindowChrome 自绘，没有作用对象，所以不搬 —— 搬了是死配置。
+        static void ApplyDwmWindowLooks(IntPtr hwnd)
+        {
+            try
+            {
+                int round = 2;                                                 // DWMWCP_ROUND
+                DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int));       // DWMWA_WINDOW_CORNER_PREFERENCE
+                // 圆角是 DWM 在合成层切的，不用开 AllowsTransparency（不影响硬件加速，
+                // 也不影响那些靠 PrintWindow 截图采样的验收脚本）。
+                // 但 DWM 会在窗口外围留 1px 描边，默认色压在深色顶栏边上会显出一道浅线；
+                // 染成顶栏色就看不出来了。旧版注释里也是这个原因。
+                int border = HudPanelColorRef();
+                DwmSetWindowAttribute(hwnd, 34, ref border, sizeof(int));      // DWMWA_BORDER_COLOR
+            }
+            catch { }   // Win10 上没有 attr 33/34，调用会失败 —— 不影响别的功能
+        }
+
+        // COLORREF 是 0x00BBGGRR，不是 WPF 的 #RRGGBB。
+        // ColorTranslator 正好干这个转换，而且和旧版 Core.cs:2609 用的是同一个调用。
+        static int HudPanelColorRef()
+        {
+            return System.Drawing.ColorTranslator.ToWin32(MainForm.HudPanel);
         }
 
         IntPtr Hook(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)
@@ -1772,10 +1922,29 @@ namespace RepRecorder
 
                     if (GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref mi))
                     {
+                        // ⚠-1：别把 ptMaxSize 设成【正好】等于工作区（2026-10-07 用户报"最大化之后
+                        //     顶部贴着上面、不好看" — 根因就在这一句）。
+                        //
+                        // 实测规律（2560x1600 / 150%，边框 SM_CXSIZEFRAME+SM_CXPADDEDBORDER = 5+6 = 11px）：
+                        //   请求 0,0 2560x1528（= 工作区）→ 实际 -11,-11 2582x1550
+                        //     四条边各切掉 11px：顶栏那行字的上半截正好在屏幕外，看着就是"贴顶"。
+                        //   请求 0,0 2560x1527（比工作区矮 1px）→ 实际 0,0 2560x1527（原样照搬）
+                        // **只有"正好等于工作区"会触发那圈外扩，差一点点就原样照搬。**
+                        // 机制没细究（推测是"要给客户区铺满工作区，就把带可缩放边框的那一圈甩到
+                        // 屏幕外"——对普通窗口没错，但本窗口客户区 == 整个窗口，甩出去的就是界面）；
+                        // 反正改一次量一次，量出来的就是上面这两行，照它来。
+                        // 所以这里故意矮 1 物理像素，代价是屏幕最底下留一条 1px 的缝（紧贴任务栏，
+                        // 看不出来）。试过把这 1px 补偿回去的两种办法，都不行：
+                        //   · 把 ptMaxSize 先减去那一圈、指望 Windows 加回来 —— 它这次原样照搬，
+                        //     窗口四周反而各缩进 11px、把桌面露出来（有截图）；
+                        //   · 最大化之后再 SetWindowPos 钉回工作区 —— **对最大化窗口无效**，
+                        //     而且它自己也会按"给的矩形是要铺满的区域"再外扩一圈，越弄越糟。
+                        // x 方向不用减：实测 2560x1527（右边正好顶到屏幕）也是原样照搬，
+                        // 只减 y 是为了让左右两条竖边齐平 —— 竖直的缝比水平的缝显眼。
                         mmi.ptMaxPosition.X = mi.rcWork.L - mi.rcMonitor.L;
                         mmi.ptMaxPosition.Y = mi.rcWork.T - mi.rcMonitor.T;
                         mmi.ptMaxSize.X = mi.rcWork.R - mi.rcWork.L;
-                        mmi.ptMaxSize.Y = mi.rcWork.B - mi.rcWork.T;
+                        mmi.ptMaxSize.Y = (mi.rcWork.B - mi.rcWork.T) - 1;
                     }
                     Marshal.StructureToPtr(mmi, l, false);
                     handled = true;

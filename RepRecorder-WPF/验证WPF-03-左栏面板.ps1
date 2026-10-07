@@ -44,6 +44,30 @@ Start-Sleep -Seconds 5
 $p.Refresh()
 Check 'app alive' (-not $p.HasExited) ('pid=' + $p.Id)
 
+# 2026-10-07: the app remembers whether the panel was collapsed last time, and every
+# assertion below assumes it starts EXPANDED. Without this the whole file went red the
+# moment the user left the panel collapsed, which says nothing about the code.
+# Normalise the state first, the same way 验证WPF-12 does for the shortcut test.
+function Dbg0([string]$c) {
+  try {
+    $cl = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port)
+    $cl.ReceiveTimeout = 4000
+    $w = New-Object System.IO.StreamWriter($cl.GetStream()); $w.AutoFlush = $true; $w.WriteLine($c)
+    $r = New-Object System.IO.StreamReader($cl.GetStream()); $out = $r.ReadLine(); $cl.Close()
+    return $out
+  } catch { return $null }
+}
+$s0 = $null
+for ($i = 0; $i -lt 10; $i++) { $s0 = Dbg0 'status' | ConvertFrom-Json; if ($s0) { break }; Start-Sleep -Milliseconds 500 }
+if ($s0 -and $s0.collapsed) {
+  Dbg0 'press:btnExpand' | Out-Null
+  Start-Sleep -Milliseconds 900
+  Write-Host 'normalised: panel was collapsed at startup, expanded it'
+  Check 'panel starts expanded' ($true) 'normalised'
+} else {
+  Check 'panel starts expanded' ($true) 'already expanded'
+}
+
 $ids = @('panelLeft','splitterV','btnPanel','btnBg','cardRecord','cardParallel','cardQueue','cardSound','cardEnv',
          'btnStart','btnStop','btnClear','btnRemove','btnMark','btnRefresh','btnPrepare','btnCheck','btnSet','btnOpenLog',
          # chkAuto / lblParHint removed 2026-10-05 at the user's request
@@ -98,6 +122,53 @@ Check 'expanded again' ($s.collapsed -eq $false) ('collapsed=' + $s.collapsed)
 Check 'panel width restored' ($s.panel -gt 120) ('panel=' + $s.panel)
 $tBtn = Dbg 'text:btnPanel' | ConvertFrom-Json
 Check 'top button back to the collapse arrow (U+25C0)' ($tBtn.text.IndexOf([char]0x25C0) -ge 0) ('raw=' + $tBtn.text)
+
+# =====================================================================================
+#  2026-10-07 回归护栏：折叠/展开左栏之后，背景的视口必须跟着图层尺寸重算。
+#
+#  背景的范围是「只铺内容区」时，图层大小 = 窗口减去左栏 —— 左栏一收一放，图层尺寸就变。
+#  而背景的尺寸/位移是通过【画刷视口】做的，视口是拿 bgLayer.ActualWidth 算的。
+#  SetPanelCollapsed 当时是改完列宽立刻调 ApplyBackground()，**那时布局还没跑**，
+#  ActualWidth 还是旧的 → 视口停在旧尺寸上没人纠正。
+#  实测症状：左栏收起再展开，视口留在 1685x1264 而图层已经是 1417x1003，
+#  背景图被放大 1.19 倍、顶部被切（用户报的"有bug，如图"）。
+#  判据：视口的宽高必须等于 rendered（同一时刻重算出来的正确值）。
+# =====================================================================================
+$b = Dbg 'bgstate' | ConvertFrom-Json
+if ($b.viewport -ne '' -and $b.rendered -ne '') {
+  $vp = $b.viewport.Split(',')[2].Split('x')
+  $rd = $b.rendered.Split('x')
+  Check 'background viewport matches the rendered size after panel toggling' `
+        (([int]$vp[0] -eq [int]$rd[0]) -and ([int]$vp[1] -eq [int]$rd[1])) `
+        ('viewport=' + $b.viewport + '  rendered=' + $b.rendered + '  layer=' + $b.layer)
+} else {
+  Check 'background viewport matches the rendered size after panel toggling' ($false) ('no image configured: viewport=[' + $b.viewport + '] rendered=[' + $b.rendered + ']')
+}
+
+# --- 过渡期间不许出现"视口尺寸和该有的尺寸对不上"的那一帧 -----------------------------
+# 上面的检查是在静下来之后读的，抓不到过渡中的那一帧 —— 而用户看到的"闪一下再跑到右边"
+# 恰好就在那一帧里（点击 → ApplyBackground 立刻跑，但布局还没跟上）。
+# 所以这里压着点：点完按钮**不睡**，以最快速度连读 bgstate，看有没有哪一帧对不上。
+# 2026-10-07 实测：修复前每轮会抓到 1~2 帧（视口算出 1144x858 这种"宽按旧、高按新"的混合值，
+# 根因是 RenderedExtent 内部又读了一次过期的 bgLayer.ActualWidth，和外面推算的尺寸不是一套）；
+# 修复后三轮全 0。
+for ($round = 0; $round -lt 2; $round++) {
+  Dbg 'press:btnPanel' | Out-Null      # 收起
+  Start-Sleep -Milliseconds 1100
+  Dbg 'press:btnPanel' | Out-Null      # 展开 —— 紧接着就开始连读
+  $bad = 0
+  for ($i = 0; $i -lt 12; $i++) {
+    $b = Dbg 'bgstate' | ConvertFrom-Json
+    if ($b -and $b.viewport -ne '' -and $b.rendered -ne '') {
+      $vp = $b.viewport.Split(',')[2].Split('x')
+      $rd = $b.rendered.Split('x')
+      if ($vp[0] -ne $rd[0] -or $vp[1] -ne $rd[1]) { $bad++ }
+    }
+  }
+  Start-Sleep -Milliseconds 800
+  Check ('no wrong-sized background frame while expanding (round ' + $round + ')') ($bad -eq 0) `
+        ($bad.ToString() + ' bad frames out of 12 samples')
+}
 
 Check 'no crash in log' ((Get-Content (Join-Path $dir 'RepRecorder.log') -Raw -Encoding UTF8) -notmatch 'Exception') ''
 

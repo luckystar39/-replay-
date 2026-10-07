@@ -1,5 +1,5 @@
 wrote a minimal settings file: {"ParallelCount":6}
-OK  app did not exit  pid=21576
+OK  app did not exit  pid=6812
 OK  no crash in log  
 OK  status answers  raw={"wpf":true,"stage":"7-switched","recording":false,"queue":0,"statusText":"","env":"","panel":322,"collapsed":false,"parallel":6,"mic":"gameOnly","win":"1180x648"}
 OK  status.wpf  wpf=True

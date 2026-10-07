@@ -513,7 +513,7 @@ namespace RepRecorder
             // ① 对齐方式
             ComboBox cbLayout = Ui.HudCombo("bgLayout", 250, new string[] {
                 "覆盖（铺满，裁掉多余）", "适应（整张放下，会留边）", "拉伸（拉满，会变形）",
-                "居中（原始大小）", "平铺", "自由（随便拖，可露底）" }, LayoutIndex(cfg.BgLayout));
+                "居中（原始大小）", "平铺" }, LayoutIndex(cfg.BgLayout));
             cbLayout.SelectionChanged += delegate
             {
                 cfg.BgLayout = LayoutValue(cbLayout.SelectedIndex);
@@ -524,7 +524,8 @@ namespace RepRecorder
 
             // ② 位置。量程不固定 —— 覆盖/适应/居中只给「有东西可挪」的那根轴，
             //    滑到头图边正好贴住框边、永远滑不出底色；拉伸时两行都会消失。
-            //    想两轴随便拖、允许露底 → 对齐方式选「自由」。
+            //    2026-10-07 原本还有个「自由」（两轴不限、可拖出空白），用户说它和「覆盖」
+            //    只差在"没余量的那根轴能不能动"，合并掉了。所以现在**没有任何模式能拖出空白**。
             rowX = SliderRow("水平移动 X", "bgOffX", -100, 100, cfg.BgOffsetX, "%",
                              delegate(double v) { cfg.BgOffsetX = (int)v; }, out panX);
             Ui.Id(rowX, "bgOffXRow");    // 藏的是整行，验收脚本要能单独查这一行
@@ -534,21 +535,7 @@ namespace RepRecorder
             Ui.Id(rowY, "bgOffYRow");
             col.Children.Add(rowY);
 
-            // ③ 翻转（镜像）。和位移正交：镜像改的是「图本身」，位移改的是「图在框里的落点」。
-            StackPanel rowFlip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            TextBlock lbFlip = Ui.Txt("翻转：", 12.5, MainForm.HudText, false);
-            lbFlip.Width = 96; lbFlip.VerticalAlignment = VerticalAlignment.Center;
-            rowFlip.Children.Add(lbFlip);
-            CheckBox ckH = Ui.HudCheck("左右镜像", "bgFlipH", cfg.BgFlipH, 0);
-            ckH.Margin = new Thickness(0, 0, 14, 0);
-            ckH.Click += delegate { cfg.BgFlipH = ckH.IsChecked == true; owner.ApplyBackground(); };
-            rowFlip.Children.Add(ckH);
-            CheckBox ckV = Ui.HudCheck("上下镜像", "bgFlipV", cfg.BgFlipV, 0);
-            ckV.Click += delegate { cfg.BgFlipV = ckV.IsChecked == true; owner.ApplyBackground(); };
-            rowFlip.Children.Add(ckV);
-            col.Children.Add(rowFlip);
-
-            // ④ 缩放。和翻转一样是独立一层，改完量程会跟着变（放大 = 能挪的余量变多）。
+            // ③ 缩放。独立一层，改完量程会跟着变（放大 = 能挪的余量变多）。
             Slider zoomSl;
             StackPanel rowZoom = SliderRow("缩放", "bgZoom", 10, 400, cfg.BgZoom, "%",
                 delegate(double v) { cfg.BgZoom = (int)v; }, out zoomSl);
@@ -570,6 +557,21 @@ namespace RepRecorder
             ComboBox cbScope = Ui.HudCombo("bgScope", 250, new string[] { "只铺右侧内容区", "全局铺满整个窗口（控制面板也透图）" }, cfg.BgScope == "global" ? 1 : 0);
             cbScope.SelectionChanged += delegate { cfg.BgScope = cbScope.SelectedIndex == 1 ? "global" : "content"; owner.ApplyBackground(); };
             col.Children.Add(ComboRow("背景范围：", cbScope));
+
+            // ---- 翻转（镜像）放最下面（用户 2026-10-07 要求）。
+            //      和位移正交：镜像改的是「图本身」，位移改的是「图在框里的落点」。
+            StackPanel rowFlip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            TextBlock lbFlip = Ui.Txt("翻转：", 12.5, MainForm.HudText, false);
+            lbFlip.Width = 96; lbFlip.VerticalAlignment = VerticalAlignment.Center;
+            rowFlip.Children.Add(lbFlip);
+            CheckBox ckH = Ui.HudCheck("左右镜像", "bgFlipH", cfg.BgFlipH, 0);
+            ckH.Margin = new Thickness(0, 0, 14, 0);
+            ckH.Click += delegate { cfg.BgFlipH = ckH.IsChecked == true; owner.ApplyBackground(); };
+            rowFlip.Children.Add(ckH);
+            CheckBox ckV = Ui.HudCheck("上下镜像", "bgFlipV", cfg.BgFlipV, 0);
+            ckV.Click += delegate { cfg.BgFlipV = ckV.IsChecked == true; owner.ApplyBackground(); };
+            rowFlip.Children.Add(ckV);
+            col.Children.Add(rowFlip);
 
             StackPanel bar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
             Button ok = Ui.FlatButton("确定", "bgOk");
@@ -603,8 +605,25 @@ namespace RepRecorder
             Content = col;
 
             // 位置那两行的量程要等主窗口布局出来才算得准（要用到背景图层的实际尺寸），
-            // 所以放到 Loaded 里初始化一次，顺带把可能越界的旧位移夹回合法范围。
+            // 所以放到 Loaded 里初始化一次。
             Loaded += delegate { owner.ApplyBackground(); RefreshPanRows(); };
+
+            // ⚠ 窗口大小一变，量程就跟着变，滑块的上限必须同步 —— 否则开着这个对话框
+            //   去改窗口大小（比如点最大化）就会对不上：
+            //     · 滑块还能拖到 18、渲染器只认 12 → 拖了没反应
+            //     · 滑块只给到 12、渲染器其实能给 18 → **拖不到被裁掉的那部分**
+            //   2026-10-07 用户报的"全屏后移动 Y 看不到被裁掉的部分"就是这个。
+            //   ShellWindow 的 SizeChanged 里已经先调过 ApplyBackground()（PanYNow 是新的），
+            //   这里挂的处理器排在它后面跑，所以直接用就行。
+            owner.SizeChanged += OnOwnerResized;
+            // 必须摘掉：owner 比对话框活得久，不摘的话对话框被一直引用着，
+            // 而且每关一次再开一次就多挂一个。
+            Closed += delegate { owner.SizeChanged -= OnOwnerResized; };
+        }
+
+        void OnOwnerResized(object sender, SizeChangedEventArgs e)
+        {
+            RefreshPanRows();
         }
 
         static int LayoutIndex(string v)
@@ -613,7 +632,6 @@ namespace RepRecorder
             if (v == "stretch") return 2;
             if (v == "center") return 3;
             if (v == "tile") return 4;
-            if (v == "free") return 5;
             return 0;
         }
 
@@ -623,35 +641,57 @@ namespace RepRecorder
             if (i == 2) return "stretch";
             if (i == 3) return "center";
             if (i == 4) return "tile";
-            if (i == 5) return "free";
             return "fill";
         }
 
         // 按当前对齐方式算出来的量程，把「位置」那两行调成该有的样子：
-        //   lim < 0 → 不限（自由/平铺），滑块给 ±100
-        //   lim = 0 → 没东西可挪（拉伸、或比例刚好吻合）→ 整行藏掉，跟 Wallpaper Engine 一样
+        //   lim < 0 → 不限（只剩「平铺」了），滑块给 ±100
+        //   lim = 0 → 没东西可挪（拉伸、或缩小到比例刚好吻合）→ **锁住滑块**（见下）
         //   lim > 0 → 滑块夹到 ±lim，滑到头正好贴边
         void RefreshPanRows()
         {
             syncingPan = true;
             try
             {
-                ApplyPanRow(rowX, panX, owner.PanXNow, delegate(int v) { cfg.BgOffsetX = v; });
-                ApplyPanRow(rowY, panY, owner.PanYNow, delegate(int v) { cfg.BgOffsetY = v; });
+                ApplyPanRow(rowX, panX, owner.PanXNow, cfg.BgOffsetX);
+                ApplyPanRow(rowY, panY, owner.PanYNow, cfg.BgOffsetY);
             }
             finally { syncingPan = false; }
         }
 
-        static void ApplyPanRow(StackPanel row, Slider sl, double lim, Action<int> store)
+        // 只调**界面上**的滑块，不写回 cfg。
+        // 量程是随窗口大小变的，写回就等于拿"当前这个窗口"去抹掉用户存的位置
+        // （详见 UiWindow.EffectivePan 上的说明：这就是"伸缩时背景闪几下"的根因）。
+        // 用户真的拖动滑块时，SliderRow 的 ValueChanged 才会写。
+        //
+        // ⚠ 量程为 0 时**把滑块锁住，不隐藏整行**（用户 2026-10-07 要求）。
+        //   以前是 Visibility.Collapsed，但本对话框是 SizeToContent=Height ——
+        //   一行消失 = 对话框高度重算 = 下面所有控件上移，**正在拖的滑块会从指针底下跑掉**，
+        //   于是拖动「缩放」时数值乱跳（用户报的"移动遥杆时乱跳"就是这个）。
+        //   常显 + 置灰，布局就永远是稳定的。
+        static void ApplyPanRow(StackPanel row, Slider sl, double lim, int cfgVal)
         {
             if (row == null || sl == null) return;
-            if (lim == 0) { row.Visibility = Visibility.Collapsed; return; }
-            row.Visibility = Visibility.Visible;
+            if (lim == 0)
+            {
+                // 锁住。滑块的显示值给 0 —— 渲染那边 EffectivePan 也是夹到 0，显示的就得是真实值。
+                // （不写回 cfg：syncingPan 为真，ValueChanged 只会刷新数字文本。）
+                sl.IsEnabled = false;
+                sl.Minimum = -1;
+                sl.Maximum = 1;
+                sl.Value = 0;
+                row.Opacity = 0.45;          // 视觉上"这是禁用的"
+                return;
+            }
+            sl.IsEnabled = true;
+            row.Opacity = 1.0;
             double m = lim < 0 ? 100 : lim;
             sl.Minimum = -m;
             sl.Maximum = m;
-            if (sl.Value > m) { sl.Value = m; store((int)m); }
-            else if (sl.Value < -m) { sl.Value = -m; store((int)-m); }
+            // 重新可用时要把显示值拉回用户存的位置 —— 锁定期间它被按在 0，
+            // 而 cfg 里的值一直没变（渲染用的就是它），不拉回来两者就对不上了。
+            int show = Math.Max(-(int)m, Math.Min((int)m, cfgVal));
+            if (Math.Abs(sl.Value - show) > 0.001) sl.Value = show;
         }
 
         UIElement SliderRow(string label, string id, double min, double max, double val, string suffix, Action<double> onChange)

@@ -115,11 +115,11 @@ namespace RepRecorder
         public string BgImage { get; set; }
         [Category("界面"), Description("背景图的不透明度（0~100）。越大图越清楚，越小越只剩底色。默认 60。")]
         public int BgOpacity { get; set; }
-        [Category("界面"), Description("背景图的摆放方式（对齐方式）：\r\nfill=等比填满并裁掉多余（对应 Wallpaper Engine 的「覆盖」）；\r\nfit=等比完整显示，可能留边（「适应」）；stretch=拉伸铺满，会变形；\r\ntile=原图平铺；center=原始大小居中；free=自由，两轴都能拖且允许拖出空白。")]
+        [Category("界面"), Description("背景图的摆放方式（对齐方式）：\r\nfill=等比填满并裁掉多余（对应 Wallpaper Engine 的「覆盖」）；\r\nfit=等比完整显示，可能留边（「适应」）；stretch=拉伸铺满，会变形；\r\ntile=原图平铺；center=原始大小居中。\r\n【注意】早先还有个 free=自由（两轴不限、可拖出空白），2026-10-07 合并进 fill 后删除，\r\n读到 free 会被自动改成 fill（见 Load 里的 SettingsVersion<10 迁移）。")]
         public string BgLayout { get; set; }
         [Category("界面"), Description("背景图的模糊程度（0~60）。模糊一点能让上面的文字更好读。默认 0。")]
         public int BgBlur { get; set; }
-        [Category("界面"), Description("背景图的水平偏移（按窗口宽度的百分比算）。0 = 居中，负=往左，正=往右。\r\n【上下限不是固定的】跟着摆放方式走：fill 只给被裁掉的那点余量（滑到头正好贴边、不露底）；\r\nfit/center 只给留边的那点余量；free/tile 不限（-100~100，可以露底）。")]
+        [Category("界面"), Description("背景图的水平偏移（按窗口宽度的百分比算）。0 = 居中，负=往左，正=往右。\r\n【上下限不是固定的】跟着摆放方式走：fill 只给被裁掉的那点余量（滑到头正好贴边、不露底）；\r\nfit/center 只给留边的那点余量；只有 tile 不限。")]
         public int BgOffsetX { get; set; }
         [Category("界面"), Description("背景图的垂直偏移（按窗口高度的百分比算）。0 = 居中，负=往上，正=往下。上下限同 BgOffsetX。")]
         public int BgOffsetY { get; set; }
@@ -269,6 +269,21 @@ namespace RepRecorder
                 if (s.BgZoom <= 0) s.BgZoom = 100;
                 s.SettingsVersion = 9;
             }
+            if (s.SettingsVersion < 10)
+            {
+                // 「自由」摆放方式已合并进「覆盖」并删除（用户 2026-10-07 要求：
+                // 两者渲染本来就一样，只差在"没余量的那根轴能不能动"，而"覆盖"的定义
+                // 就是永不露底）。free → fill 的归一放在下面【版本号之外】，见那里的说明。
+                s.SettingsVersion = 10;
+            }
+            // 对齐方式的合法值就这 5 个。归一成 fill 的这一步**故意不放进版本号判断**：
+            // ComputePanRange 和 LayoutIndex 现在都假设"至少是这 5 个之一"（遇到 free
+            // 会静默走默认分支），而版本号守不住这个不变量 —— 用户手改设置文件、
+            // 或者从旧备份还原，都能绕过去，然后下拉显示「覆盖」、cfg 里却还是 "free"。
+            // 这行是幂等的，每次 Load 跑一遍不花什么。
+            if (s.BgLayout != "fill" && s.BgLayout != "fit" && s.BgLayout != "stretch"
+                && s.BgLayout != "center" && s.BgLayout != "tile")
+                s.BgLayout = "fill";
             s.FillDefaults();
             return s;
         }
