@@ -1,21 +1,21 @@
 settings ParallelCount before test = 1
-OK  app alive  pid=3472
+OK  app alive  pid=17656
 OK  all left-panel controls present  missing=
-OK  btnStart has a playlist glyph + CJK  raw=?  开始录制
+OK  btnStart has a playlist glyph + CJK  raw=? 开始录制
 OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
 OK  cbParallel shows the saved value  raw=1 expect=1
 OK  cbMic has a selection  raw=只录游戏声音
 OK  set cbParallel=2  ok=True
 OK  settings ParallelCount==3  file=3
 OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
-OK  panel width > 120  panel=321
+OK  panel width > 120  panel=254
 OK  not collapsed  collapsed=False
 OK  collapsed after press  collapsed=True
 OK  panel width 0 when collapsed  panel=0
 OK  settings PanelCollapsed==true  file=True
 OK  top button shows the expand arrow (U+25B6)  raw=?  展开面板
 OK  expanded again  collapsed=False
-OK  panel width restored  panel=321
+OK  panel width restored  panel=254
 OK  top button back to the collapse arrow (U+25C0)  raw=?  收起面板
 OK  no crash in log  
 settings restored

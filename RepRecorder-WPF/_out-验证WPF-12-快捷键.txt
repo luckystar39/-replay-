@@ -1,14 +1,14 @@
-OK   app alive  pid=29216 waited=0s
+OK   app alive  pid=24736 waited=0s
 OK   window found via UIA  
-OK   the window has a native handle  hwnd=4393756
-OK   the window is now foreground  fg=4393756
+OK   the window has a native handle  hwnd=2361310
+info  foreground is 2361310 (ours=2361310)
 OK   panel starts expanded  collapsed=False
-OK   panel has a real width  panel=321
+OK   panel has a real width  panel=254
 OK   Ctrl+B collapses the panel  collapsed=True
-OK   the panel actually shrank  panel=0 was=321
+OK   the panel actually shrank  panel=0 was=254
 OK   the toggle button now offers to expand  btn=?  Õ¹¿ªÃæ°å
 OK   Ctrl+B expands it again  collapsed=False
-OK   the width came back  panel=321 expected=321
+OK   the width came back  panel=254 expected=254
 OK   collapsed before the restart  collapsed=True
 OK   the collapsed state survived the restart  collapsed=True
 OK   no exception in log  

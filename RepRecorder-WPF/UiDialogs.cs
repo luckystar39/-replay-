@@ -434,7 +434,13 @@ namespace RepRecorder
         readonly Settings cfg;
         readonly string oImg, oLay, oScope;
         readonly int oOp, oBlur, oOx, oOy, oScrim;
+        readonly bool oFlipH, oFlipV;
+        readonly int oZoom;
         TextBox txtPath;
+        // 位置那两行的滑块和行本身都要留引用：量程跟着对齐方式变，某些模式下整行要藏掉。
+        Slider panX, panY;
+        StackPanel rowX, rowY;
+        bool syncingPan;                 // 见 SliderRow 里的说明
 
         public BackgroundBox(ShellWindow w)
         {
@@ -442,6 +448,7 @@ namespace RepRecorder
             oImg = cfg.BgImage; oLay = cfg.BgLayout; oScope = cfg.BgScope;
             oOp = cfg.BgOpacity; oBlur = cfg.BgBlur; oOx = cfg.BgOffsetX; oOy = cfg.BgOffsetY;
             oScrim = cfg.PanelScrim;
+            oFlipH = cfg.BgFlipH; oFlipV = cfg.BgFlipV; oZoom = cfg.BgZoom;
 
             Title = "背景设置";
             WindowStyle = WindowStyle.None;
@@ -498,6 +505,60 @@ namespace RepRecorder
             r0.Children.Add(bClear);
             col.Children.Add(r0);
 
+            // ------------------------------------------------------------------
+            //  下面这一段的顺序和说法都是照着 Wallpaper Engine 的属性面板摆的：
+            //  对齐方式 → 位置 → 翻转 → 缩放，四层互相独立，任意组合。
+            // ------------------------------------------------------------------
+
+            // ① 对齐方式
+            ComboBox cbLayout = Ui.HudCombo("bgLayout", 250, new string[] {
+                "覆盖（铺满，裁掉多余）", "适应（整张放下，会留边）", "拉伸（拉满，会变形）",
+                "居中（原始大小）", "平铺", "自由（随便拖，可露底）" }, LayoutIndex(cfg.BgLayout));
+            cbLayout.SelectionChanged += delegate
+            {
+                cfg.BgLayout = LayoutValue(cbLayout.SelectedIndex);
+                owner.ApplyBackground();   // 先让它按新对齐方式把手上的位移夹一遍
+                RefreshPanRows();          // 再照新的量程调滑块
+            };
+            col.Children.Add(ComboRow("对齐方式：", cbLayout));
+
+            // ② 位置。量程不固定 —— 覆盖/适应/居中只给「有东西可挪」的那根轴，
+            //    滑到头图边正好贴住框边、永远滑不出底色；拉伸时两行都会消失。
+            //    想两轴随便拖、允许露底 → 对齐方式选「自由」。
+            rowX = SliderRow("水平移动 X", "bgOffX", -100, 100, cfg.BgOffsetX, "%",
+                             delegate(double v) { cfg.BgOffsetX = (int)v; }, out panX);
+            Ui.Id(rowX, "bgOffXRow");    // 藏的是整行，验收脚本要能单独查这一行
+            col.Children.Add(rowX);
+            rowY = SliderRow("垂直移动 Y", "bgOffY", -100, 100, cfg.BgOffsetY, "%",
+                             delegate(double v) { cfg.BgOffsetY = (int)v; }, out panY);
+            Ui.Id(rowY, "bgOffYRow");
+            col.Children.Add(rowY);
+
+            // ③ 翻转（镜像）。和位移正交：镜像改的是「图本身」，位移改的是「图在框里的落点」。
+            StackPanel rowFlip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            TextBlock lbFlip = Ui.Txt("翻转：", 12.5, MainForm.HudText, false);
+            lbFlip.Width = 96; lbFlip.VerticalAlignment = VerticalAlignment.Center;
+            rowFlip.Children.Add(lbFlip);
+            CheckBox ckH = Ui.HudCheck("左右镜像", "bgFlipH", cfg.BgFlipH, 0);
+            ckH.Margin = new Thickness(0, 0, 14, 0);
+            ckH.Click += delegate { cfg.BgFlipH = ckH.IsChecked == true; owner.ApplyBackground(); };
+            rowFlip.Children.Add(ckH);
+            CheckBox ckV = Ui.HudCheck("上下镜像", "bgFlipV", cfg.BgFlipV, 0);
+            ckV.Click += delegate { cfg.BgFlipV = ckV.IsChecked == true; owner.ApplyBackground(); };
+            rowFlip.Children.Add(ckV);
+            col.Children.Add(rowFlip);
+
+            // ④ 缩放。和翻转一样是独立一层，改完量程会跟着变（放大 = 能挪的余量变多）。
+            Slider zoomSl;
+            StackPanel rowZoom = SliderRow("缩放", "bgZoom", 10, 400, cfg.BgZoom, "%",
+                delegate(double v) { cfg.BgZoom = (int)v; }, out zoomSl);
+            // 缩放会改变「能挪多远」→ 拖完得把上面那两行的量程重新刷一遍。
+            // 单独挂在这里而不是塞进 SliderRow：别的行不需要这个动作。
+            // 上一层 handler 已经调过 ApplyBackground()（PanXNow 是新的），所以这里直接刷。
+            zoomSl.ValueChanged += delegate { if (!syncingPan) RefreshPanRows(); };
+            col.Children.Add(rowZoom);
+
+            // ---- 下面这些是画面观感，跟上面四层无关 ----
             // 滑块显示的是「透明度」（0 = 图片最清晰、100 = 图片完全看不见），
             // 存盘的 BgOpacity 仍然是不透明度——只在滑块这一层翻转，老设置和调试接口都不受影响。
             col.Children.Add(SliderRow("图片透明度", "bgOpacity", 0, 100, 100 - cfg.BgOpacity, "%", delegate(double v) { cfg.BgOpacity = (int)(100 - v); }));
@@ -505,12 +566,7 @@ namespace RepRecorder
             // 走共享画刷，改完所有面板立刻跟着变，不用重建界面。
             col.Children.Add(SliderRow("面板暗化", "panelScrim", 0, 100, cfg.PanelScrim, "%", delegate(double v) { cfg.PanelScrim = (int)v; Ui.SetScrim(cfg.PanelScrim); }));
             col.Children.Add(SliderRow("模糊", "bgBlur", 0, 60, cfg.BgBlur, "", delegate(double v) { cfg.BgBlur = (int)v; }));
-            col.Children.Add(SliderRow("水平移动 X", "bgOffX", -100, 100, cfg.BgOffsetX, "%", delegate(double v) { cfg.BgOffsetX = (int)v; }));
-            col.Children.Add(SliderRow("垂直移动 Y", "bgOffY", -100, 100, cfg.BgOffsetY, "%", delegate(double v) { cfg.BgOffsetY = (int)v; }));
 
-            ComboBox cbLayout = Ui.HudCombo("bgLayout", 250, new string[] { "fill（铺满，可裁边）", "fit（完整放下）", "stretch（拉伸变形）", "center（原尺寸居中）", "tile（平铺）" }, LayoutIndex(cfg.BgLayout));
-            cbLayout.SelectionChanged += delegate { cfg.BgLayout = LayoutValue(cbLayout.SelectedIndex); owner.ApplyBackground(); };
-            col.Children.Add(ComboRow("放置方式：", cbLayout));
             ComboBox cbScope = Ui.HudCombo("bgScope", 250, new string[] { "只铺右侧内容区", "全局铺满整个窗口（控制面板也透图）" }, cfg.BgScope == "global" ? 1 : 0);
             cbScope.SelectionChanged += delegate { cfg.BgScope = cbScope.SelectedIndex == 1 ? "global" : "content"; owner.ApplyBackground(); };
             col.Children.Add(ComboRow("背景范围：", cbScope));
@@ -523,7 +579,9 @@ namespace RepRecorder
                 cfg.Save();
                 Log.Write("背景设置：图片=" + (string.IsNullOrEmpty(cfg.BgImage) ? "<无>" : cfg.BgImage)
                     + "  透明度=" + (100 - cfg.BgOpacity) + "%  面板暗化=" + cfg.PanelScrim + "%  模糊=" + cfg.BgBlur
-                    + "  放置=" + cfg.BgLayout + "  位移=" + cfg.BgOffsetX + "," + cfg.BgOffsetY
+                    + "  对齐=" + cfg.BgLayout + "  位移=" + cfg.BgOffsetX + "," + cfg.BgOffsetY
+                    + "  翻转=" + (cfg.BgFlipH ? "左右" : "") + (cfg.BgFlipV ? "上下" : "")
+                    + (cfg.BgFlipH || cfg.BgFlipV ? "" : "无") + "  缩放=" + cfg.BgZoom + "%"
                     + "  范围=" + (cfg.BgScope == "global" ? "全局" : "内容区"));
                 Close();
             };
@@ -534,6 +592,7 @@ namespace RepRecorder
             {
                 cfg.BgImage = oImg; cfg.BgLayout = oLay; cfg.BgScope = oScope;
                 cfg.BgOpacity = oOp; cfg.BgBlur = oBlur; cfg.BgOffsetX = oOx; cfg.BgOffsetY = oOy;
+                cfg.BgFlipH = oFlipH; cfg.BgFlipV = oFlipV; cfg.BgZoom = oZoom;
                 cfg.PanelScrim = oScrim; Ui.SetScrim(cfg.PanelScrim);
                 owner.ApplyBackground();
                 Close();
@@ -542,6 +601,10 @@ namespace RepRecorder
             col.Children.Add(bar);
 
             Content = col;
+
+            // 位置那两行的量程要等主窗口布局出来才算得准（要用到背景图层的实际尺寸），
+            // 所以放到 Loaded 里初始化一次，顺带把可能越界的旧位移夹回合法范围。
+            Loaded += delegate { owner.ApplyBackground(); RefreshPanRows(); };
         }
 
         static int LayoutIndex(string v)
@@ -550,6 +613,7 @@ namespace RepRecorder
             if (v == "stretch") return 2;
             if (v == "center") return 3;
             if (v == "tile") return 4;
+            if (v == "free") return 5;
             return 0;
         }
 
@@ -559,21 +623,60 @@ namespace RepRecorder
             if (i == 2) return "stretch";
             if (i == 3) return "center";
             if (i == 4) return "tile";
+            if (i == 5) return "free";
             return "fill";
         }
 
+        // 按当前对齐方式算出来的量程，把「位置」那两行调成该有的样子：
+        //   lim < 0 → 不限（自由/平铺），滑块给 ±100
+        //   lim = 0 → 没东西可挪（拉伸、或比例刚好吻合）→ 整行藏掉，跟 Wallpaper Engine 一样
+        //   lim > 0 → 滑块夹到 ±lim，滑到头正好贴边
+        void RefreshPanRows()
+        {
+            syncingPan = true;
+            try
+            {
+                ApplyPanRow(rowX, panX, owner.PanXNow, delegate(int v) { cfg.BgOffsetX = v; });
+                ApplyPanRow(rowY, panY, owner.PanYNow, delegate(int v) { cfg.BgOffsetY = v; });
+            }
+            finally { syncingPan = false; }
+        }
+
+        static void ApplyPanRow(StackPanel row, Slider sl, double lim, Action<int> store)
+        {
+            if (row == null || sl == null) return;
+            if (lim == 0) { row.Visibility = Visibility.Collapsed; return; }
+            row.Visibility = Visibility.Visible;
+            double m = lim < 0 ? 100 : lim;
+            sl.Minimum = -m;
+            sl.Maximum = m;
+            if (sl.Value > m) { sl.Value = m; store((int)m); }
+            else if (sl.Value < -m) { sl.Value = -m; store((int)-m); }
+        }
+
         UIElement SliderRow(string label, string id, double min, double max, double val, string suffix, Action<double> onChange)
+        {
+            Slider ignored;
+            return SliderRow(label, id, min, max, val, suffix, onChange, out ignored);
+        }
+
+        StackPanel SliderRow(string label, string id, double min, double max, double val, string suffix,
+                             Action<double> onChange, out Slider slOut)
         {
             StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
             TextBlock lb = Ui.Txt(label, 12.5, MainForm.HudText, false);
             lb.Width = 96; lb.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(lb);
             Slider sl = Ui.HudSlider(min, max, val, id);
+            slOut = sl;
             TextBlock num = Ui.Txt(((int)val).ToString() + suffix, 12, MainForm.HudText, false);
             num.Width = 44; num.Margin = new Thickness(8, 0, 0, 0);
             num.VerticalAlignment = VerticalAlignment.Center;
             sl.ValueChanged += delegate
             {
+                // syncingPan：这是 RefreshPanRows() 把「夹过的值」刷回界面，不是用户拖的 ——
+                // 再写回配置会跟 ApplyBackground() 的夹取打架，来回弹。
+                if (syncingPan) { num.Text = ((int)sl.Value).ToString() + suffix; return; }
                 onChange(sl.Value);
                 num.Text = ((int)sl.Value).ToString() + suffix;
                 owner.ApplyBackground();

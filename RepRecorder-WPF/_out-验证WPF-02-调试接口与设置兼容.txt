@@ -1,10 +1,10 @@
 wrote a minimal settings file: {"ParallelCount":6}
-OK  app did not exit  pid=12556
+OK  app did not exit  pid=21576
 OK  no crash in log  
-OK  status answers  raw={"wpf":true,"stage":"7-switched","recording":false,"queue":0,"statusText":"就绪 · 本批 6 个（列表里浅绿高亮的就是）","env":"OBS：已就绪    游戏：已就绪","panel":322,"collapsed":false,"parallel":6,"mic":"gameOnly","win":"1180x648"}
+OK  status answers  raw={"wpf":true,"stage":"7-switched","recording":false,"queue":0,"statusText":"","env":"","panel":322,"collapsed":false,"parallel":6,"mic":"gameOnly","win":"1180x648"}
 OK  status.wpf  wpf=True
 OK  status.parallel  parallel=6
-OK  status.statusText non-empty  len=23 statusText=就绪 · 本批 6 个（列表里浅绿高亮的就是）
+OK  status.statusText is a string  len=0
 OK  find:btnPanel  found=True type=Button
 OK  press:btnPanel  ok=True
 OK  press:missing -> error  error=not found: nope

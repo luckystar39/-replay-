@@ -489,7 +489,11 @@ namespace RepRecorder
             {
                 FrameworkElement fe = Ui.FindAnywhere(id);
                 if (fe == null) return "{\"found\":false}";
-                return "{\"found\":true,\"type\":" + Json(fe.GetType().Name) + "}";
+                // vis/enabled 是后加的（纯增量，老脚本只看 found/type 不受影响）：
+                // 「位置」那两行会按对齐方式整行藏掉，不报可见性就没法验收。
+                return "{\"found\":true,\"type\":" + Json(fe.GetType().Name)
+                     + ",\"vis\":\"" + fe.Visibility + "\""
+                     + ",\"enabled\":" + (fe.IsEnabled ? "true" : "false") + "}";
             });
         }
 

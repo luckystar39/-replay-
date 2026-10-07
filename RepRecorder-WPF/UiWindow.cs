@@ -90,6 +90,19 @@ namespace RepRecorder
         // 于是放置方式怎么选都不生效（2026-10-04 用户报的"放置位置功能都用不了"就是这个）。
         string bgLoadedKey = null;
         Grid bgClip;                     // 背景图层的裁剪容器：位移不许把图推出内容区
+        bool bgRepanned;                 // 布局还没出来时的补算闸门（防止反复排队）
+
+        // 当前摆放方式下，位移滑块的上限（百分比，按图层尺寸算）。
+        //   -1 = 不限（free / tile，滑块给 ±100）
+        //    0 = 没东西可挪（拉伸、或比例刚好吻合）→ 设置窗里那一行直接不显示
+        // 这两个值是 ApplyBackground() 算出来的，设置窗读它们来决定滑块量程和显不显示。
+        public double PanXNow { get; private set; }
+        public double PanYNow { get; private set; }
+        // 同一量程的**未取整**版本。滑块的最小步长是 1%，而真实量程往往是 22.88% 这种数，
+        // 取整后滑块拉到头也差着不到 1% —— 在 300% 缩放下就是几到几十个物理像素的空隙，
+        // 正好毁掉这个功能存在的意义（"滑到头图边正好贴住框边"）。
+        // 所以滑块拉到头时改用这个精确值来渲染，中间位置仍然按整数走。
+        double panXExact, panYExact;
 
         System.Windows.Threading.DispatcherTimer soundTimer;
 
@@ -1369,6 +1382,13 @@ namespace RepRecorder
                     }
                     if (cfg.BgLayout == "center")
                     {
+                        // 「原尺寸居中」= Stretch.None。光设 Stretch=None 是**画不出东西**的：
+                        // 默认的 Viewbox 是"相对整个包围盒"（0,0,1,1），而不缩放时这个框没有意义，
+                        // 结果整块背景是空的（2026-10-07 实测：选它之后窗口里一点图都没有）。
+                        // 必须把 Viewbox 换成**图片自己的像素尺寸**（绝对单位），
+                        // 内容才是"这张图的原尺寸"，再靠 Alignment 居中。
+                        br.ViewboxUnits = BrushMappingMode.Absolute;
+                        br.Viewbox = new Rect(0, 0, bi.PixelWidth, bi.PixelHeight);
                         br.AlignmentX = AlignmentX.Center;
                         br.AlignmentY = AlignmentY.Center;
                     }
@@ -1393,29 +1413,37 @@ namespace RepRecorder
                 ImageBrush ib = bgLayer.Fill as ImageBrush;
                 if (ib != null)
                 {
-                    if ((cfg.BgOffsetX != 0 || cfg.BgOffsetY != 0) && bgLayer.ActualWidth < 1)
+                    // 量程要等布局出来才算得准。还没尺寸就先不管，等这一轮布局完再来一次。
+                    if (bgLayer.ActualWidth < 1 && !bgRepanned)
                     {
-                        // 尺寸还没算出来 → 算不出"可移动余量"，等布局完再来一次
-                        Dispatcher.BeginInvoke(new Action(delegate { ApplyBackground(); }));
+                        bgRepanned = true;
+                        Dispatcher.BeginInvoke(new Action(delegate { bgRepanned = false; ApplyBackground(); }));
                     }
-                    double sx, sy;
-                    BgPanSlack(out sx, out sy);
-                    if (sx > 0.5 || sy > 0.5)
+                    ComputePanRange(ib);
+                    ClampPan();
+
+                    // 位移作用在**画刷**上（RelativeTransform），不是整块图层上。
+                    // 作用在图层上时等于把整张图推走、容器再从另一边裁掉 —— 裁掉的那部分
+                    // 永远回不来（用户 2026-10-05 报的"动 xy 轴之后裁掉的边真的不见了"）。
+                    // 作用在画刷上，图是在容器**内部**平移，裁掉的部分就能露回来，
+                    // 「只铺内容区」时也不会把图推到控制面板上。
+                    ib.Transform = Transform.Identity;
+                    double z = ZoomScale();
+                    double sx = (cfg.BgFlipH ? -1 : 1) * z;
+                    double sy = (cfg.BgFlipV ? -1 : 1) * z;
+                    double dx = PanFraction(panXExact, PanXNow, cfg.BgOffsetX);
+                    double dy = PanFraction(panYExact, PanYNow, cfg.BgOffsetY);
+                    if (sx != 1 || sy != 1 || dx != 0 || dy != 0)
                     {
-                        // 「铺满」：图比窗口大，多出来的那点就是可移动的余量。
-                        // 把 X/Y 的 ±100% 映射到这段余量上 —— 拉满正好把被裁掉的那条边
-                        // 露出来，再拉也不会露白（2026-10-05 用户选的方案）。
-                        ib.Transform = new TranslateTransform(sx * cfg.BgOffsetX / 100.0, sy * cfg.BgOffsetY / 100.0);
-                        ib.RelativeTransform = Transform.Identity;
+                        TransformGroup tg = new TransformGroup();
+                        // 先镜像/缩放（绕图层中心），**再**平移。
+                        // 顺序不能反：平移放在后面，它的位移量就不受缩放影响 ——
+                        // 正数永远往右/往下，勾了翻转之后滑块也不会反着走。
+                        tg.Children.Add(new ScaleTransform(sx, sy, 0.5, 0.5));
+                        tg.Children.Add(new TranslateTransform(dx, dy));
+                        ib.RelativeTransform = tg;
                     }
-                    else
-                    {
-                        // 其它放置方式（拉伸/居中/平铺/完整放下）本来就不裁边，位移是自由的
-                        ib.Transform = Transform.Identity;
-                        if (cfg.BgOffsetX != 0 || cfg.BgOffsetY != 0)
-                            ib.RelativeTransform = new TranslateTransform(cfg.BgOffsetX / 100.0, cfg.BgOffsetY / 100.0);
-                        else ib.RelativeTransform = Transform.Identity;
-                    }
+                    else ib.RelativeTransform = Transform.Identity;
                 }
                 bgLayer.RenderTransform = Transform.Identity;   // 图层自己不动（位移已经交给画刷了）
 
@@ -1448,36 +1476,123 @@ namespace RepRecorder
             if (layout == "fit") return Stretch.Uniform;
             if (layout == "stretch") return Stretch.Fill;
             if (layout == "center" || layout == "tile") return Stretch.None;
+            // fill 和 free 画的都是"等比放大到盖住"；
+            // 两者只差在**位移限不限**（fill 夹在余量内、free 随便拖），渲染本身同一套。
             return Stretch.UniformToFill;
         }
 
-        // 画刷上的位移量（DIP 或相对比例）。bgstate 用它证明"位移真的加在画刷上"。
-        static string BgBrushOffset(ImageBrush b, bool x)
+        double ZoomScale()
         {
-            if (b == null) return "null";
-            TranslateTransform t = b.Transform as TranslateTransform;
-            if (t == null) t = b.RelativeTransform as TranslateTransform;
-            if (t == null) return "0";
-            return (x ? t.X : t.Y).ToString("0.###");
+            int z = cfg == null ? 100 : cfg.BgZoom;
+            if (z < 10) z = 10;
+            if (z > 400) z = 400;
+            return z / 100.0;
         }
 
-        // 「铺满」时被裁掉多少 = 可移动的余量（DIP）。别的放置方式返回 0（不裁边，位移自由）。
-        void BgPanSlack(out double sx, out double sy)
+        // 背景图按当前摆放方式渲染出来，在图层里占多大（DIP）。
+        // 位移的上限完全由它推出来：能挪的距离 = |渲染尺寸 - 图层尺寸| / 2。
+        bool RenderedExtent(ImageBrush b, out double rw, out double rh)
         {
-            sx = 0; sy = 0;
+            rw = rh = 0;
+            if (cfg == null || bgLayer == null) return false;
+            double lw = bgLayer.ActualWidth, lh = bgLayer.ActualHeight;
+            if (lw < 1 || lh < 1) return false;             // 布局还没出来，算不了
+            double z = ZoomScale();
+            string lay = cfg.BgLayout;
+            if (lay == "stretch") { rw = lw * z; rh = lh * z; return true; }
+            BitmapImage bi = b == null ? null : b.ImageSource as BitmapImage;
+            if (bi == null || bi.PixelWidth < 1 || bi.PixelHeight < 1)
+            {
+                // 没有图（或读不出尺寸）→ 整块就是底色，当作刚好铺满
+                rw = lw * z; rh = lh * z; return true;
+            }
+            double iw = bi.PixelWidth, ih = bi.PixelHeight;
+            if (lay == "center") { rw = iw * z; rh = ih * z; return true; }
+            double s = (lay == "fit") ? Math.Min(lw / iw, lh / ih) : Math.Max(lw / iw, lh / ih);
+            rw = iw * s * z; rh = ih * s * z;
+            return true;
+        }
+
+        // 算「位移滑块的上限」，照搬 Wallpaper Engine 的规矩：
+        //   覆盖/适应/居中 → 只给有东西可挪的那根轴，量程正好是余量的一半
+        //                    （滑到头图边正好贴住框边，**永远滑不出底色**）
+        //   拉伸          → 没东西可挪，两根轴都是 0
+        //   自由/平铺      → 不设限。平铺是无限循环的，怎么挪都不会露底
+        void ComputePanRange(ImageBrush b)
+        {
+            string lay = cfg == null ? "" : cfg.BgLayout;
+            if (lay == "free" || lay == "tile") { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
+            double rw, rh;
+            if (!RenderedExtent(b, out rw, out rh)) { PanXNow = PanYNow = -1; panXExact = panYExact = 0; return; }
+            double lw = bgLayer.ActualWidth, lh = bgLayer.ActualHeight;
+            // 向下取整：上限是 17.6 却存了 18 的话，会露出一条不到 1 像素的底色
+            panXExact = Math.Abs(rw - lw) / 2.0 / lw * 100.0;
+            panYExact = Math.Abs(rh - lh) / 2.0 / lh * 100.0;
+            PanXNow = Math.Floor(panXExact);
+            PanYNow = Math.Floor(panYExact);
+        }
+
+        // 把整数百分比的位移换算成画刷要用的比例。
+        // 滑块拉到**头**的时候改用未取整的精确量程，让图边正好落在框边上；
+        // 中间位置仍按整数走（步长 1% 本来就够细了）。
+        static double PanFraction(double exact, double rounded, int val)
+        {
+            if (exact > 0 && rounded > 0 && Math.Abs(Math.Abs(val) - rounded) < 0.001)
+                return Math.Sign(val) * exact / 100.0;
+            return val / 100.0;
+        }
+
+        void ClampPan()
+        {
+            if (cfg == null) return;
+            if (PanXNow >= 0) cfg.BgOffsetX = (int)Math.Max(-PanXNow, Math.Min(PanXNow, cfg.BgOffsetX));
+            if (PanYNow >= 0) cfg.BgOffsetY = (int)Math.Max(-PanYNow, Math.Min(PanYNow, cfg.BgOffsetY));
+        }
+
+        // 画刷上的位移量（图层尺寸的比例）。bgstate 用它证明"位移真的加在画刷上"。
+        // 2026-10-07 起 RelativeTransform 变成了 TransformGroup（先缩放/镜像、再平移），
+        // 所以要钻进组里找，不能再直接 as TranslateTransform —— 那样翻转一勾就全读成 0。
+        static string BgBrushOffset(ImageBrush b, bool x)
+        {
+            Transform t = FindBrushTransform(b, typeof(TranslateTransform));
+            TranslateTransform tr = t as TranslateTransform;
+            if (tr == null) return "0";
+            return (x ? tr.X : tr.Y).ToString("0.###");
+        }
+
+        static string BgBrushScale(ImageBrush b)
+        {
+            ScaleTransform s = FindBrushTransform(b, typeof(ScaleTransform)) as ScaleTransform;
+            if (s == null) return "1,1";
+            return s.ScaleX.ToString("0.###") + "," + s.ScaleY.ToString("0.###");
+        }
+
+        static Transform FindBrushTransform(ImageBrush b, Type kind)
+        {
+            if (b == null) return null;
+            Transform direct = b.Transform;
+            if (kind.IsInstanceOfType(direct)) return direct;
+            TransformGroup g = b.RelativeTransform as TransformGroup;
+            if (g != null)
+            {
+                foreach (Transform c in g.Children) if (kind.IsInstanceOfType(c)) return c;
+                return null;
+            }
+            if (kind.IsInstanceOfType(b.RelativeTransform)) return b.RelativeTransform;
+            return null;
+        }
+
+        // 背景图渲染出来在图层里占多大（DIP），只给 bgstate 看。
+        string RenderedNow()
+        {
             try
             {
-                ImageBrush ib = bgLayer.Fill as ImageBrush;
-                BitmapImage bi = ib == null ? null : ib.ImageSource as BitmapImage;
-                double aw = bgLayer.ActualWidth, ah = bgLayer.ActualHeight;
-                if (bi == null || aw < 1 || ah < 1 || bi.PixelWidth < 1 || bi.PixelHeight < 1) return;
-                // 只有"铺满"（UniformToFill）会裁边 —— 拉满/撑满/居中/平铺都不会
-                if (cfg == null || cfg.BgLayout != "fill") return;
-                double k = Math.Max(aw / bi.PixelWidth, ah / bi.PixelHeight);
-                sx = Math.Max(0, (bi.PixelWidth * k - aw) / 2);
-                sy = Math.Max(0, (bi.PixelHeight * k - ah) / 2);
+                ImageBrush b = bgLayer == null ? null : bgLayer.Fill as ImageBrush;
+                double rw, rh;
+                if (!RenderedExtent(b, out rw, out rh)) return "\"?\"";
+                return "\"" + (int)Math.Round(rw) + "x" + (int)Math.Round(rh) + "\"";
             }
-            catch { }
+            catch { return "\"?\""; }
         }
 
         public string BgState()
@@ -1499,10 +1614,21 @@ namespace RepRecorder
                  // 位移到底加在哪儿：加在画刷上（bx/by）才对 —— 那样「铺满」裁掉的边能露回来；
                  // 加在图层上（bgLayer.RenderTransform）就只是把整块图推走。验收脚本两条都比。
                  + ",\"bx\":" + BgBrushOffset(b, true) + ",\"by\":" + BgBrushOffset(b, false)
+                 // 画刷上**真正生效**的缩放/镜像。跟 cfg 比：cfg 说翻了但 brushScale 还是 1,1，
+                 // 就说明变换没落到画刷上（翻转一勾就失效的 bug 会在这里现形）。
+                 + ",\"brushScale\":\"" + BgBrushScale(b) + "\""
                  + ",\"opacity\":" + (bgLayer == null ? 0 : (int)Math.Round(bgLayer.Opacity * 100))
                  + ",\"blur\":" + (cfg == null ? 0 : cfg.BgBlur)
                  + ",\"ox\":" + (cfg == null ? 0 : cfg.BgOffsetX)
                  + ",\"oy\":" + (cfg == null ? 0 : cfg.BgOffsetY)
+                 + ",\"flipH\":" + (cfg != null && cfg.BgFlipH ? "true" : "false")
+                 + ",\"flipV\":" + (cfg != null && cfg.BgFlipV ? "true" : "false")
+                 + ",\"zoom\":" + (cfg == null ? 100 : cfg.BgZoom)
+                 // 当前位移滑块的上限（百分比）。-1 = 不限（free/tile），0 = 没东西可挪。
+                 + ",\"panx\":" + PanXNow.ToString("0.#") + ",\"pany\":" + PanYNow.ToString("0.#")
+                 // 量程是拿图层尺寸和"渲染尺寸"算出来的，这两个数报出来才能核对量程对不对。
+                 + ",\"layer\":\"" + (bgLayer == null ? "?" : (int)Math.Round(bgLayer.ActualWidth) + "x" + (int)Math.Round(bgLayer.ActualHeight)) + "\""
+                 + ",\"rendered\":" + RenderedNow()
                  + ",\"scope\":\"" + (cfg == null ? "" : cfg.BgScope) + "\""
                  + ",\"scrim\":" + (cfg == null ? 0 : cfg.PanelScrim)
                  + ",\"pixels\":\"" + px + "\"}";

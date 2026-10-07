@@ -1,4 +1,4 @@
-OK   app alive  pid=26052
+OK   app alive  pid=23624
 OK   starts empty  count=0
 OK   list exists  type=ListBox
 OK   header cell colHead0  raw=#

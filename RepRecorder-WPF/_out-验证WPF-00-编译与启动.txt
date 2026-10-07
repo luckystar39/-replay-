@@ -1,4 +1,4 @@
-OK  exe exists: 386048 bytes
+OK  exe exists: 419328 bytes
 OK  main window appeared
 OK  log contains 'Rep'
 OK  log contains 'OBS'

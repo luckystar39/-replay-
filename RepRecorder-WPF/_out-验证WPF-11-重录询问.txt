@@ -1,4 +1,4 @@
-OK   app alive  pid=23892
+OK   app alive  pid=14400
 OK   the "record again?" dialog opened  dialogs=1 waited=1
 OK   the prompt is in the log  
 OK   the debug port answers again after the prompt  waited=0
@@ -6,7 +6,7 @@ OK   the dialog closed after No  dialogs=0
 OK   the skip is logged  
 OK   the row stayed in the queue  count=1
 OK   the row is now marked as already-recorded  status=ÒÑÂ¼ÖÆ
-OK   the app is alive after answering  pid=23892
+OK   the app is alive after answering  pid=14400
 OK   no exception in log  
 settings restored
 PASS

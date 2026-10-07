@@ -115,14 +115,20 @@ namespace RepRecorder
         public string BgImage { get; set; }
         [Category("界面"), Description("背景图的不透明度（0~100）。越大图越清楚，越小越只剩底色。默认 60。")]
         public int BgOpacity { get; set; }
-        [Category("界面"), Description("背景图的摆放方式：fill=等比填满并裁掉多余；fit=等比完整显示（可能留边）；\r\nstretch=拉伸铺满（会变形）；tile=原图平铺；center=原始大小居中。")]
+        [Category("界面"), Description("背景图的摆放方式（对齐方式）：\r\nfill=等比填满并裁掉多余（对应 Wallpaper Engine 的「覆盖」）；\r\nfit=等比完整显示，可能留边（「适应」）；stretch=拉伸铺满，会变形；\r\ntile=原图平铺；center=原始大小居中；free=自由，两轴都能拖且允许拖出空白。")]
         public string BgLayout { get; set; }
         [Category("界面"), Description("背景图的模糊程度（0~60）。模糊一点能让上面的文字更好读。默认 0。")]
         public int BgBlur { get; set; }
-        [Category("界面"), Description("背景图的水平偏移（-100~100，按窗口宽度的百分比算）。0 = 居中，负=往左，正=往右。")]
+        [Category("界面"), Description("背景图的水平偏移（按窗口宽度的百分比算）。0 = 居中，负=往左，正=往右。\r\n【上下限不是固定的】跟着摆放方式走：fill 只给被裁掉的那点余量（滑到头正好贴边、不露底）；\r\nfit/center 只给留边的那点余量；free/tile 不限（-100~100，可以露底）。")]
         public int BgOffsetX { get; set; }
-        [Category("界面"), Description("背景图的垂直偏移（-100~100，按窗口高度的百分比算）。0 = 居中，负=往上，正=往下。")]
+        [Category("界面"), Description("背景图的垂直偏移（按窗口高度的百分比算）。0 = 居中，负=往上，正=往下。上下限同 BgOffsetX。")]
         public int BgOffsetY { get; set; }
+        [Category("界面"), Description("背景图是否左右镜像（水平翻转）。对应 Wallpaper Engine 属性里的「翻转」。")]
+        public bool BgFlipH { get; set; }
+        [Category("界面"), Description("背景图是否上下镜像（垂直翻转）。Wallpaper Engine 没有独立开关，这里是补全的。")]
+        public bool BgFlipV { get; set; }
+        [Category("界面"), Description("背景图的缩放百分比（10~400，100 = 原始比例不缩放）。\r\n和翻转、位移一样，是独立于摆放方式的一层变换。")]
+        public int BgZoom { get; set; }
         [Category("界面"), Description("背景图的范围：content=只铺右侧内容区（队列+终端，默认）；global=全局铺满整个窗口（控制面板也透出背景图）。")]
         public string BgScope { get; set; }
         [Category("界面"), Description("WPF 界面的面板底色强度（0~100）。0 = 面板完全透明、背景图零遮挡；\r\n越大越暗、压在背景图上的文字越好读。默认 25（图片仍一眼看清，文字有保障）。")]
@@ -183,6 +189,9 @@ namespace RepRecorder
             BgBlur = 0;
             BgOffsetX = 0;
             BgOffsetY = 0;
+            BgFlipH = false;           // 左右镜像
+            BgFlipV = false;           // 上下镜像
+            BgZoom = 100;              // 100 = 不缩放
             BgScope = "content";       // 默认只铺右侧内容区；"global" = 全局铺满整个窗口
             PanelScrim = 25;           // 面板底色：淡淡一层，图片仍一眼看清，文字有保障
             WindowOpacity = 85;
@@ -253,6 +262,12 @@ namespace RepRecorder
                 // 这一段只在升级时跑一次，所以之后用户主动把滑块拉到 0（零遮挡）会被正常保留。
                 if (s.PanelScrim <= 0) s.PanelScrim = 25;
                 s.SettingsVersion = 8;
+            }
+            if (s.SettingsVersion < 9)
+            {
+                // 老设置文件里没有"翻转/缩放" → 两边都不镜像、不缩放（观感和以前完全一致）
+                if (s.BgZoom <= 0) s.BgZoom = 100;
+                s.SettingsVersion = 9;
             }
             s.FillDefaults();
             return s;
@@ -2586,6 +2601,29 @@ namespace RepRecorder
 
         // ============================================================ 背景图
         // 按摆放方式把原图摆进 dst 矩形；ox/oy 是额外位移（像素，来自 X/Y 轴滑杆）
+        // 翻转/缩放的包装层：绕【整块区域的中心】做镜像和缩放，正好对应 WPF 那边的
+        // ScaleTransform(sx, sy, 0.5, 0.5)。原来的 6 参版本负责"摆哪儿"，这一层只负责变换。
+        // （旧界面是退路，平时用不到，但至少别让它把用户设的翻转/缩放当没看见。）
+        static void DrawImageByLayout(Graphics g, Image img, Rectangle dst, string layout, int ox, int oy,
+                                      bool flipH, bool flipV, int zoom)
+        {
+            if (img == null || dst.Width <= 0 || dst.Height <= 0) return;
+            double z = zoom < 10 ? 0.1 : (zoom > 400 ? 4.0 : zoom / 100.0);
+            if (flipH || flipV || Math.Abs(z - 1.0) > 0.0001)
+            {
+                GraphicsState st = g.Save();
+                float cx = dst.X + dst.Width / 2f, cy = dst.Y + dst.Height / 2f;
+                g.TranslateTransform(cx, cy, MatrixOrder.Append);
+                g.ScaleTransform(flipH ? -1 : 1, flipV ? -1 : 1, MatrixOrder.Append);
+                g.ScaleTransform((float)z, (float)z, MatrixOrder.Append);
+                g.TranslateTransform(-cx, -cy, MatrixOrder.Append);
+                DrawImageByLayout(g, img, dst, layout, ox, oy);
+                g.Restore(st);
+                return;
+            }
+            DrawImageByLayout(g, img, dst, layout, ox, oy);
+        }
+
         static void DrawImageByLayout(Graphics g, Image img, Rectangle dst, string layout, int ox, int oy)
         {
             if (img == null || dst.Width <= 0 || dst.Height <= 0) return;
@@ -3032,7 +3070,8 @@ namespace RepRecorder
                     // X/Y 轴位移按"窗口尺寸的百分比"存，这样换窗口大小也能保持相对位置
                     int ox = (int)Math.Round(w * cfg.BgOffsetX / 100.0);
                     int oy = (int)Math.Round(h * cfg.BgOffsetY / 100.0);
-                    DrawImageByLayout(g, bgSource, new Rectangle(0, 0, w, h), cfg.BgLayout, ox, oy);
+                    DrawImageByLayout(g, bgSource, new Rectangle(0, 0, w, h), cfg.BgLayout, ox, oy,
+                                      cfg.BgFlipH, cfg.BgFlipV, cfg.BgZoom);
                 }
                 if (cfg.BgBlur > 0) { Bitmap b = BlurBitmap(laid, cfg.BgBlur); laid.Dispose(); laid = b; }
 

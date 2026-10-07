@@ -67,13 +67,16 @@ $scrimBefore = [int]$bg.scrim
 # Read the starting layout instead of hardcoding it: the user may have switched it
 # (e.g. fill -> fit), and the old hardcoded 'UniformToFill' then failed for no reason.
 $stretchBefore = $bg.stretch
+$flipHBefore = $bg.flipH
+$flipVBefore = $bg.flipV
+$zoomBefore = [int]$bg.zoom
 
 # --- open the dialog from the top bar ---
 $r = Dbg 'press:btnBg' | ConvertFrom-Json
 Start-Sleep -Milliseconds 800
 Check 'press:btnBg ok' ($r.ok -eq $true) ('ok=' + $r.ok)
 Check 'dialog is open' ((Dbg 'find:bgDialog' | ConvertFrom-Json).found -eq $true) ''
-foreach ($id in @('bgImage','bgBrowse','bgClear','bgOpacity','panelScrim','bgBlur','bgOffX','bgOffY','bgLayout','bgScope','bgOk','bgCancel')) {
+foreach ($id in @('bgImage','bgBrowse','bgClear','bgOpacity','panelScrim','bgBlur','bgOffX','bgOffY','bgOffXRow','bgOffYRow','bgLayout','bgScope','bgFlipH','bgFlipV','bgZoom','bgOk','bgCancel')) {
   $f = Dbg "find:$id" | ConvertFrom-Json
   Check ("control " + $id) ($f.found -eq $true) ('type=' + $f.type)
 }
@@ -103,6 +106,77 @@ Check 'layout switches to stretch' ($bg.stretch -eq 'Fill') ('stretch=' + $bg.st
 # test only ever looked at the config-derived value, so it stayed green.
 Check 'the layer brush really switched too' ($bg.brushStretch -eq $bg.stretch) ('brush=' + $bg.brushStretch + ' cfg=' + $bg.stretch)
 
+# =====================================================================================
+#  2026-10-07: 对齐方式 / 位置 / 翻转 -- 照搬 Wallpaper Engine 的三件套
+#  「位置」不再固定 +-100：每种对齐方式自己决定图能挪多远 --
+#    覆盖/适应/居中 只给裁边（或留边）真正留下的那点余量，滑到头图边正好贴住框边；
+#    拉伸 给 0；自由/平铺 不限。
+#  某根轴余量为 0 时，那一行在设置窗里【整行藏掉】-- 和 WE 的属性面板一样。
+# =====================================================================================
+function Lay([int]$i) { Dbg ("set:bgLayout=$i") | Out-Null; Start-Sleep -Milliseconds 700 }
+function RowVis([string]$id) { return (Dbg "find:$id" | ConvertFrom-Json).vis }
+
+$layName = @('cover', 'contain', 'stretch', 'center', 'tile', 'free')
+foreach ($i in @(0, 1, 2, 3, 4, 5)) {
+  Lay $i
+  $lb = Dbg 'bgstate' | ConvertFrom-Json
+  $rx = RowVis 'bgOffXRow'
+  $ry = RowVis 'bgOffYRow'
+  # The rule under test: limit exactly 0 ("nothing to move") <=> the row must be hidden.
+  $wantX = $(if ([double]$lb.panx -eq 0) { 'Collapsed' } else { 'Visible' })
+  $wantY = $(if ([double]$lb.pany -eq 0) { 'Collapsed' } else { 'Visible' })
+  Check ('position row hides when its axis has no slack (' + $layName[$i] + ')') `
+        (($rx -eq $wantX) -and ($ry -eq $wantY)) `
+        ('pan=' + $lb.panx + ',' + $lb.pany + '  rows=' + $rx + ',' + $ry)
+}
+
+Lay 2
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'stretch leaves no room to move at all' (([double]$lb.panx -eq 0) -and ([double]$lb.pany -eq 0)) ('pan=' + $lb.panx + ',' + $lb.pany)
+
+Lay 5
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'free is unlimited on both axes' (([double]$lb.panx -eq -1) -and ([double]$lb.pany -eq -1)) ('pan=' + $lb.panx + ',' + $lb.pany)
+
+Lay 4
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'tile is unlimited on both axes' (([double]$lb.panx -eq -1) -and ([double]$lb.pany -eq -1)) ('pan=' + $lb.panx + ',' + $lb.pany)
+
+# cover must fit one axis EXACTLY -- that is what makes cover "no background ever shows".
+Lay 0
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'cover fits exactly one axis (so it can never show background)' `
+      ((([double]$lb.panx -eq 0) -and ([double]$lb.pany -gt 0)) -or (([double]$lb.pany -eq 0) -and ([double]$lb.panx -gt 0))) `
+      ('pan=' + $lb.panx + ',' + $lb.pany)
+
+# Park the offsets wide open in free, then switch to stretch: ApplyBackground() must clamp
+# them back, otherwise the stored value keeps pointing somewhere the image can no longer go.
+Lay 5
+Dbg 'set:bgOffX=99' | Out-Null
+Dbg 'set:bgOffY=99' | Out-Null
+Start-Sleep -Milliseconds 600
+Lay 2
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'switching to stretch clamps the stored offset back to 0' (([int]$lb.ox -eq 0) -and ([int]$lb.oy -eq 0)) ('ox=' + $lb.ox + ' oy=' + $lb.oy)
+
+# ---- 翻转 / 缩放：和位移正交的一层变换，必须真的落到画刷上 ----
+Lay 5
+Dbg 'set:bgFlipH=true' | Out-Null
+Start-Sleep -Milliseconds 700
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'flip horizontal reaches the brush' ($lb.brushScale -match '^-1,') ('brushScale=' + $lb.brushScale)
+Check 'flip horizontal reaches the setting' ($lb.flipH -eq $true) ('flipH=' + $lb.flipH)
+
+Dbg 'set:bgFlipV=true' | Out-Null
+Start-Sleep -Milliseconds 700
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'flip vertical reaches the brush' ($lb.brushScale -eq '-1,-1') ('brushScale=' + $lb.brushScale)
+
+Dbg 'set:bgZoom=200' | Out-Null
+Start-Sleep -Milliseconds 700
+$lb = Dbg 'bgstate' | ConvertFrom-Json
+Check 'zoom reaches the brush on top of the flips' ($lb.brushScale -eq '-2,-2') ('brushScale=' + $lb.brushScale)
+
 # --- live edit: panel scrim (0 = panels fully transparent) ---
 $r = Dbg 'set:panelScrim=0' | ConvertFrom-Json
 Start-Sleep -Milliseconds 600
@@ -117,6 +191,7 @@ Check 'cancel restores opacity' ([int]$bg.opacity -eq [int]$opBefore) ('layer=' 
 Check 'cancel restores scope' ($bg.scope -eq $scopeBefore) ('scope=' + $bg.scope + ' before=' + $scopeBefore)
 Check 'cancel restores layout' ($bg.stretch -eq $stretchBefore) ('stretch=' + $bg.stretch + ' before=' + $stretchBefore)
 Check 'cancel restores panel scrim' ([int]$bg.scrim -eq $scrimBefore) ('scrim=' + $bg.scrim + ' before=' + $scrimBefore)
+Check 'cancel restores flip and zoom' (($bg.flipH -eq $flipHBefore) -and ($bg.flipV -eq $flipVBefore) -and ([int]$bg.zoom -eq $zoomBefore)) ('file=' + $bg.flipH + ',' + $bg.flipV + ' ' + $bg.zoom + '  before=' + $flipHBefore + ',' + $flipVBefore + ' ' + $zoomBefore)
 Check 'settings file untouched by cancel' ([int](CfgVal 'BgOpacity') -eq [int]$opBefore) ('file=' + (CfgVal 'BgOpacity'))
 
 # --- 确定 must persist ---

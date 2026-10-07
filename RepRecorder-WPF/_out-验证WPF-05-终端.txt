@@ -1,10 +1,10 @@
-OK   app alive  pid=13112
+OK   app alive  pid=8512
 OK   logBox exists  
-OK   starts with the startup log (Log.OnLine wired)  shown=10
+OK   starts with the startup log (Log.OnLine wired)  shown=7
 OK   not collapsed at start  collapsed=False
-OK   one long line wraps into several shown lines  shown=13 before=10
-OK   addlog:50 grows the panel  before=13 after=156
-OK   newest log line is present  tail=xx
+OK   one long line wraps into several shown lines  shown=9 before=7
+OK   addlog:50 grows the panel  before=9 after=144
+OK   newest log line is present  tail=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 OK   collapsed after click  collapsed=True
 OK   header arrow switched  raw=? Õ¹¿ª
 OK   header shows the last line  raw=16:23:13  test log line 50  D:/some/very/long/path/without/any/spaces/at/all/that/keeps/going/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
