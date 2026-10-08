@@ -312,6 +312,10 @@ namespace RepRecorder
                      + "\"collapsed\":" + (sw.CollapsedNow ? "true" : "false") + ","
                      + "\"parallel\":" + (c == null ? 0 : c.ParallelCount) + ","
                      + "\"mic\":" + Json(c == null ? "" : c.MicMode) + ","
+                     // 录制时【真正生效】的录音模式：并行（数量≥2）时它是 gameOnly，
+                     // 哪怕上面那个 mic 还存着 gameAndMic（界面会锁住、设置不改）。
+                     // 单看 mic 看不出锁有没有生效，所以这里单独报一个。
+                     + "\"micEff\":" + Json(c == null ? "" : c.EffectiveMicMode) + ","
                      + "\"win\":" + Json((int)sw.ActualWidth + "x" + (int)sw.ActualHeight) + "}";
             });
         }

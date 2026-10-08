@@ -47,6 +47,7 @@ namespace RepRecorder
         GridSplitter splitterV;
         Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnRefresh, btnPrepare, btnCheck, btnSet, btnOpenLog;
         Button btnSound, btnGameAudio, btnBgm, btnPanel, btnBg;
+        bool micLockShown;                   // 那个下拉现在是"被锁住替用户显示 0"的状态（见 ApplyMicLock）
         CheckBox chkPrepare, chkCloseObs, chkRound;
         ComboBox cbParallel, cbMic;
         TextBlock lblMemHint, lblParHint, hintText, statusText, statusEnv;
@@ -421,7 +422,34 @@ namespace RepRecorder
             if (cfg == null) return 0;
             // 「只录麦克风」2026-10-05 按用户要求从下拉里去掉，现在只有两项。
             // 老设置文件里存着 "micOnly" 的会落到 0（只录游戏声音），不会出错。
-            return cfg.MicMode == "both" ? 1 : 0;
+            // ⚠ 别写 "both" —— 那是 2026-10-08 之前这里写错的词，录制路径认的是
+            //   "gameAndMic"（Load 里会把老的 "both" 归一化过来）。
+            return cfg.MicMode == "gameAndMic" ? 1 : 0;
+        }
+
+        // 「游戏 + 麦克风」只在真的【一个一个录】时才有意义：并行时几个游戏同时跑，
+        // 麦克风会被同时采进好几条音轨，纯粹是噪音。所以「同时录制数量 ≥ 2」时把这个下拉锁掉。
+        // 只锁【显示】—— cfg.MicMode 一个字都不改，数量回到 1 时用户原来选的那个自动回来
+        // （录制路径那边由 Settings.EffectiveMicMode 兜底，两边同一套规矩）。
+        void ApplyMicLock()
+        {
+            if (cbMic == null || cfg == null) return;
+            bool locked = cfg.ParallelCount >= 2;
+            if (locked)
+            {
+                micLockShown = true;                       // 先立旗子，再动 SelectedIndex —— 改它会触发 SelectionChanged
+                if (cbMic.SelectedIndex != 0) cbMic.SelectedIndex = 0;
+                cbMic.IsEnabled = false;
+                cbMic.Opacity = 0.45;
+            }
+            else
+            {
+                cbMic.IsEnabled = true;
+                cbMic.Opacity = 1.0;
+                micLockShown = false;                      // 先落旗子，再把用户存的那个选回来
+                int want = MicIndex();
+                if (cbMic.SelectedIndex != want) cbMic.SelectedIndex = want;
+            }
         }
 
         void OnPanelSplitterDone()
@@ -493,6 +521,7 @@ namespace RepRecorder
                 Log.Write("同时录制数量改为 " + cfg.ParallelCount + " 个（内存约 "
                           + (cfg.ParallelCount * 550 / 1024.0).ToString("0.0") + " GB）");
                 if (lblMemHint != null) lblMemHint.Text = MemHintText();
+                ApplyMicLock();     // 数量一过 2，麦克风那个下拉就得跟着锁/解锁
             };
             // 旧版 cbParallel.MouseWheel 里把 Handled 置 true —— 用户要求「滚轮滚过数量下拉不要改它」。
             // 移植时漏了，靠 验证WPF-10 抓出来。
@@ -1778,9 +1807,16 @@ namespace RepRecorder
             if (cbMic != null) cbMic.SelectionChanged += delegate
             {
                 if (cfg == null) return;
-                cfg.MicMode = cbMic.SelectedIndex == 1 ? "both" : "gameOnly";
+                // 锁着的时候这一次改动是 ApplyMicLock 自己塞进去的，不是用户选的 ——
+                // 让它写回设置就把用户存着的「游戏+麦克风」冲掉了，数量改回 1 也回不来。
+                if (micLockShown) return;
+                // ⚠ 这里必须写 "gameAndMic"：录制路径（ApplyMicMode）比的就是这个词。
+                //   2026-10-08 之前这里写的是 "both"，于是「游戏+麦克风」选了也白选 ——
+                //   麦克风照样被静音（实测：set:cbMic=1 后文件里是 "both"，wantMuted=True）。
+                cfg.MicMode = cbMic.SelectedIndex == 1 ? "gameAndMic" : "gameOnly";
                 cfg.Save();
             };
+            ApplyMicLock();     // 建完就按当前「同时录制数量」定一次锁
 
             AllowDrop = true;
             Drop += delegate(object s2, DragEventArgs de)

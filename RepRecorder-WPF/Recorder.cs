@@ -2087,7 +2087,10 @@ namespace RepRecorder
             {
                 if (beforeRecording)
                 {
-                    bool wantMuted = (cfg.MicMode != "gameAndMic");
+                    // 用【有效】模式，不是 cfg.MicMode：并行（数量≥2）时一律当 gameOnly，
+                    // 哪怕设置里存着「游戏+麦克风」—— 界面那个下拉在并行时也是锁成
+                    // 「只录游戏声音」的（ShellWindow.ApplyMicLock），两边必须同一套规矩。
+                    bool wantMuted = (cfg.EffectiveMicMode != "gameAndMic");
                     List<string> targets = Program.FindMicTargets(obs);
                     if (targets.Count == 0)
                     {

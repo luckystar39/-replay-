@@ -76,6 +76,20 @@ namespace RepRecorder
         public bool RecordGameAudio { get; set; }
         [Category("录音"), Description("gameOnly = 只录游戏声音（录制时自动静音麦克风）；gameAndMic = 游戏声音 + 麦克风（边录边解说）。")]
         public string MicMode { get; set; }
+        // 【有效】录音模式：并行（同时录 ≥2 个）时强制 gameOnly（2026-10-08 用户要求）。
+        // 并行的意思是几个游戏同时跑，麦克风会被同时采进好几条音轨 —— 纯粹是噪音。
+        // 界面上那个下拉会锁成「只录游戏声音」（见 ShellWindow.ApplyMicLock），
+        // 这里保证【录制路径】也照同一条规矩走：光锁界面不够，因为 MicMode 是存在文件里的，
+        // 用户把数量从 1 改成 3 时它还是旧值。
+        // ⚠ 只读，不动 MicMode 本身 —— 数量改回 1 之后，他原来选的「游戏+麦克风」要能回来。
+        // ⚠ [ScriptIgnore] 不能少：JavaScriptSerializer 会把**所有公开属性**都写进 JSON，
+        //   包括只有 get 的。不挡的话每次存设置都会多出一行 EffectiveMicMode ——
+        //   那是个算出来的值，写进文件里既没用又会误导（改它也不生效）。
+        [ScriptIgnore]
+        public string EffectiveMicMode
+        {
+            get { return (ParallelCount >= 2) ? "gameOnly" : MicMode; }
+        }
         [Category("录音"), Description("只把游戏声音录进视频：新增「应用程序音频采集(th123.exe)」，并临时静音 OBS 的桌面音频，避免录进其他系统声音或重复。")]
         public bool GameAudioOnly { get; set; }
         [Category("录音"), Description("录进视频的音量倍数（增益），默认 1.0。\r\n" +
@@ -284,6 +298,13 @@ namespace RepRecorder
             if (s.BgLayout != "fill" && s.BgLayout != "fit" && s.BgLayout != "stretch"
                 && s.BgLayout != "center" && s.BgLayout != "tile")
                 s.BgLayout = "fill";
+            // 2026-10-08：界面那个「录音模式」下拉写的是 "both"，而录制路径认的是 "gameAndMic"
+            // （ApplyMicMode 里就是 `!= "gameAndMic"`）—— 于是选了「游戏 + 麦克风」，
+            // 录制时麦克风照样被静音，这个选项等于从来没生效过（实测确认：set:cbMic=1 之后
+            // 设置文件里是 "both"，而 wantMuted 算出 True）。
+            // 写的那边已经改成 "gameAndMic"，这里把老文件里的 "both" 归一化掉 ——
+            // 也是无条件跑的：改过设置文件、从旧备份还原都能绕开版本号，这条幂等、很便宜。
+            if (s.MicMode == "both") s.MicMode = "gameAndMic";
             s.FillDefaults();
             return s;
         }
@@ -4223,7 +4244,8 @@ namespace RepRecorder
             {
                 if (beforeRecording)
                 {
-                    bool wantMuted = (cfg.MicMode != "gameAndMic");
+                    // 同上：并行时一律当 gameOnly（旧界面没有那个锁，但规矩要一样）
+                    bool wantMuted = (cfg.EffectiveMicMode != "gameAndMic");
                     List<string> targets = Program.FindMicTargets(obs);
                     if (targets.Count == 0)
                     {

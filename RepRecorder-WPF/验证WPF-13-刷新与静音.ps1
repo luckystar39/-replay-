@@ -103,6 +103,44 @@ Check 'refresh did not drop any row' ($r.count -eq 2) ('count=' + $r.count)
 Check 'app alive after refresh' (-not $p.HasExited) ('pid=' + $p.Id)
 Check 'no exception in log' ((LogTxt) -notmatch 'Exception') ''
 
+# =====================================================================================
+#  2026-10-08: the recording-mode combo ("gameOnly" / "gameAndMic") and its parallel lock.
+#
+#  Two things get checked, and the first one was a real bug:
+#   1. Picking "game + mic" in the left panel used to write MicMode = "both", but the
+#      recording path (ApplyMicMode) compares against "gameAndMic" -- so the mic was muted
+#      anyway and the option NEVER worked.  Verified live before the fix: set:cbMic=1 left
+#      "both" in the settings file and wantMuted still came out True.
+#   2. Parallel (ParallelCount >= 2) runs several games at once, so one mic would be
+#      smeared across several audio tracks.  The combo is now greyed out, shows "game only",
+#      and the EFFECTIVE mode is forced to gameOnly -- WITHOUT touching the stored value, so
+#      going back to 1 brings the user's own choice back.
+#  Assertions use the combo's index (0/1), not its text: the script is ASCII-only.
+# =====================================================================================
+function CfgVal([string]$key) {
+  try { return (Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).$key } catch { return $null }
+}
+Dbg 'set:cbParallel=0' | Out-Null          # the debug set: takes an INDEX -> ParallelCount 1
+Start-Sleep -Milliseconds 600
+Check 'mic row is enabled when not parallel' ((Dbg 'enabled:cbMic' | ConvertFrom-Json).enabled -eq $true) ''
+
+Dbg 'set:cbMic=1' | Out-Null               # pick "game + mic"
+Start-Sleep -Milliseconds 600
+Check 'picking game+mic stores gameAndMic (not "both")' ((CfgVal 'MicMode') -eq 'gameAndMic') ('file=' + (CfgVal 'MicMode'))
+
+Dbg 'set:cbParallel=1' | Out-Null          # INDEX 1 -> ParallelCount 2 -> must lock
+Start-Sleep -Milliseconds 600
+Check 'parallel locks the mic row' ((Dbg 'enabled:cbMic' | ConvertFrom-Json).enabled -eq $false) ''
+Check 'parallel shows "game only" (index 0)' ((Dbg 'text:cbMic' | ConvertFrom-Json).index -eq 0) ('index=' + (Dbg 'text:cbMic' | ConvertFrom-Json).index)
+$eff = (Dbg 'status' | ConvertFrom-Json).micEff
+Check 'parallel forces the EFFECTIVE mode to gameOnly' ($eff -eq 'gameOnly') ('micEff=' + $eff)
+Check 'locking did NOT overwrite the stored choice' ((CfgVal 'MicMode') -eq 'gameAndMic') ('file=' + (CfgVal 'MicMode'))
+
+Dbg 'set:cbParallel=0' | Out-Null          # back to ParallelCount 1 -> must unlock
+Start-Sleep -Milliseconds 600
+Check 'going back to 1 unlocks the mic row' ((Dbg 'enabled:cbMic' | ConvertFrom-Json).enabled -eq $true) ''
+Check 'and the user''s own choice comes back (index 1)' ((Dbg 'text:cbMic' | ConvertFrom-Json).index -eq 1) ('index=' + (Dbg 'text:cbMic' | ConvertFrom-Json).index)
+
 try { Stop-Process -Id $p.Id -Force } catch { }
 Start-Sleep -Milliseconds 500
 Remove-Item $repDir -Recurse -Force -ErrorAction SilentlyContinue
