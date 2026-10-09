@@ -507,9 +507,15 @@ namespace RepRecorder
             NumberRow(col, "并行裁边（像素）", "ParallelEdgeInset", "");
 
             Section(col, "切分");
+            // 上限 3（2026-10-09 用户拍板）。切分链路里 crop / lanczos 缩放 / 淡出跑在 CPU 上，
+            // 而并发数本来就被"这一批有几格"夹住 —— 4/5/6 只有一次真录 4~6 个的人才用得上，
+            // 收益小、还会抢 CPU 和顶穿显卡的并发编码路数（顶穿就掉软件编码，慢好几倍）。
+            // ⚠ 老设置文件里存着 4/5/6 的情况，靠 Core.Load 里那条无条件归一化兜住 ——
+            //   不能只改这里：下拉找不到该值会静默回落到第一项，再被「确定」写回去，
+            //   用户就会莫名其妙从 6 变成 1。
             ChoiceRow(col, "同时跑几个 ffmpeg", "SplitParallel",
-                      new string[] { "1", "2", "3", "4", "5", "6" },
-                      new string[] { "1", "2", "3", "4", "5", "6" });
+                      new string[] { "1", "2", "3" },
+                      new string[] { "1", "2", "3" });
             ChoiceRow(col, "切分编码器", "ParallelSplitEncoder",
                       new string[] { "NVIDIA 显卡（快）", "CPU 软编（兼容）" },
                       new string[] { "h264_nvenc", "libx264" });

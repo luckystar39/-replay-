@@ -310,6 +310,19 @@ namespace RepRecorder
             // 写的那边已经改成 "gameAndMic"，这里把老文件里的 "both" 归一化掉 ——
             // 也是无条件跑的：改过设置文件、从旧备份还原都能绕开版本号，这条幂等、很便宜。
             if (s.MicMode == "both") s.MicMode = "gameAndMic";
+            // 2026-10-09：切分并发数封顶从 6 收到 3（用户拍板）。
+            // 理由：天花板本来就在"格子数"上（见 Recorder.RunParallelBatch 里 `conc > batch.Count`），
+            //   4/5/6 这三档只有"一次真录 4~6 个"的人用得上；而切分链路是
+            //   crop → lanczos 缩放到 1440×1080 → fade（**这几步跑在 CPU 上**）→ NVENC，
+            //   开到 3 以上主要是在抢 CPU 和抢功耗，收益小而风险大 ——
+            //   老驱动 + GeForce 的并发编码路数一旦被顶穿，ffmpeg 起不来 nvenc 会**掉到
+            //   libx264 纯软编**，慢好几倍，用户只知道"数字调大了怎么反而更慢"。
+            //   用户原话：他的 4060 机器就已经吃得很高，得按普通用户的 CPU 来。
+            // ⚠ 这条**必须**是无条件的：界面下拉一旦只列 1~3，而设置文件里还存着 4/5/6，
+            //   ChoiceRow 会静默回落到第一项（UiDialogs.cs `if (idx < 0) idx = 0;`），
+            //   再被「确定」把所有字段写回去 —— 老用户会莫名其妙从 6 变成 1（最慢）。
+            //   放在版本号判断之外，手改设置文件、从旧备份还原都绕不过去（同上面两条）。
+            if (s.SplitParallel > 3) s.SplitParallel = 3;
             s.FillDefaults();
             return s;
         }
@@ -7624,7 +7637,7 @@ namespace RepRecorder
                 //    以前是一格一格串行切，6 格要等 5~6 遍。
                 int conc = cfg.SplitParallel;
                 if (conc < 1) conc = 1;
-                if (conc > 6) conc = 6;
+                if (conc > 3) conc = 3;              // 上限 3（2026-10-09）；设置里也只列 1~3
                 if (conc > batch.Count) conc = batch.Count;
                 if (batch.Count > 1) Log.Write("并行切分：同时跑 " + conc + " 个 ffmpeg（共 " + batch.Count + " 格）");
                 object splitGate = new object();

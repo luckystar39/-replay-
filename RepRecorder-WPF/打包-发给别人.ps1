@@ -21,7 +21,7 @@ $names = @(
   'RepRecorder.exe',
   'ffmpeg.exe',
   '说明-给使用者（简短版）.md',
-  '部署说明（含我在整合包里改过什么）.md'
+  '说明-给使用者（详细版）.md'
 )
 
 Add-Type -AssemblyName System.IO.Compression

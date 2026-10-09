@@ -1609,7 +1609,7 @@ namespace RepRecorder
                 //    以前是一格一格串行切，6 格要等 5~6 遍。
                 int conc = cfg.SplitParallel;
                 if (conc < 1) conc = 1;
-                if (conc > 6) conc = 6;
+                if (conc > 3) conc = 3;              // 上限 3（2026-10-09）；设置里也只列 1~3
                 if (conc > batch.Count) conc = batch.Count;
                 if (batch.Count > 1) Log.Write("并行切分：同时跑 " + conc + " 个 ffmpeg（共 " + batch.Count + " 格）");
                 object splitGate = new object();
