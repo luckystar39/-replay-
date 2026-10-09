@@ -5,7 +5,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -26,13 +25,10 @@ namespace RepRecorder
     // 缺 ffmpeg 才由程序代下（用户点一下才下，100 MB 不静默拉）。
     class EnvBox : Window
     {
-        public string FfmpegInstalled = null;    // 下载成功后的路径；没下就是 null
         readonly EnvReport rep;
 
         TextBlock statusLine;
-        Button dlBtn, closeBtn;
-        bool busy = false;
-        volatile bool cancelDl = false;
+        Button closeBtn;
 
         public EnvBox(EnvReport report)
         {
@@ -41,7 +37,7 @@ namespace RepRecorder
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
             SizeToContent = SizeToContent.Height;
-            // 620 而不是 560：ffmpeg 那种完整路径（…\WinGet\Packages\Gyan.FFmpeg_…infmpeg.exe）
+            // 620 而不是 560：ffmpeg 那种完整路径（…\WinGet\Packages\Gyan.FFmpeg_…\bin\ffmpeg.exe）
             // 很长，560 的时候右边会被切掉一截（2026-10-08 截图看出来的）。
             Width = 620;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -73,15 +69,6 @@ namespace RepRecorder
 
             StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
 
-            EnvItem ff = rep.Get("ffmpeg");
-            if (ff != null && !ff.Ok)
-            {
-                dlBtn = Ui.FlatButton("帮我下载 ffmpeg（约 100 MB）", "envDownload");
-                dlBtn.Height = 28;
-                dlBtn.Click += delegate { StartDownload(); };
-                row.Children.Add(dlBtn);
-            }
-
             EnvItem obs = rep.Get("obs");
             if (obs != null && !obs.Ok)
             {
@@ -110,7 +97,7 @@ namespace RepRecorder
 
             closeBtn = Ui.FlatButton("关闭", "envClose");
             closeBtn.Height = 28; closeBtn.Margin = new Thickness(8, 0, 0, 0);
-            closeBtn.Click += delegate { if (!busy) Close(); };
+            closeBtn.Click += delegate { Close(); };
             row.Children.Add(closeBtn);
 
             col.Children.Add(row);
@@ -144,59 +131,6 @@ namespace RepRecorder
             }
             Ui.Id(sp, "env_" + it.Key);
             return sp;
-        }
-
-        void StartDownload()
-        {
-            if (busy) return;
-            busy = true;
-            cancelDl = false;
-            dlBtn.IsEnabled = false;
-            dlBtn.Content = "下载中…";
-            statusLine.Text = "准备中…";
-
-            Thread t = new Thread(delegate()
-            {
-                string err;
-                string got = FfmpegSetup.Install(
-                    delegate(string msg) { Ui.Post(delegate { if (!cancelDl) statusLine.Text = msg; }); },
-                    delegate(long done, long total)
-                    {
-                        if (cancelDl) return false;
-                        Ui.Post(delegate
-                        {
-                            statusLine.Text = total > 0
-                                ? ("已下载 " + (done / 1048576) + " / " + (total / 1048576) + " MB（" + (done * 100 / total) + "%）")
-                                : ("已下载 " + (done / 1048576) + " MB");
-                        });
-                        return true;
-                    },
-                    out err);
-                Ui.Post(delegate
-                {
-                    busy = false;
-                    dlBtn.IsEnabled = true;
-                    if (got != null)
-                    {
-                        FfmpegInstalled = got;
-                        dlBtn.Content = "已装好";
-                        dlBtn.IsEnabled = false;
-                        statusLine.Text = "ffmpeg 已装到：" + got + "\n（关掉这个窗就能用了）";
-                        Log.Write("ffmpeg 已自动下载安装到：" + got);
-                    }
-                    else
-                    {
-                        dlBtn.Content = "重试下载";
-                        // 下不动的时候别留死局：把手工方案写清楚
-                        statusLine.Text = "没下成（" + err + "）\n" +
-                                          "也可以自己去 www.gyan.dev/ffmpeg/builds 下 ffmpeg-release-essentials.zip，" +
-                                          "解压出里面的 bin\\ffmpeg.exe，放到 RepRecorder.exe 旁边。";
-                        Log.Write("ffmpeg 自动下载失败：" + err);
-                    }
-                });
-            });
-            t.IsBackground = true;
-            t.Start();
         }
     }
 

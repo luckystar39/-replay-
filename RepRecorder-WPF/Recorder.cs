@@ -299,8 +299,8 @@ namespace RepRecorder
                     EnvReport rep0 = EnvReport.Build(cfg);
                     if (!rep0.AllOk)
                     {
-                        string got = Ui.ShowEnvDialog(rep0);
-                        if (got != null) RefreshEnvLabel();
+                        Ui.ShowEnvDialog(rep0);
+                        RefreshEnvLabel();   // 用户可能顺手在设置里把游戏目录指对了
                     }
                     cfg.EnvChecked = true;
                     cfg.Save();
@@ -611,8 +611,6 @@ namespace RepRecorder
         {
             List<string> cands = new List<string>();
             try { cands.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe")); } catch { }
-            // 程序旁边写不进去时（比如装在 Program Files），FfmpegSetup 会把下载的 ffmpeg 放这儿
-            try { cands.Add(FfmpegSetup.UserPath); } catch { }
             try
             {
                 cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -1715,7 +1713,7 @@ namespace RepRecorder
             {
                 Log.Write("没有 ffmpeg —— 并行录制需要它，先把环境补齐");
                 Ui.Status("缺 ffmpeg，并行录制需要它");
-                try { if (Ui.ShowEnvDialog(EnvReport.Build(cfg)) != null) RefreshEnvLabel(); } catch { }
+                try { Ui.ShowEnvDialog(EnvReport.Build(cfg)); RefreshEnvLabel(); } catch { }
                 if (FindFfmpeg() == null) return;
             }
             List<Job> sel = new List<Job>();
@@ -3735,13 +3733,11 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("OBS 连接：失败 —— " + ex.Message); }
 
-            // 最后把结论弹出来给用户看（日志上面已经写全了）。下载装好的 ffmpeg 要落回设置里 ——
-            // EnvReport 是重新查的，下次开录时 FindFfmpeg() 才找得到它。
+            // 最后把结论弹出来给用户看（日志上面已经写全了）。
             try
             {
-                EnvReport rep = EnvReport.Build(cfg);
-                string got = Ui.ShowEnvDialog(rep);
-                if (got != null) { Log.Write("已装好 ffmpeg：" + got); RefreshEnvLabel(); }
+                Ui.ShowEnvDialog(EnvReport.Build(cfg));
+                RefreshEnvLabel();
             }
             catch (Exception ex) { Log.Write("环境窗弹出失败（不影响使用）：" + ex.Message); }
         }

@@ -10,8 +10,6 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
-using System.IO.Compression;
-using System.Net;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -629,9 +627,13 @@ namespace RepRecorder
             // ---- ffmpeg（并行录制才要它，单录不用）----
             string ffm = null;
             try { ffm = Recorder.FindFfmpeg(); } catch { }
+            // 2026-10-09 用户改的：程序不再代下 ffmpeg（分发包里本来就带一份），
+            // 这里只负责【说清楚缺什么、去哪拿】。
             Add(r.Items, "ffmpeg", "ffmpeg", ffm != null,
                 ffm != null ? ffm : "未找到（并行录制需要，单个录制不需要）",
-                "点「帮我下载」自动装到程序旁边；或者自己下一份 ffmpeg.exe 放到程序旁边");
+                "自己下一份：www.gyan.dev/ffmpeg/builds 的 ffmpeg-release-essentials.zip，" +
+                "解压出 bin\\ffmpeg.exe 放到 RepRecorder.exe 旁边（分发包里本来就应该有这个文件，" +
+                "没有的话多半是没拷全或者被杀软删了）");
 
             // ---- ReplayDnD mod（新机器最容易漏的一步：漏了游戏会停在标题画面）----
             bool modOk = false;
@@ -671,199 +673,6 @@ namespace RepRecorder
             Add(r.Items, "mod", "ReplayDnD mod", modOk, modVal, modFix);
 
             return r;
-        }
-    }
-
-    // ============================================================ ffmpeg 自动下载
-    //
-    // 以前是把 217 MB 的 ffmpeg.exe 整个塞进分发包。新用户那边的常态其实是"没有"，
-    // 而并行录制（每一格都要调 ffmpeg）缺了它就是每一格标红「切分失败」。
-    // 现在：先找现成的（Recorder.FindFfmpeg 那几条路），找不到就当场下。
-    //
-    // ⚠ 绝不静默下载：100 MB 的东西要先问过用户；任何一步失败都要把半成品删干净，
-    //   并把"自己去哪下、放到哪"讲清楚 —— 下不动的时候不能给用户留个死局。
-    internal static class FfmpegSetup
-    {
-        // 逐个试，前一个失败再换下一个。**不能只押一个源**：GitHub 在国内时通时不通，
-        // 而 gyan.dev 是 ffmpeg 官网推荐的 Windows 构建、可达性明显更好。
-        // 2026-10-08 实测：gyan.dev = HTTP 200 ✓、GitHub BtbN = HTTP 200 ✓。
-        // ⚠ 故意**不**放第三方 GitHub 加速镜像：实测 `mirror.ghproxy.com` 已经不通（HTTP 000），
-        //   而且把二进制下载转手给一个没审过的第三方，等于给自己开一条供应链口子 ——
-        //   两个源都失败时，环境窗会直接告诉用户自己去哪下、放哪儿，不留死局。
-        public static readonly string[] Sources = new string[]
-        {
-            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
-            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-        };
-
-        static string SourceName(int i)
-        {
-            if (i == 0) return "gyan.dev（ffmpeg 官网推荐的 Windows 构建）";
-            return "GitHub / BtbN";
-        }
-
-        // 程序旁边放不下时的落点；FindFfmpeg 也会找这里
-        public static string UserPath
-        {
-            get
-            {
-                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                    @"RepRecorder\ffmpeg.exe");
-            }
-        }
-
-        // 下载的最终落点：优先程序旁边（说明文档一直教用户放这儿），写不进去才退到 UserPath
-        static string PickTarget()
-        {
-            try
-            {
-                string beside = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe");
-                string probe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "._wtest");
-                File.WriteAllText(probe, "x");
-                File.Delete(probe);
-                return beside;
-            }
-            catch { }
-            return UserPath;
-        }
-
-        // onStatus：给人看的一句话（哪个源、在干嘛）
-        // onProgress：收到字节 / 总字节（总字节可能为 -1）；返回 false 表示用户点了取消
-        // 成功返回 ffmpeg.exe 的最终路径；失败返回 null 并把原因放 err
-        public static string Install(Action<string> onStatus, Func<long, long, bool> onProgress, out string err)
-        {
-            err = "";
-            string target = PickTarget();
-            string tmpZip = Path.Combine(Path.GetTempPath(), "RepRecorder_ffmpeg_" + Guid.NewGuid().ToString("N") + ".zip");
-            string tmpExe = target + ".downloading";
-            string lastErr = "";
-            try
-            {
-                // 两个源都是 HTTPS，.NET 4.7.2 默认不一定协商到 TLS1.2
-                try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; } catch { }
-
-                for (int i = 0; i < Sources.Length; i++)
-                {
-                    if (onStatus != null) onStatus("正在从 " + SourceName(i) + " 下载…（第 " + (i + 1) + "/" + Sources.Length + " 个源）");
-                    string e1 = "";
-                    if (!Download(Sources[i], tmpZip, onProgress, out e1))
-                    {
-                        lastErr = SourceName(i) + "：" + e1;
-                        try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
-                        // 用户点了取消就别再试下一个源了
-                        if (e1 == "已取消") { err = e1; return null; }
-                        continue;
-                    }
-                    string e2 = "";
-                    if (!ExtractFfmpeg(tmpZip, tmpExe, out e2))
-                    {
-                        lastErr = SourceName(i) + "：下载下来的压缩包里没有 ffmpeg.exe（" + e2 + "）";
-                        try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
-                        continue;
-                    }
-                    try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
-
-                    // 解出来的东西必须真的能跑再算数
-                    string e3 = "";
-                    if (!Verify(tmpExe, out e3))
-                    {
-                        lastErr = SourceName(i) + "：下载到的 ffmpeg 跑不起来（" + e3 + "）";
-                        try { if (File.Exists(tmpExe)) File.Delete(tmpExe); } catch { }
-                        continue;
-                    }
-                    try
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(target));
-                        if (File.Exists(target)) File.Delete(target);
-                        File.Move(tmpExe, target);
-                    }
-                    catch (Exception ex) { err = "下载好了但挪不过去：" + ex.Message; return null; }
-                    return target;
-                }
-                err = "所有下载源都没成功。" + lastErr;
-                return null;
-            }
-            finally
-            {
-                try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
-                try { if (File.Exists(tmpExe)) File.Delete(tmpExe); } catch { }
-            }
-        }
-
-        static bool Download(string url, string dest, Func<long, long, bool> onProgress, out string err)
-        {
-            err = "";
-            try
-            {
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-                req.Timeout = 30000;            // 连上要多久
-                req.ReadWriteTimeout = 60000;   // 每一块读多久算超时
-                req.UserAgent = "RepRecorder";
-                using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
-                using (Stream s = resp.GetResponseStream())
-                using (FileStream fs = new FileStream(dest, FileMode.Create, FileAccess.Write))
-                {
-                    long total = resp.ContentLength;
-                    byte[] buf = new byte[64 * 1024];
-                    long got = 0;
-                    int n;
-                    while ((n = s.Read(buf, 0, buf.Length)) > 0)
-                    {
-                        fs.Write(buf, 0, n);
-                        got += n;
-                        if (onProgress != null && !onProgress(got, total)) { err = "已取消"; return false; }
-                    }
-                }
-                return new FileInfo(dest).Length > 1024 * 1024;   // 太小说明下到的不是压缩包
-            }
-            catch (Exception ex) { err = ex.Message; try { if (File.Exists(dest)) File.Delete(dest); } catch { } return false; }
-        }
-
-        // 只取压缩包里的 ffmpeg.exe 这一个文件，别的一概不碰、更不执行
-        static bool ExtractFfmpeg(string zip, string destExe, out string err)
-        {
-            err = "";
-            try
-            {
-                using (ZipArchive za = ZipFile.OpenRead(zip))
-                {
-                    foreach (ZipArchiveEntry e in za.Entries)
-                    {
-                        string n = e.FullName.Replace('\\', '/');
-                        if (!n.EndsWith("/bin/ffmpeg.exe", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (File.Exists(destExe)) File.Delete(destExe);
-                        e.ExtractToFile(destExe, true);
-                        return true;
-                    }
-                }
-                err = "压缩包里没找到 bin/ffmpeg.exe";
-            }
-            catch (Exception ex) { err = ex.Message; }
-            return false;
-        }
-
-        // 真跑一次 —— 文件在、但跑不起来（下坏了、被杀软拦了）也要算失败
-        static bool Verify(string exe, out string err)
-        {
-            err = "";
-            try
-            {
-                ProcessStartInfo psi = new ProcessStartInfo(exe, "-version");
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                using (Process p = Process.Start(psi))
-                {
-                    string outp = p.StandardOutput.ReadToEnd();   // 先读完再等，免得写满管道互锁
-                    p.WaitForExit(8000);
-                    if (!p.HasExited) { try { p.Kill(); } catch { } err = "跑起来没反应（超时）"; return false; }
-                    if (p.ExitCode != 0) { err = "退出码 " + p.ExitCode; return false; }
-                    if (outp.IndexOf("ffmpeg version", StringComparison.OrdinalIgnoreCase) < 0) { err = "输出的不是 ffmpeg 的版本信息"; return false; }
-                    return true;
-                }
-            }
-            catch (Exception ex) { err = ex.Message; return false; }
         }
     }
 
