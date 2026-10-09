@@ -47,6 +47,14 @@ echo.
 echo 从 RepRecorder-WPF 同步到：
 if exist "%T2%" (
   copy /Y "%EXE%" "%T2%\RepRecorder.exe" >nul
+  rem 2026-10-08: 把目标目录里的设置和日志删掉 —— 设置文件里是【作者本人的】
+  rem OBS WebSocket 密码 + 本机绝对路径。打包脚本的 zip 白名单本来就排除了它，
+  rem 但磁盘上这份还在，而给使用者的说明第一句就是"把这个文件夹整个拷到整合包上一级"
+  rem —— 照做的人会把密码一起带走，然后连接报"认证失败"而界面还显示"已就绪"。
+  rem 删掉之后新用户第一次启动会自己生成一份干净的。
+  if exist "%T2%\RepRecorder.settings.json" del /Q "%T2%\RepRecorder.settings.json"
+  if exist "%T2%\RepRecorder.log" del /Q "%T2%\RepRecorder.log"
+  if exist "%T2%\RepRecorder-上次.log" del /Q "%T2%\RepRecorder-上次.log"
   if errorlevel 1 ( echo    [失败] RepRecorder-给别人\ ) else ( echo    [OK] RepRecorder-给别人\ )
 ) else (
   echo    [跳过] 找不到 %T2%

@@ -35,6 +35,16 @@ $CJK = '[\u4e00-\u9fff]'
 Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
 Start-Sleep -Milliseconds 500
 Copy-Item $cfg $bak -Force
+
+# 2026-10-08: a stored panel width WIDER than the window used to be applied verbatim.
+# Maximise (client ~2560), drag the splitter far right, quit, relaunch at the default 1180 ->
+# that fixed pixel column is re-applied, the right side (queue/terminal) is laid out at 0 width
+# and the 6px splitter ends up off-window and ungrabbable.  Inject a huge value: it must be
+# clamped so the right side keeps MinRightPanel.
+$j0 = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json
+$j0.PanelWidth = 3000
+$j0.PanelCollapsed = $false
+$j0 | ConvertTo-Json -Compress -Depth 6 | Set-Content -LiteralPath $cfg -Encoding UTF8
 $expectParallel = 6
 try { $expectParallel = (Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).ParallelCount } catch { }
 Write-Host ('settings ParallelCount before test = ' + $expectParallel)
@@ -171,6 +181,34 @@ for ($round = 0; $round -lt 2; $round++) {
 }
 
 Check 'no crash in log' ((Get-Content (Join-Path $dir 'RepRecorder.log') -Raw -Encoding UTF8) -notmatch 'Exception') ''
+
+# --- a stored panel width must not squeeze the right panel out of existence -----------
+$s = Dbg 'status' | ConvertFrom-Json
+$winW = [int]($s.win.Split('x')[0])
+$right = $winW - [int]$s.panel - 6
+Check 'a stored 3000px panel width is clamped (right side survives)' ($right -ge 380) `
+      ('win=' + $s.win + '  panel=' + $s.panel + '  right=' + $right)
+
+# --- the settings dialog's "re-detect" must refresh the input boxes ---------------------
+# Only the path-style Field used to get .Box set; the port (NumberRow) and password
+# (PasswordRow) rows did not -- so re-detect updated cfg but not what the box showed, and OK
+# then wrote the stale text back, silently discarding the detected port/password.
+# Method: type 9999 into the port box (cfg untouched), press re-detect, the box must be
+# refreshed back to cfg's real value.
+Dbg 'press:btnSet' | Out-Null
+Start-Sleep -Milliseconds 1600
+Check 'settings dialog opened' ((Dbg 'find:setAuto' | ConvertFrom-Json).found -eq $true) ''
+$before = (Dbg 'text:set_Port' | ConvertFrom-Json).text
+Dbg 'set:set_Port=9999' | Out-Null
+Start-Sleep -Milliseconds 500
+$typed = (Dbg 'text:set_Port' | ConvertFrom-Json).text
+Dbg 'press:setAuto' | Out-Null
+Start-Sleep -Milliseconds 1400
+$after = (Dbg 'text:set_Port' | ConvertFrom-Json).text
+$cfgPort = (Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).Port
+Check 'the port box was actually typed over (guard is meaningful)' ($typed -eq '9999') ('typed=' + $typed)
+Check 're-detect refreshes the port box (not silently discarded)' ($after -eq "$cfgPort") `
+      ('was=' + $before + '  typed=9999  after=' + $after + '  cfg=' + $cfgPort)
 
 try { Stop-Process -Id $p.Id -Force } catch { }
 Start-Sleep -Milliseconds 500

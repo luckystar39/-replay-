@@ -114,7 +114,16 @@ namespace RepRecorder
                 if (res == null || res.Choice == 2) go = false;
                 else
                 {
-                    if (res.Choice == 1 && res.Picked != null) queueSaveFolder = res.Picked;
+                    if (res.Choice == 1 && res.Picked != null)
+                    {
+                        queueSaveFolder = res.Picked;
+                        // ⚠ 记住这次选的文件夹（2026-10-08 补）。移植时把旧 WinForms
+                        //   PickSaveFolder 里那句 cfg.LastSaveFolder = fb.SelectedPath 弄丢了 ——
+                        //   全工程再没有第二处写它，于是"上次用的位置"永远显示"（还没选过）"，
+                        //   而且 FindExistingOutput 靠它去找已录的文件：另存到别处之后就找不回来，
+                        //   那些 rep 下次刷新会变回「等待」，被重录一遍。
+                        cfg.LastSaveFolder = res.Picked;
+                    }
                     queueSaveDecided = true;
                     cfg.Save();
                 }
@@ -144,7 +153,12 @@ namespace RepRecorder
             string game = (!string.IsNullOrEmpty(cfg.GameDir) && File.Exists(Path.Combine(cfg.GameDir, "th123.exe"))) ? cfg.GameDir : Settings.FindGameDir();
             string s = (obsExe == null) ? "OBS：未安装（winget install --id OBSProject.OBSStudio -e）" : "OBS：已就绪";
             s += (game == null) ? "    游戏：未找到 th123.exe" : "    游戏：已就绪";
-            Ui.Env(s, (obsExe == null || game == null) ? 3 : 0);
+            // 2026-10-08：左下角这一行以前**完全不提 ffmpeg** —— 并行录制每一格都会因为缺它而
+            // 「切分失败」，而这里是用户唯一会看一眼的地方，写着「已就绪」等于骗人。
+            string ffm = null;
+            try { ffm = FindFfmpeg(); } catch { }
+            if (ffm == null) s += "    ffmpeg：未找到（并行录制需要，单录不用）";
+            Ui.Env(s, (obsExe == null || game == null || ffm == null) ? 3 : 0);
         }
 
         static string MuteFlagPath
@@ -276,6 +290,20 @@ namespace RepRecorder
                     // 只入队，不自动开录 —— 2026-10-05 用户要求「拖入后自动开始」整条去掉，
                     // 一律由用户自己点「开始录制」。
                     AddPaths(args);
+                }
+                // 首次启动自检（2026-10-08）：新用户拿到包，双击之后必须当场知道缺什么。
+                // 只在【有问题时】弹，而且一台机器只弹一次（EnvChecked）—— 环境正常的人永远看不到它，
+                // 想看随时点「检查环境」，那个永远会弹。
+                if (!cfg.EnvChecked)
+                {
+                    EnvReport rep0 = EnvReport.Build(cfg);
+                    if (!rep0.AllOk)
+                    {
+                        string got = Ui.ShowEnvDialog(rep0);
+                        if (got != null) RefreshEnvLabel();
+                    }
+                    cfg.EnvChecked = true;
+                    cfg.Save();
                 }
             }
             catch (Exception ex) { Log.Write("启动初始化出错：" + ex); }
@@ -578,10 +606,13 @@ namespace RepRecorder
             obs.Request("SetProfileParameter", r);
         }
         // ---- moved from MainForm ----
-        static string FindFfmpeg()
+        // internal（不是 private）：EnvReport 要问它 ffmpeg 在不在，好把结论一起报给用户。
+        internal static string FindFfmpeg()
         {
             List<string> cands = new List<string>();
             try { cands.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe")); } catch { }
+            // 程序旁边写不进去时（比如装在 Program Files），FfmpegSetup 会把下载的 ffmpeg 放这儿
+            try { cands.Add(FfmpegSetup.UserPath); } catch { }
             try
             {
                 cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -825,6 +856,12 @@ namespace RepRecorder
         // ---- moved from MainForm ----
         void RunParallelBatch(List<Job> batch)
         {
+            // 哪几格自愈完还是黑的 —— 切分完要把它们标成「注意」而不是「完成」。
+            // 黑格子照样能切出一个 mp4（内容是整段全黑），以前无条件写「完成」，用户会以为录好了
+            // （2026-10-08 查实，2026-10-09 用户拍板改成「注意」）。
+            // ⚠ 必须声明在方法最外层：用它的那处在切分线程里，比自检那段深 4 层花括号，
+            //   声明在里层的话编译器直接报「当前上下文中不存在名称 blackCells」。
+            bool[] blackCells = new bool[8];
             if (batch.Count == 0) return;
             // 在上一批的收尾里按了「停止」→ 这一批根本别开。
             // （批与批之间本来就有检查，这里是再兜一道，保证"停止"之后绝不会再冒出下一批）
@@ -991,7 +1028,17 @@ namespace RepRecorder
                     if (games2[i] == null) { handles2.Add(IntPtr.Zero); continue; }
                     IntPtr h2 = WaitForMainWindow(games2[i], 90);
                     handles2.Add(h2);
-                    if (h2 == IntPtr.Zero) Log.Write("并行：第 " + (i + 1) + " 个实例的窗口没出现（这一格会是空的）");
+                    if (h2 == IntPtr.Zero)
+                    {
+                        Log.Write("并行：第 " + (i + 1) + " 个实例的窗口没出现（这一格会是空的）");
+                        // ⚠ 这一格【也会是黑的】，而且黑屏自检根本抓不到它 —— 自检看的是
+                        //   `games2[i] 活着 && 采集源画面全黑`，而窗口没出现时采集源压根没绑上、
+                        //   截图直接失败，IsBlank 拿不到东西 → 返回 false → 一格都不报。
+                        //   2026-10-09 用假 th123.exe 实测出来的：日志明明写着"这一格会是空的"，
+                        //   最后那两格却还是被标成「完成」。用户最早报的"游戏没开、那个 rep 不见了"
+                        //   就是这种情况。所以这里必须**直接**把这一格记成坏格。
+                        blackCells[i] = true;
+                    }
                 }
                 // 窗口尺寸（每格按游戏客户区大小排，保持 4:3 不变形）
                 for (int i = 0; i < handles2.Count; i++)
@@ -1117,6 +1164,20 @@ namespace RepRecorder
                 {
                     foreach (string n in Program.FindMicTargets(obs))
                     {
+                        // ⚠ 静音之前【必须】先把原来的状态记进 micOriginalMute。
+                        //   这里图省事直接 SetInputMute，等于绕过了 ApplyMicMode —— 而
+                        //   micOriginalMute 只在 ApplyMicMode(true) 里填。并行这条路从来不调它，
+                        //   于是收尾时 ApplyMicMode(false) 遍历的是一张空表，**一个都没恢复**：
+                        //   并行录完，用户 OBS 里的麦克风就一直是哑的（2026-10-08 查实；
+                        //   OBS 会把静音状态存进场景集合，重启 OBS 也还是哑的）。
+                        try
+                        {
+                            Dictionary<string, object> q = new Dictionary<string, object>();
+                            q["inputName"] = n;
+                            bool was = Convert.ToBoolean(obs.Request("GetInputMute", q)["inputMuted"]);
+                            if (!micOriginalMute.ContainsKey(n)) micOriginalMute[n] = was;
+                        }
+                        catch { }
                         Dictionary<string, object> s = new Dictionary<string, object>();
                         s["inputName"] = n; s["inputMuted"] = true;
                         obs.Request("SetInputMute", s);
@@ -1346,6 +1407,7 @@ namespace RepRecorder
                         if (IsBlank(ShotOf(vNames[i])))
                         {
                             Log.Write("并行：⚠ 第 " + (i + 1) + " 格一直黑屏，很可能没录上 —— 建议单独重录");
+                            blackCells[i] = true;
                         }
                     }
                     catch { }
@@ -1498,6 +1560,9 @@ namespace RepRecorder
                 foreach (string s in vNames) { try { obs.Request("RemoveInput", new Dictionary<string,object>{{"inputName",s}}); } catch { } }
                 foreach (string s in aNames) { try { obs.Request("RemoveInput", new Dictionary<string,object>{{"inputName",s}}); } catch { } }
                 try { ApplyAudioRouting(false); } catch { }
+                // 把这一批开录前静音掉的麦克风恢复回去（静音在下面建源那段里做的）。
+                // 不补这一句，并行录完麦克风就永久哑了 —— 见那段里的注释。
+                try { RestoreInputMutes(micOriginalMute, "并行：已把麦克风恢复成录制前的状态"); } catch { }
                 try { ApplyGameAudioSetting(); } catch { }   // 把标准采集源的静音状态按设置还原
                 if (parMutedByUs)
                 {
@@ -1571,7 +1636,11 @@ namespace RepRecorder
                                 batch[i].Size = outBytes;
                                 batch[i].VideoSeconds = Mp4Duration(batch[i].Output);
                                 batch[i].Ended = DateTime.Now;
-                                Ui.SetJob(batch[i], "完成", (outBytes / 1048576.0).ToString("0.0") + " MB（并行切分）");
+                                // 整场全黑的那几格标「注意」：文件是有的、也能播，但很可能没录上。
+                                // 标「完成」等于骗人 —— 用户得自己点开看才知道是黑的。
+                                Ui.SetJob(batch[i], blackCells[i] ? "注意" : "完成",
+                                          (outBytes / 1048576.0).ToString("0.0") + " MB（并行切分）"
+                                          + (blackCells[i] ? "  ⚠ 这一格整场全黑，建议单独重录" : ""));
                                 Log.Write("并行切分完成（第 " + (i + 1) + " 格）：" + Path.GetFileName(batch[i].Output) +
                                           "  " + (outBytes / 1048576.0).ToString("0.0") + " MB  视频时长 " + FmtDur(batch[i].VideoSeconds));
                                 lock (splitGate) okCount++;
@@ -1629,6 +1698,26 @@ namespace RepRecorder
         // ---- moved from MainForm ----
         void StartRecording()
         {
+            // ⚠ 游戏目录不对就别开录（2026-10-08 查实）：以前这里什么都不拦，
+            //   结果每个游戏实例启动失败、录出一整批黑视频，**而且任务还标成「完成」** ——
+            //   用户以为录好了。宁可不录，也要当场说清楚。
+            if (cfg == null || string.IsNullOrEmpty(cfg.GameDir) || !File.Exists(Path.Combine(cfg.GameDir, "th123.exe")))
+            {
+                Log.Write("游戏目录不对（" + (cfg == null || string.IsNullOrEmpty(cfg.GameDir) ? "空" : cfg.GameDir) +
+                          "），先配好再录");
+                Ui.Status("游戏目录不对 —— 先点「检查环境」");
+                try { Ui.ShowEnvDialog(EnvReport.Build(cfg)); RefreshEnvLabel(); } catch { }
+                return;
+            }
+            // 并行（同时录 >=2 个）每一格都要调 ffmpeg 去切分；缺了它整批都会「切分失败」。
+            // 别让用户等到录完才发现 —— 开录前就弹窗，让他当场补。
+            if (cfg.ParallelCount >= 2 && FindFfmpeg() == null)
+            {
+                Log.Write("没有 ffmpeg —— 并行录制需要它，先把环境补齐");
+                Ui.Status("缺 ffmpeg，并行录制需要它");
+                try { if (Ui.ShowEnvDialog(EnvReport.Build(cfg)) != null) RefreshEnvLabel(); } catch { }
+                if (FindFfmpeg() == null) return;
+            }
             List<Job> sel = new List<Job>();
             bool manualSel = false;
             // ★ 轮录优先：只要勾了「轮录」，就【从队列第一个 rep 开始数】，按每批 N 个一路录完，
@@ -3576,6 +3665,9 @@ namespace RepRecorder
             catch { }
         }
         // ---- moved from MainForm ----
+        // 「检查环境」：把五项报给用户看。
+        // 2026-10-08 之前这里【只写日志】—— 用户点完一个窗都不弹，得自己开终端去翻，
+        // 而左下角那张环境卡又只报两项。现在先弹窗，日志照写（脚本和排查都还要看它）。
         void OnCheck(object sender, EventArgs e)
         {
             cfg.FillDefaults();
@@ -3642,12 +3734,33 @@ namespace RepRecorder
                 }
             }
             catch (Exception ex) { Log.Write("OBS 连接：失败 —— " + ex.Message); }
+
+            // 最后把结论弹出来给用户看（日志上面已经写全了）。下载装好的 ffmpeg 要落回设置里 ——
+            // EnvReport 是重新查的，下次开录时 FindFfmpeg() 才找得到它。
+            try
+            {
+                EnvReport rep = EnvReport.Build(cfg);
+                string got = Ui.ShowEnvDialog(rep);
+                if (got != null) { Log.Write("已装好 ffmpeg：" + got); RefreshEnvLabel(); }
+            }
+            catch (Exception ex) { Log.Write("环境窗弹出失败（不影响使用）：" + ex.Message); }
         }
         // ---- moved from MainForm ----
         void OnPrepare(object sender, EventArgs e)
         {
             try
             {
+                // ⚠ 录制中不许「准备 OBS」（2026-10-08 查实）：PrepareObs 第一句就是
+                //   StopObsRecordingIfAny()，而且 AutoCanvas 会顺手把画布改成 1440×1080 ——
+                //   正在跑的那一批当场被掐断、画布也被改错，而 worker 完全不知道：
+                //   它继续等游戏退出，最后 StopRecord 报 501、退回去捡那个残缺文件，
+                //   然后每一格都标成「完成」。界面上只有 开始/停止 两个键在录制时被锁，
+                //   所以这个键点得到 —— 这里补上同一道闸。
+                if (worker != null && worker.IsAlive)
+                {
+                    Log.Write("正在录制，先点「停止」再准备 OBS");
+                    return;
+                }
                 if (!EnsureObs()) return;
                 PrepareObs(true);
                 Log.Write("OBS 准备完毕");

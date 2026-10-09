@@ -644,6 +644,18 @@ namespace RepRecorder
             box.ShowDialog();
         }
 
+        // 门面：弹出环境自检窗。返回下载装好的 ffmpeg 路径（没下就是 null）。
+        // ⚠ 必须跑在 UI 线程上 —— 里面会 ShowDialog、还会开下载线程。
+        public static string ShowEnvDialog(EnvReport rep)
+        {
+            ShellWindow w = W;
+            if (w == null) return null;
+            EnvBox box = new EnvBox(rep);
+            box.Owner = w;
+            box.ShowDialog();
+            return box.FfmpegInstalled;
+        }
+
         // 门面：弹出"视频放哪"的询问框（返回 Choice/Checked/Picked）
         public static AskResult ShowAskDialog(bool upfront, string info, string lastFolder, string checkText)
         {

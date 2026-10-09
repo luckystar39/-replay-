@@ -329,7 +329,7 @@ namespace RepRecorder
             Grid g = new Grid();
             midGrid = g;
             colBar = new ColumnDefinition { Width = new GridLength(0) };
-            colLeft = new ColumnDefinition { Width = new GridLength(PanelWidth()) };
+            colLeft = new ColumnDefinition { Width = new GridLength(ClampedPanelWidth()) };
             colSplit = new ColumnDefinition { Width = new GridLength(6) };
             g.ColumnDefinitions.Add(colBar);
             g.ColumnDefinitions.Add(colLeft);
@@ -389,6 +389,23 @@ namespace RepRecorder
             double w = (cfg == null) ? 0 : cfg.PanelWidth;
             if (w < 120) w = 322;
             return w;
+        }
+
+        // 左栏【实际】能用多宽：存下来的宽度之外，还得看窗口现在有多宽 —— 必须给右边留出
+        // MinRightPanel，否则队列/终端被排成 0 宽，而分隔条跑到窗口外面、再也拉不回来。
+        // 2026-10-08 查实：最大化时（客户区 2560）把分隔条拖到最右，存下 2000 多 → 关掉重开
+        // 窗口回到 1180，这 2000 多的固定列宽照搬上去，右栏就是 0 宽、分隔条在窗口外
+        // （MinRightPanel 那道闸只在【拖动中】管用，启动时这条路它管不到）。
+        // 只在应用时夹，不改存下来的值 —— 窗口再拉大时用户自己拖回去。
+        double ClampedPanelWidth()
+        {
+            double w = PanelWidth();
+            if (midGrid == null) return w;          // 还没建出来（只在 BuildMiddle 之前调用）
+            double win = ActualWidth > 0 ? ActualWidth : Width;
+            double avail = win - (colSplit == null ? 6 : colSplit.Width.Value) - MinRightPanel
+                                - (colBar == null ? 0 : colBar.Width.Value);
+            if (avail < 120) avail = 120;           // 窗口极窄时别把左栏压成 0/负数
+            return Math.Min(w, avail);
         }
 
         string MemHintText()
@@ -477,9 +494,12 @@ namespace RepRecorder
             }
             else
             {
-                colLeft.Width = new GridLength(PanelWidth());
-                colSplit.Width = new GridLength(6);
+                // ⚠ colBar 必须先归零，再算左栏宽度：ClampedPanelWidth() 会把活动条那一列
+                //   算进去，而展开之后它就不占地方了 —— 顺序反了的话，每收放一次左栏就
+                //   凭空窄掉 36（收起来时存的是 794，展开算成 758，如此反复）。
                 colBar.Width = new GridLength(0);
+                colLeft.Width = new GridLength(ClampedPanelWidth());
+                colSplit.Width = new GridLength(6);
                 activityBar.Visibility = Visibility.Collapsed;
                 if (btnPanel != null) btnPanel.Content = "◀  收起面板";
             }
@@ -575,6 +595,16 @@ namespace RepRecorder
             chkCloseObs = Ui.HudCheck("录完关闭 OBS", "chkCloseObs", cfg != null && cfg.CloseObsAfter, 4);
             env.Children.Add(chkPrepare);
             env.Children.Add(chkCloseObs);
+            // ⚠ 环境状态那一行（"OBS：已就绪  游戏：已就绪"）以前挂在【底部状态栏】上，而底部
+            //   状态栏 2026-10-05 按用户要求整条删掉了 —— 于是 statusEnv 这个字段再也没被赋值，
+            //   Ui.Env() 一直在往一个 null 里写（编译器一直在报 CS0649，被编译脚本的过滤挡掉了）。
+            //   结果就是：**这台机器缺什么，界面上一个字都不显示**，只能去翻日志。
+            //   2026-10-08 把它挂进「环 境」这张卡里 —— 这是它本来就该在的地方。
+            statusEnv = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusEnv.TextWrapping = TextWrapping.Wrap;
+            statusEnv.Margin = new Thickness(0, 6, 0, 0);
+            Ui.Id(statusEnv, "envLine");
+            env.Children.Add(statusEnv);
             leftCol.Children.Add(Ui.Card("环 境", "▍", env, "cardEnv", 8));
 
             hintText = Ui.Txt("", 12, MainForm.HudAccent, false);

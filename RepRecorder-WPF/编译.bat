@@ -32,6 +32,7 @@ tasklist /fi "imagename eq RepRecorderWPF.exe" | find /i "RepRecorderWPF.exe" >n
   /r:"%REF%\PresentationFramework.dll" /r:"%REF%\PresentationCore.dll" ^
   /r:"%REF%\WindowsBase.dll" /r:"%REF%\System.Xaml.dll" ^
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Core.dll ^
+  /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll ^
   Ui.cs UiShell.cs UiWindow.cs UiDialogs.cs Core.cs Recorder.cs
 if errorlevel 1 (
   echo.

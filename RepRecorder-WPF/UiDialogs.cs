@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -15,6 +16,190 @@ using System.Windows.Shapes;
 
 namespace RepRecorder
 {
+    // ================================================================ 环境自检窗
+    //
+    // 2026-10-08：新用户拿到包，双击之后"缺什么、怎么补"必须一次说清楚。
+    // 以前这件事只写进日志（用户得自己去翻终端），环境卡又只报两项 ——
+    // 缺 ffmpeg 的时候卡片还写着「已就绪」，并行录出来却是每一格「切分失败」。
+    //
+    // 这个窗【只报事实 + 给出口】：缺 OBS 就给 winget 命令让他自己装（不替他装），
+    // 缺 ffmpeg 才由程序代下（用户点一下才下，100 MB 不静默拉）。
+    class EnvBox : Window
+    {
+        public string FfmpegInstalled = null;    // 下载成功后的路径；没下就是 null
+        readonly EnvReport rep;
+
+        TextBlock statusLine;
+        Button dlBtn, closeBtn;
+        bool busy = false;
+        volatile bool cancelDl = false;
+
+        public EnvBox(EnvReport report)
+        {
+            rep = report;
+            Title = "环境检查";
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            SizeToContent = SizeToContent.Height;
+            // 620 而不是 560：ffmpeg 那种完整路径（…\WinGet\Packages\Gyan.FFmpeg_…infmpeg.exe）
+            // 很长，560 的时候右边会被切掉一截（2026-10-08 截图看出来的）。
+            Width = 620;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Background = Ui.Br(MainForm.HudBg);
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            Ui.Id(this, "envDialog");
+            Ui.MakeDraggable(this);
+
+            StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+            bool allOk = rep.AllOk;
+            // ⚠ 这一行必须 Wrap：StackPanel 的宽度取所有子元素里最宽的那个，
+            //   一句不换行的长提示会把整块内容撑得比窗口还宽，ScrollViewer 就把右边裁掉
+            //   （2026-10-08 截图看出来的 —— 连 OBS 路径都被切了一半）。
+            TextBlock intro = Ui.Txt(allOk
+                ? "环境没问题，可以直接用了。"
+                : "下面几项还差点东西 —— 补完就能开录（单个录制只要「游戏目录」和 OBS 就行）。",
+                12.5, MainForm.HudText, false);
+            intro.TextWrapping = TextWrapping.Wrap;
+            intro.MaxWidth = 570;
+            col.Children.Add(intro);
+
+            foreach (EnvItem it in rep.Items) col.Children.Add(ItemRow(it));
+
+            statusLine = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusLine.TextWrapping = TextWrapping.Wrap;
+            statusLine.Margin = new Thickness(0, 8, 0, 0);
+            Ui.Id(statusLine, "envStatus");
+            col.Children.Add(statusLine);
+
+            StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+
+            EnvItem ff = rep.Get("ffmpeg");
+            if (ff != null && !ff.Ok)
+            {
+                dlBtn = Ui.FlatButton("帮我下载 ffmpeg（约 100 MB）", "envDownload");
+                dlBtn.Height = 28;
+                dlBtn.Click += delegate { StartDownload(); };
+                row.Children.Add(dlBtn);
+            }
+
+            EnvItem obs = rep.Get("obs");
+            if (obs != null && !obs.Ok)
+            {
+                Button copy = Ui.FlatButton("复制安装命令", "envCopyWinget");
+                copy.Height = 28; copy.Margin = new Thickness(8, 0, 0, 0);
+                copy.Click += delegate
+                {
+                    try
+                    {
+                        Clipboard.SetText("winget install --id OBSProject.OBSStudio -e");
+                        statusLine.Text = "命令已复制。粘到 PowerShell 里跑一下，装完先启动一次 OBS 再关掉。";
+                    }
+                    catch { statusLine.Text = "复制失败，请手动敲：winget install --id OBSProject.OBSStudio -e"; }
+                };
+                row.Children.Add(copy);
+            }
+
+            EnvItem game = rep.Get("game");
+            if (game != null && !game.Ok)
+            {
+                Button goSet = Ui.FlatButton("去设置里指一下", "envOpenSettings");
+                goSet.Height = 28; goSet.Margin = new Thickness(8, 0, 0, 0);
+                goSet.Click += delegate { Close(); Ui.ShowSettings(); };
+                row.Children.Add(goSet);
+            }
+
+            closeBtn = Ui.FlatButton("关闭", "envClose");
+            closeBtn.Height = 28; closeBtn.Margin = new Thickness(8, 0, 0, 0);
+            closeBtn.Click += delegate { if (!busy) Close(); };
+            row.Children.Add(closeBtn);
+
+            col.Children.Add(row);
+            Content = new ScrollViewer { Content = col, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        // 一行 = ✓/✗ + 名字 + 当前值；不 OK 的话下面再跟一句"怎么修"
+        UIElement ItemRow(EnvItem it)
+        {
+            StackPanel sp = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
+            StackPanel head = new StackPanel { Orientation = Orientation.Horizontal };
+            TextBlock mark = Ui.Txt(it.Ok ? "✓" : "✗", 12.5, it.Ok ? MainForm.HudAccent2 : MainForm.HudRed, true);
+            mark.Width = 18;
+            head.Children.Add(mark);
+            TextBlock name = Ui.Txt(it.Label, 12.5, MainForm.HudText, false);
+            name.Width = 118;
+            name.TextWrapping = TextWrapping.NoWrap;
+            head.Children.Add(name);
+            TextBlock val = Ui.Txt(it.Value, 12.5, it.Ok ? MainForm.HudDim : MainForm.HudText, false);
+            val.TextWrapping = TextWrapping.Wrap;
+            val.MaxWidth = 420;
+            head.Children.Add(val);
+            sp.Children.Add(head);
+            if (!it.Ok && !string.IsNullOrEmpty(it.Fix))
+            {
+                TextBlock fix = Ui.Txt("　→ " + it.Fix, 11.5, MainForm.HudOrange, false);
+                fix.TextWrapping = TextWrapping.Wrap;
+                fix.Margin = new Thickness(18, 2, 0, 0);
+                fix.MaxWidth = 550;
+                sp.Children.Add(fix);
+            }
+            Ui.Id(sp, "env_" + it.Key);
+            return sp;
+        }
+
+        void StartDownload()
+        {
+            if (busy) return;
+            busy = true;
+            cancelDl = false;
+            dlBtn.IsEnabled = false;
+            dlBtn.Content = "下载中…";
+            statusLine.Text = "准备中…";
+
+            Thread t = new Thread(delegate()
+            {
+                string err;
+                string got = FfmpegSetup.Install(
+                    delegate(string msg) { Ui.Post(delegate { if (!cancelDl) statusLine.Text = msg; }); },
+                    delegate(long done, long total)
+                    {
+                        if (cancelDl) return false;
+                        Ui.Post(delegate
+                        {
+                            statusLine.Text = total > 0
+                                ? ("已下载 " + (done / 1048576) + " / " + (total / 1048576) + " MB（" + (done * 100 / total) + "%）")
+                                : ("已下载 " + (done / 1048576) + " MB");
+                        });
+                        return true;
+                    },
+                    out err);
+                Ui.Post(delegate
+                {
+                    busy = false;
+                    dlBtn.IsEnabled = true;
+                    if (got != null)
+                    {
+                        FfmpegInstalled = got;
+                        dlBtn.Content = "已装好";
+                        dlBtn.IsEnabled = false;
+                        statusLine.Text = "ffmpeg 已装到：" + got + "\n（关掉这个窗就能用了）";
+                        Log.Write("ffmpeg 已自动下载安装到：" + got);
+                    }
+                    else
+                    {
+                        dlBtn.Content = "重试下载";
+                        // 下不动的时候别留死局：把手工方案写清楚
+                        statusLine.Text = "没下成（" + err + "）\n" +
+                                          "也可以自己去 www.gyan.dev/ffmpeg/builds 下 ffmpeg-release-essentials.zip，" +
+                                          "解压出里面的 bin\\ffmpeg.exe，放到 RepRecorder.exe 旁边。";
+                        Log.Write("ffmpeg 自动下载失败：" + err);
+                    }
+                });
+            });
+            t.IsBackground = true;
+            t.Start();
+        }
+    }
+
     // ================================================================ 询问框（视频放哪）
     //  Choice 0 = 第一个（留在 / 和 rep 放在一起）  1 = 另存到文件夹…  2 = 第三个（以后不再询问 / 取消）
     class AskDialog : Window
@@ -113,7 +298,14 @@ namespace RepRecorder
         {
             public System.Reflection.PropertyInfo Pi;
             public Func<string> Read;      // 统一给字符串，确定时按属性类型转换
-            public TextBox Box;            // 路径类才有（「浏览」和「自动检测」要改它）
+            public TextBox Box;            // 路径类才有（「浏览」按钮要改它）
+            // 「重新自动检测」要把检测到的值写回输入框。Box 只认 TextBox，而密码那个是
+            // PasswordBox（它没有 .Text）—— 所以另给一个写入口，各种控件各自实现。
+            // ⚠ 2026-10-08：以前只有 PathRow 填了 Box，NumberRow（端口）和 PasswordRow（密码）
+            //   都没有 —— 于是点「重新自动检测」时日志说"已重新自动检测…端口 / 密码"，
+            //   输入框里却还是旧值；再点「确定」就把旧值当成用户输入写回去，
+            //   **刚检测到的端口和密码被静默丢掉**，OBS 照样连不上。
+            public Action<string> SetBox;
         }
         readonly List<Field> fields = new List<Field>();
 
@@ -203,6 +395,7 @@ namespace RepRecorder
             Field f = new Field();
             f.Pi = Prop(name);
             f.Read = delegate { return tb.Text; };
+            f.SetBox = delegate(string v) { tb.Text = v; };
             Add(f);
             Grid g = MakeRow(label, 5);
             Grid.SetColumn(tb, 1);
@@ -225,6 +418,7 @@ namespace RepRecorder
             Field f = new Field();
             f.Pi = Prop(name);
             f.Read = delegate { return pb.Password; };
+            f.SetBox = delegate(string v) { pb.Password = v; };   // PasswordBox 没有 .Text
             Add(f);
             Grid g = MakeRow(label, 5);
             Grid.SetColumn(pb, 1);
@@ -249,6 +443,7 @@ namespace RepRecorder
             f.Pi = Prop(name);
             f.Box = tb;
             f.Read = delegate { return tb.Text; };
+            f.SetBox = delegate(string v) { tb.Text = v; };
             Add(f);
 
             Grid g = MakeRow(label, 5);
@@ -327,7 +522,7 @@ namespace RepRecorder
             {
                 cfg.FillDefaults();
                 foreach (Field f in fields)
-                    if (f.Box != null) f.Box.Text = Convert.ToString(f.Pi.GetValue(cfg, null));
+                    if (f.SetBox != null) f.SetBox(Convert.ToString(f.Pi.GetValue(cfg, null)));
                 RepRecorder.Log.Write("设置窗：已重新自动检测游戏目录 / OBS / 端口 / 密码");
             };
             head.Children.Add(auto);
@@ -473,7 +668,7 @@ namespace RepRecorder
             txtPath.Foreground = Ui.Br(MainForm.HudText);
             txtPath.BorderBrush = Ui.Br(MainForm.HudLine);
             txtPath.Text = cfg.BgImage == null ? "" : cfg.BgImage;
-            txtPath.TextChanged += delegate { cfg.BgImage = txtPath.Text; owner.ApplyBackground(); };
+            txtPath.TextChanged += delegate { cfg.BgImage = txtPath.Text; owner.ApplyBackground(); RefreshPanRows(); };
             Ui.Id(txtPath, "bgImage");
             r0.Children.Add(lp); r0.Children.Add(txtPath);
             Button bBrowse = Ui.FlatButton("浏览…", "bgBrowse");
@@ -489,6 +684,7 @@ namespace RepRecorder
                         txtPath.Text = d.FileName;
                         cfg.BgImage = d.FileName;
                         owner.ApplyBackground();
+                        RefreshPanRows();
                     }
                 }
                 catch (Exception ex) { RepRecorder.Log.Write("选图片失败：" + ex.Message); }
@@ -501,6 +697,7 @@ namespace RepRecorder
                 txtPath.Text = "";
                 cfg.BgImage = "";
                 owner.ApplyBackground();
+                RefreshPanRows();
             };
             r0.Children.Add(bClear);
             col.Children.Add(r0);
@@ -555,7 +752,7 @@ namespace RepRecorder
             col.Children.Add(SliderRow("模糊", "bgBlur", 0, 60, cfg.BgBlur, "", delegate(double v) { cfg.BgBlur = (int)v; }));
 
             ComboBox cbScope = Ui.HudCombo("bgScope", 250, new string[] { "只铺右侧内容区", "全局铺满整个窗口（控制面板也透图）" }, cfg.BgScope == "global" ? 1 : 0);
-            cbScope.SelectionChanged += delegate { cfg.BgScope = cbScope.SelectedIndex == 1 ? "global" : "content"; owner.ApplyBackground(); };
+            cbScope.SelectionChanged += delegate { cfg.BgScope = cbScope.SelectedIndex == 1 ? "global" : "content"; owner.ApplyBackground(); RefreshPanRows(); };
             col.Children.Add(ComboRow("背景范围：", cbScope));
 
             // ---- 翻转（镜像）放最下面（用户 2026-10-07 要求）。
@@ -648,6 +845,10 @@ namespace RepRecorder
         //   lim < 0 → 不限（只剩「平铺」了），滑块给 ±100
         //   lim = 0 → 没东西可挪（拉伸、或缩小到比例刚好吻合）→ **锁住滑块**（见下）
         //   lim > 0 → 滑块夹到 ±lim，滑到头正好贴边
+        // 图层尺寸一变，「水平/垂直移动」的量程就跟着变（能拖多远取决于图比框大多少）。
+        // ⚠ 凡是会改图层尺寸的操作都要调它 —— 2026-10-08 补上了漏掉的四个：
+        //   换图片（输入框 / 浏览 / 清除）和换「背景范围」。不调的话滑块量程还是旧的，
+        //   要么拖了没反应，要么拖不到新露出来的那部分画面，只能关掉重开或缩放窗口。
         void RefreshPanRows()
         {
             syncingPan = true;

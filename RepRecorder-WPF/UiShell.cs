@@ -269,6 +269,7 @@ namespace RepRecorder
             {
                 if (cmd == "" || cmd == "status") return Status();
                 if (cmd == "bgstate") return Ui.OnUi<string>(delegate { ShellWindow sw = win as ShellWindow; return sw == null ? "{}" : sw.BgState(); });
+                if (cmd == "env") return Ui.OnUi<string>(delegate { return EnvJson(); });
                 if (cmd == "rows") return RowsJson();
                 if (cmd == "clear") { Ui.OnUi<int>(delegate { ShellWindow sw = win as ShellWindow; if (sw != null) sw.Rows.Clear(); return 0; }); return "{\"ok\":true}"; }
                 if (cmd.StartsWith("addrows:")) return AddRows(cmd.Substring(8));
@@ -318,6 +319,32 @@ namespace RepRecorder
                      + "\"micEff\":" + Json(c == null ? "" : c.EffectiveMicMode) + ","
                      + "\"win\":" + Json((int)sw.ActualWidth + "x" + (int)sw.ActualHeight) + "}";
             });
+        }
+
+        // 「这台机器缺什么」—— 环境自检的机器可读版。
+        // 2026-10-08：以前只有 OnCheck 把五项写进日志，验收脚本一个字都读不到，
+        // 所以"新用户缺 ffmpeg 时到底会怎样"这件事没法自动测。这条命令就是给它开的门。
+        static string EnvJson()
+        {
+            try
+            {
+                EnvReport r = EnvReport.Build(Settings.Load());
+                StringBuilder sb = new StringBuilder();
+                sb.Append("{\"allOk\":").Append(r.AllOk ? "true" : "false").Append(",\"items\":[");
+                for (int i = 0; i < r.Items.Count; i++)
+                {
+                    EnvItem it = r.Items[i];
+                    if (i > 0) sb.Append(",");
+                    sb.Append("{\"key\":").Append(Json(it.Key))
+                      .Append(",\"ok\":").Append(it.Ok ? "true" : "false")
+                      .Append(",\"value\":").Append(Json(it.Value))
+                      .Append(",\"fix\":").Append(Json(it.Fix))
+                      .Append("}");
+                }
+                sb.Append("]}");
+                return sb.ToString();
+            }
+            catch (Exception ex) { return "{\"error\":" + Json(ex.Message) + "}"; }
         }
 
         static string RowsJson()
