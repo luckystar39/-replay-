@@ -8,6 +8,21 @@ $fail = 0
 if (-not (Test-Path $exe)) { Write-Host 'FAIL: RepRecorderWPF.exe not found (build first)'; exit 1 }
 Write-Host ('OK  exe exists: {0} bytes' -f (Get-Item $exe).Length)
 
+# 1.0 (2026-10-10): the version has to agree in three places -- the exe's own metadata (what
+# Explorer shows), the first line of the log, and the window title.  The source constant is
+# read here rather than hardcoding, so bumping the version does not mean editing this script.
+$appver = ([regex]::Match((Get-Content (Join-Path $dir 'Core.cs') -Raw -Encoding UTF8),
+            'const string Version = "([^"]+)"').Groups[1].Value)
+if ($appver -eq '') { Write-Host 'FAIL: could not read AppInfo.Version out of Core.cs'; $fail = 1 }
+else {
+  Write-Host ('OK  source version = ' + $appver)
+  $fv = (Get-Item $exe).VersionInfo.FileVersion
+  if ($fv -like ($appver + '*')) { Write-Host ('OK  exe metadata version = ' + $fv) }
+  else { Write-Host ('FAIL: exe FileVersion is ' + $fv + ', expected it to start with ' + $appver); $fail = 1 }
+  if ((Get-Item $exe).VersionInfo.FileDescription -ne '') { Write-Host 'OK  exe has a description' }
+  else { Write-Host 'FAIL: exe has no FileDescription (Explorer would show a blank)'; $fail = 1 }
+}
+
 Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
 Start-Sleep -Milliseconds 500
 if (Test-Path $log) { Remove-Item $log -Force }
@@ -29,6 +44,13 @@ if (Test-Path $log) { $txt = Get-Content $log -Raw -Encoding UTF8 }
 foreach ($needle in @('Rep', 'OBS', 'BGM')) {
   if ($txt -match $needle) { Write-Host ("OK  log contains '{0}'" -f $needle) }
   else { Write-Host ("FAIL: log missing '{0}'" -f $needle); $fail = 1 }
+}
+# The startup line carries the version -- that is the whole point of putting it there: when
+# someone sends you a log, the first line says which build they are running.
+if ($appver -ne '' -and $txt -match ('v' + [regex]::Escape($appver))) {
+  Write-Host 'OK  the log states the version'
+} else {
+  Write-Host ('FAIL: log does not state version ' + $appver); $fail = 1
 }
 
 try { Stop-Process -Id $p.Id -Force } catch { }

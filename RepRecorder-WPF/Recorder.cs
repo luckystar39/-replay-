@@ -221,16 +221,39 @@ namespace RepRecorder
         // 走定时器而不用回调，是因为那个定时器本来就在 UI 线程上 —— 回填设置在 UI 线程做，
         // 就完全不用跨线程碰控件。特意这么设计：Ui.OnUi 在 Application 还没建好时会直接在
         // 调用线程上跑（Ui.cs: `app == null → return f()`），扫描快的话正好能撞上。
-        public void UiAdoptSearches()
+        // 界面上那个 2 秒定时器要做的所有事。以前叫 UiAdoptSearches —— 现在它还管
+        // 更新提示，名字得跟上。
+        public void UiTick()
         {
+            // 后台那个检查更新线程记的时间戳，在这里落盘（设置只许在 UI 线程写）
+            if (UpdateCheck.TakeDirty()) { try { cfg.Save(); } catch { } }
+
             bool got = Settings.AdoptScannedGameDir(cfg);
             if (Settings.AdoptScannedFfmpeg(cfg)) got = true;
-            if (got) RefreshEnvLabel();
+            if (got)
+            {
+                RefreshEnvLabel();
+                // 环境卡可能正开着（用户点「检查环境」会强制重新查找，卡是那一刻画的）——
+                // 卡里那些行得跟着重画，否则又变成"卡上说未找到、设置里已经填好"。
+                try { Ui.RefreshEnvDialogIfOpen(EnvReport.Build(cfg)); } catch { }
+            }
             // 等两个自动查找都落定的那个首次自检窗（见 UiOnShown 里那段）。
             // 75 秒兜底：万一扫描线程出什么意外、Running 一直挂着，也不能让这个窗永远不弹
             // —— 那等于把"新用户当场知道缺什么"整个弄没了。
             if (firstRunPending && (!Settings.AnyScanRunning || Environment.TickCount - firstRunSince > 75000))
                 ShowFirstRunEnvDialog();
+            ShowUpdateIfAny();
+        }
+
+        // 更新提示（2026-10-10）。和首检卡一样的规矩：**先把待办清掉再弹** —— 这个窗是
+        // 模态的，模态期间定时器照样在跑，不清就会重入、弹出第二个第三个。
+        void ShowUpdateIfAny()
+        {
+            if (firstRunPending) return;     // 先让首检卡把话说完，别两个窗一起糊到脸上
+            UpdateInfo up = UpdateCheck.TakePending();
+            if (up == null) return;
+            try { Ui.ShowUpdateDialog(up); }
+            catch (Exception ex) { Log.Write("更新提示弹窗失败（不影响使用）：" + ex.Message); }
         }
 
         // 旧版是挂在 list.ItemSelectionChanged 上的那句「列表里选中几个 rep，「同时录制数量」就跟着变（用户要求）」。
@@ -319,7 +342,21 @@ namespace RepRecorder
                 Ui.Status("就绪");
                 RestoreSoundIfLeftMuted();
                 Log.RotateOnStart();
-                Log.Write("==== Rep → MP4 录制器启动 ====");
+                // 查更新。⚠ 必须在日志轮转【之后】起 —— 它那几行日志才留得住。
+                // 后台线程、失败静默；6 小时内查过就直接跳过。
+                UpdateCheck.StartBackgroundCheck(cfg);
+                // 上一次更新留下的旧 exe，顺手清掉。删不掉（还被占着）就算了，下次再说。
+                try
+                {
+                    string self = UpdateCheck.RunningExePath;
+                    if (!string.IsNullOrEmpty(self))
+                    {
+                        string oldSelf = self + ".old";
+                        if (File.Exists(oldSelf)) File.Delete(oldSelf);
+                    }
+                }
+                catch { }
+                Log.Write("==== Rep → MP4 录制器 v" + AppInfo.Version + " 启动 ====");
                 Log.Write("界面：WPF 版（旧界面仍可用：加 --old 启动）");   // 日志轮转之后写，这一行才留得住
                 Log.Write("游戏目录：" + (string.IsNullOrEmpty(cfg.GameDir) ? "<未找到>" : cfg.GameDir));
                 Log.Write("OBS     ：" + (string.IsNullOrEmpty(cfg.ObsExe) ? "<未找到>" : cfg.ObsExe));

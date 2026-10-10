@@ -20,6 +20,18 @@ using System.Windows.Forms;
 
 namespace RepRecorder
 {
+    // ============================================================ 版本
+    // 2026-10-10：这个软件分发出去之后，用户报 bug 说不清自己用的是哪一版，也确认不了
+    // 他手上是哪份 —— 所以从这一版开始叫 1.0。
+    // ⚠ 别再手改版本号：双击 RepRecorder-WPF\发版.bat，它会把这里和 AssemblyInfo.cs
+    //   两处一起改，然后编译、核对、打两个包、生成 version.json。
+    //   （手改的话这两处都得改；另有两份「说明」里也印着版本号供人工核对。）
+    //   ⚠ 编译.bat 里【没有】/version: 开关 —— 那两句版本号属性全在 AssemblyInfo.cs 里。
+    public static class AppInfo
+    {
+        public const string Version = "1.0";
+    }
+
     // ============================================================ 设置
     public class Settings
     {
@@ -30,6 +42,10 @@ namespace RepRecorder
         [Category("路径"), Description("ffmpeg.exe 的完整路径。留空自动搜索。\r\n" +
             "只有并行录制（同时录 2 个以上）和切分才用它，单个录制不需要。")]
         public string FfmpegExe { get; set; }
+        [Category("更新"), Description("上次检查更新的时间（ISO-8601 UTC，内部用）。")]
+        public string LastUpdateCheckUtc { get; set; }
+        [Category("更新"), Description("用户点过「以后再说」的版本号 —— 不再为它弹提示（内部用）。")]
+        public string SkippedUpdateVersion { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 端口，默认 4455。")]
         public int Port { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 密码。留空则自动从 OBS 配置文件读取。")]
@@ -561,19 +577,28 @@ namespace RepRecorder
                 if (up != null) roots.Add(up.FullName);
             }
             catch { }
+            // ⚠ 不能"取第一个命中"（2026-10-10 改）：Directory.GetDirectories 给的是文件
+            //   系统自己的顺序，不是"哪个更像真的"。程序旁边有两份游戏时（一份旧备份、
+            //   一份在用的），挂上哪份纯看运气 —— 录出来是怪结果，还查不出原因。
+            //   改成把所有命中收集起来、用和走盘同一套排序挑（PickBestGameDir）。
+            List<string> hits = new List<string>();
             foreach (string root in roots)
             {
-                if (File.Exists(Path.Combine(Path.Combine(root, "th123"), "th123.exe")))
-                    return Path.Combine(root, "th123");
+                try { if (IsGameDirAt(root)) hits.Add(Path.Combine(root, "th123")); } catch { }
                 try
                 {
                     foreach (string sub in Directory.GetDirectories(root))
-                        if (File.Exists(Path.Combine(Path.Combine(sub, "th123"), "th123.exe")))
-                            return Path.Combine(sub, "th123");
+                        if (IsGameDirAt(sub)) hits.Add(Path.Combine(sub, "th123"));
                 }
                 catch { }
             }
-            return null;
+            return PickBestGameDir(hits);
+        }
+
+        static bool IsGameDirAt(string parent)
+        {
+            try { return File.Exists(Path.Combine(Path.Combine(parent, "th123"), "th123.exe")); }
+            catch { return false; }
         }
 
         // 整合包自己的 SokuLauncher.json 写着 SokuDirPath / SokuFileName —— 这是最权威的
@@ -1050,45 +1075,62 @@ namespace RepRecorder
             }
         }
 
-        public static string FindObsExe()
+        // 注册表卸载项里的候选（OBS 可能装在非默认目录，比如 D:\OBS\obs-studio）。
+        // ⚠ HKLM 和 HKCU 都要看（2026-10-10 补 HKCU）：默认写 HKLM，但按用户安装 / 被改过
+        // 的机器只会在 HKCU 里留一条 —— 以前那种一律读不到。
+        // 单独抽成一个方法是为了能被验收脚本直接读到：机器上已经装了真 OBS 时，
+        // "最后选中了谁"验证不了 HKCU 这半边（真 OBS 总会赢），得能单独看候选清单。
+        public static List<string> ObsRegistryCandidates()
         {
             List<string> cands = new List<string>();
-
-            // 1) 注册表卸载项（OBS 可能装在非默认目录，比如 D:\OBS\obs-studio）
             try
             {
+                Microsoft.Win32.RegistryKey[] roots = new Microsoft.Win32.RegistryKey[] {
+                    Microsoft.Win32.Registry.LocalMachine,
+                    Microsoft.Win32.Registry.CurrentUser
+                };
                 string[] subKeys = new string[] {
                     @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                     @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
                 };
-                foreach (string sk in subKeys)
-                {
-                    using (Microsoft.Win32.RegistryKey rk = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(sk))
+                foreach (Microsoft.Win32.RegistryKey root in roots)
+                    foreach (string sk in subKeys)
                     {
-                        if (rk == null) continue;
-                        foreach (string name in rk.GetSubKeyNames())
+                        using (Microsoft.Win32.RegistryKey rk = root.OpenSubKey(sk))
                         {
-                            using (Microsoft.Win32.RegistryKey app = rk.OpenSubKey(name))
+                            if (rk == null) continue;
+                            foreach (string name in rk.GetSubKeyNames())
                             {
-                                if (app == null) continue;
-                                string disp = Convert.ToString(app.GetValue("DisplayName"));
-                                if (disp == null || disp.IndexOf("OBS", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                                string icon = Convert.ToString(app.GetValue("DisplayIcon"));
-                                if (!string.IsNullOrEmpty(icon))
+                                using (Microsoft.Win32.RegistryKey app = rk.OpenSubKey(name))
                                 {
-                                    int comma = icon.IndexOf(',');
-                                    if (comma > 0) icon = icon.Substring(0, comma);
-                                    cands.Add(icon.Trim().Trim('"'));
+                                    if (app == null) continue;
+                                    string disp = Convert.ToString(app.GetValue("DisplayName"));
+                                    if (disp == null || disp.IndexOf("OBS", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                                    string icon = Convert.ToString(app.GetValue("DisplayIcon"));
+                                    if (!string.IsNullOrEmpty(icon))
+                                    {
+                                        int comma = icon.IndexOf(',');
+                                        if (comma > 0) icon = icon.Substring(0, comma);
+                                        cands.Add(icon.Trim().Trim('"'));
+                                    }
+                                    string loc = Convert.ToString(app.GetValue("InstallLocation"));
+                                    if (!string.IsNullOrEmpty(loc))
+                                        cands.Add(Path.Combine(loc.Trim().Trim('"'), @"bin\64bit\obs64.exe"));
                                 }
-                                string loc = Convert.ToString(app.GetValue("InstallLocation"));
-                                if (!string.IsNullOrEmpty(loc))
-                                    cands.Add(Path.Combine(loc.Trim().Trim('"'), @"bin\64bit\obs64.exe"));
                             }
                         }
                     }
-                }
             }
             catch { }
+            return cands;
+        }
+
+        public static string FindObsExe()
+        {
+            List<string> cands = new List<string>();
+
+            // 1) 注册表卸载项（见 ObsRegistryCandidates）
+            cands.AddRange(ObsRegistryCandidates());
 
             // 2) 常见安装位置
             cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"obs-studio\bin\64bit\obs64.exe"));
@@ -2662,7 +2704,7 @@ namespace RepRecorder
                 SetStatusText("就绪");
                 RestoreSoundIfLeftMuted();   // 上次若是"静音录制"中被强杀，这里把声音恢复回来
                 Log.RotateOnStart();   // 先保住上一次的日志（出错时才有记录可查）
-                Log.Write("==== Rep → MP4 录制器启动 ====");
+                Log.Write("==== Rep → MP4 录制器 v" + AppInfo.Version + " 启动 ====");
                 Log.Write("游戏目录：" + (string.IsNullOrEmpty(cfg.GameDir) ? "<未找到>" : cfg.GameDir));
                 Log.Write("OBS     ：" + (string.IsNullOrEmpty(cfg.ObsExe) ? "<未找到>" : cfg.ObsExe));
                 SyncBgmFromIni();

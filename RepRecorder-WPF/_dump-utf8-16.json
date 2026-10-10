@@ -7,7 +7,7 @@
     {
         "what":  "a background disk walk really ran",
         "ok":  true,
-        "detail":  "scanMs=1907"
+        "detail":  "scanMs=1921"
     },
     {
         "what":  "the dialog never claims the game is missing",
@@ -28,6 +28,16 @@
         "what":  "the first-run check was remembered",
         "ok":  true,
         "detail":  "EnvChecked=True"
+    },
+    {
+        "what":  "the card starts by reporting the game as missing",
+        "ok":  true,
+        "detail":  "first=✗"
+    },
+    {
+        "what":  "and it picks up the fresh search on its own",
+        "ok":  true,
+        "detail":  "flipped=True"
     },
     {
         "what":  "no exception in log",

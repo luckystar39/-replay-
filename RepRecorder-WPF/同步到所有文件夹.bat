@@ -69,13 +69,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%SRC%打包-发给别人.ps1"
 
 echo.
 echo 同步完成。
-pause
+if not "%1"=="/nopause" pause
 exit /b 0
 
 :abort
 echo.
 echo 已中止：备份没建成功，一个文件都没覆盖。
-pause
+if not "%1"=="/nopause" pause
 exit /b 1
 
 :backup

@@ -148,7 +148,8 @@ namespace RepRecorder
         {
             cfg = settings;
             rec = recorder;
-            Title = "Rep → MP4 录制器（OBS）";
+            // 标题里带版本号：任务栏悬停、Alt+Tab 都能看到，界面里那行也带（见下面 229 行附近）
+            Title = "Rep → MP4 录制器（OBS） v" + AppInfo.Version;
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
             Width = 1180; Height = 648;                 // DIP：和旧版的逻辑像素一样大
@@ -226,7 +227,7 @@ namespace RepRecorder
             StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(22, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             // 横向 StackPanel 会把子元素拉满整行高度，而 TextBlock 默认贴着自己盒子的顶部画字，
             // 所以标题看着"顶在上面"。单独把它垂直居中。
-            TextBlock title = Ui.Txt("REP → MP4  录制器   (OBS)", 13, MainForm.HudText, true);
+            TextBlock title = Ui.Txt("REP → MP4  录制器   (OBS)   v" + AppInfo.Version, 13, MainForm.HudText, true);
             title.VerticalAlignment = VerticalAlignment.Center;
             left.Children.Add(title);
             btnPanel = Ui.FlatButton("◀  收起面板", "btnPanel");
@@ -1875,7 +1876,7 @@ namespace RepRecorder
 
             soundTimer = new System.Windows.Threading.DispatcherTimer();
             soundTimer.Interval = TimeSpan.FromMilliseconds(2000);
-            soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } try { rec.UiAdoptSearches(); } catch { } };
+            soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } try { rec.UiTick(); } catch { } };
             soundTimer.Start();
 
             // 旧版这段挂在 MainForm 的 Shown 事件上。移植时改成了"构造完直接调" —— 那时候

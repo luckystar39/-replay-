@@ -148,6 +148,22 @@ $logTxt = if (Test-Path (Join-Path $app 'RepRecorder.log')) { Get-Content (Join-
 Check 'no exception in log' ($logTxt -notmatch 'Exception') ''
 StopApp
 
+# ============ 6) two games near the recorder: the one the pack declares must win ======
+# This layer used to return the FIRST hit, and Directory.GetDirectories yields NTFS's own
+# (case-insensitively alphabetical) order -- so with a stale copy sitting in an earlier-named
+# folder, the app would silently pick the stale one and record strange things.  The winning
+# fixture is deliberately named so it sorts LAST.
+foreach ($n in @('aaa', 'bbb', 'ccc')) { MkGame (Join-Path $app ($n + '\th123')) }
+MkGame (Join-Path $app 'zzz\th123')
+'{"SokuDirPath":"th123","SokuFileName":"th123.exe"}' |
+  Set-Content -LiteralPath (Join-Path $app 'zzz\SokuLauncher.json') -Encoding ASCII
+$settings = [pscustomobject]@{ GameDir = ''; ObsExe = ''; EnvChecked = $true }
+$settings | ConvertTo-Json -Compress | Set-Content -LiteralPath $cfg -Encoding UTF8
+$p = StartApp
+$o = Dbg 'findgame' | ConvertFrom-Json
+Check 'the pack the launcher names beats earlier-named stale copies' ($o.dir -eq (Join-Path $app 'zzz\th123')) ('dir=' + $o.dir)
+StopApp
+
 # ---------------------------------------------------------------- teardown
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 [System.IO.File]::WriteAllText((Join-Path $PSScriptRoot '_dump-utf8-15.json'), ($report | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))

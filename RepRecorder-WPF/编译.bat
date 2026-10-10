@@ -13,26 +13,27 @@ set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 if not exist "%CSC%" set CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe
 if not exist "%CSC%" (
   echo cannot find csc.exe
-  pause
+  if not "%1"=="/nopause" pause
   exit /b 1
 )
 set REF=C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2
 if not exist "%REF%\PresentationFramework.dll" set REF=C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.1
 if not exist "%REF%\PresentationFramework.dll" (
   echo cannot find WPF reference assemblies under Reference Assemblies\.NETFramework
-  pause
+  if not "%1"=="/nopause" pause
   exit /b 1
 )
 tasklist /fi "imagename eq RepRecorderWPF.exe" | find /i "RepRecorderWPF.exe" >nul && (
   echo RepRecorderWPF.exe is running -- close it first.
-  pause
+  if not "%1"=="/nopause" pause
   exit /b 1
 )
 "%CSC%" /nologo /target:winexe /codepage:65001 /out:RepRecorderWPF.exe ^
   /r:"%REF%\PresentationFramework.dll" /r:"%REF%\PresentationCore.dll" ^
   /r:"%REF%\WindowsBase.dll" /r:"%REF%\System.Xaml.dll" ^
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Core.dll ^
-  Ui.cs UiShell.cs UiWindow.cs UiDialogs.cs Core.cs Recorder.cs
+  /r:"%REF%\System.IO.Compression.FileSystem.dll" ^
+  Ui.cs UiShell.cs UiWindow.cs UiDialogs.cs Core.cs Recorder.cs Update.cs AssemblyInfo.cs
 if errorlevel 1 (
   echo.
   echo BUILD FAILED -- see the errors above.
@@ -40,4 +41,4 @@ if errorlevel 1 (
   echo.
   echo BUILD OK: RepRecorderWPF.exe
 )
-pause
+if not "%1"=="/nopause" pause

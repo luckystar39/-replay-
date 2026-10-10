@@ -9,7 +9,8 @@ D:\【完整包】非想天则整合包2026-06-15\
 ├─ Rep录制器.lnk               ← 快捷方式 → RepRecorder-WPF\RepRecorderWPF.exe
 ├─ RepRecorder-发给别人.zip     ← 打好的分发包
 ├─ _历史存档\                  ← 历史对话、前身脚本、过期文档、回滚点（见下）
-└─ _exe备份\                   ← 同步脚本自动建的 exe 备份
+├─ _exe备份\                   ← 同步脚本自动建的 exe 备份
+└─ _发版\                      ← 发版.bat 生成的更新包 / version.json / 照着做清单（可随时删）
 ```
 
 ## 我要改程序，从哪下手

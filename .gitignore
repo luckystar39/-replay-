@@ -44,7 +44,7 @@ RepRecorder-给别人/*.log
 # （每个 验证WPF-*.ps1 都会写 _runNN.log；_testreps 是它临时造的假 rep）
 RepRecorder-WPF/_run*.log
 RepRecorder-WPF/_testreps/
-RepRecorder-WPF/_dump-utf8.json
+RepRecorder-WPF/_dump-utf8*.json
 RepRecorder-WPF/_settings-backup*.json
 RepRecorder-WPF/_synctest.bat
 RepRecorder-WPF/_syncout.txt
@@ -64,6 +64,11 @@ Rep录制器.lnk
 #   · 前身脚本\    RepRecorder 之前的两版脚本
 #   · 过期文档\    被取代的方案文档
 _历史存档/
+
+# ---------- 发版产物：发版.bat 生成的东西（更新包 zip、version.json、照着做清单）----------
+# 里面的 zip 本来就被上面的 *.zip 挡掉了，这里把整个目录一并忽略。
+# 可以随时删：下一次双击 发版.bat 会重新生成。
+_发版/
 
 # ---------- 编辑器 / 工具 ----------
 .claude/

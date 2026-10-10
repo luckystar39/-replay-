@@ -49,6 +49,15 @@ $expectParallel = 6
 try { $expectParallel = (Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).ParallelCount } catch { }
 Write-Host ('settings ParallelCount before test = ' + $expectParallel)
 
+# 2026-10-10: several checks below measure the background layer's viewport, which only
+# exists when a background image is configured -- and this test used to just assume the user
+# had one (the same trap 验证WPF-07 hit on 2026-10-05, fixed there but not here).  It broke
+# for real: the user's BgImage got wiped, so the test went red for a reason that had nothing
+# to do with the panel.  Point it at the repo's own bg-test.png; $bak is restored at the end.
+$j1 = Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json
+$j1.BgImage = (Join-Path $dir 'bg-test.png')
+$j1 | ConvertTo-Json -Compress -Depth 6 | Set-Content -LiteralPath $cfg -Encoding UTF8
+
 $p = Start-Process -FilePath $exe -ArgumentList @('--wpf', "--debug-port=$port") -PassThru
 Start-Sleep -Seconds 5
 $p.Refresh()

@@ -103,6 +103,31 @@ StopApp
 $logTxt = if (Test-Path (Join-Path $dir 'RepRecorder.log')) { Get-Content (Join-Path $dir 'RepRecorder.log') -Raw -Encoding UTF8 } else { '' }
 Check 'no exception in log' ($logTxt -notmatch 'Exception') ''
 
+# ============ 5) the OBS registry lookup must also read HKCU (2026-10-10) ==============
+# FindObsExe used to read only HKLM, so an OBS installed for one user only was invisible.
+# On a machine that already has a real OBS the "who won?" answer can never prove the HKCU
+# half works -- the real one always wins -- so drop a throw-away uninstall entry under HKCU
+# and require it to turn up in the candidate list that this one step produces.
+$fakeObsRoot = Join-Path $env:TEMP 'repobs-verify'
+$fakeObs = Join-Path $fakeObsRoot 'bin\64bit\obs64.exe'
+$rkey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\RepRecorderVerifyObs'
+New-Item -ItemType Directory -Force -Path (Split-Path $fakeObs) | Out-Null
+Set-Content -LiteralPath $fakeObs -Value 'x' -Encoding ASCII
+try {
+  New-Item -Path $rkey -Force | Out-Null
+  Set-ItemProperty -Path $rkey -Name DisplayName -Value 'OBS Studio (verify)'
+  Set-ItemProperty -Path $rkey -Name DisplayIcon -Value $fakeObs
+  Patch 'EnvChecked' $true
+  $p = StartApp
+  $r = Dbg 'obsreg' | ConvertFrom-Json
+  Check 'the OBS registry step reads HKCU too' ($r.cands -contains $fakeObs) ('cands=' + ($r.cands -join ' | '))
+  StopApp
+} finally {
+  # always leave the user's registry alone, even if an assertion blew up
+  Remove-Item -Path $rkey -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $fakeObsRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 Remove-Item -LiteralPath (Join-Path $dir '_env-probe.rep') -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $fake -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item $bak $cfg -Force

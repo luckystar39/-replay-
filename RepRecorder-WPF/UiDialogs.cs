@@ -25,14 +25,22 @@ namespace RepRecorder
     // 缺 ffmpeg 才由程序代下（用户点一下才下，100 MB 不静默拉）。
     class EnvBox : Window
     {
-        readonly EnvReport rep;
+        EnvReport rep;
 
+        // 当前开着的那张卡（同一时刻只会有一张）。
+        // 这张卡本来是按"弹出那一刻的事实"一次性画好的；而自动找游戏 / 找 ffmpeg 是**后台**
+        // 跑的，落定的时候卡可能还开着（典型：用户点「检查环境」，那会强制重新查找）。
+        // 那时卡上还写着「未找到」，用户进设置却看到路径已经填好了 —— 2026-10-09 用户报的
+        // 就是这个矛盾。所以留一个出口，让搜索结果落定时把卡重画一遍。
+        internal static EnvBox Current;
+
+        TextBlock introText;
+        StackPanel itemsHost;
+        StackPanel actionRow;
         TextBlock statusLine;
-        Button closeBtn;
 
         public EnvBox(EnvReport report)
         {
-            rep = report;
             Title = "环境检查";
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
@@ -47,19 +55,17 @@ namespace RepRecorder
             Ui.MakeDraggable(this);
 
             StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
-            bool allOk = rep.AllOk;
+
             // ⚠ 这一行必须 Wrap：StackPanel 的宽度取所有子元素里最宽的那个，
             //   一句不换行的长提示会把整块内容撑得比窗口还宽，ScrollViewer 就把右边裁掉
             //   （2026-10-08 截图看出来的 —— 连 OBS 路径都被切了一半）。
-            TextBlock intro = Ui.Txt(allOk
-                ? "环境没问题，可以直接用了。"
-                : "下面几项还差点东西 —— 补完就能开录（单个录制只要「游戏目录」和 OBS 就行）。",
-                12.5, MainForm.HudText, false);
-            intro.TextWrapping = TextWrapping.Wrap;
-            intro.MaxWidth = 570;
-            col.Children.Add(intro);
+            introText = Ui.Txt("", 12.5, MainForm.HudText, false);
+            introText.TextWrapping = TextWrapping.Wrap;
+            introText.MaxWidth = 570;
+            col.Children.Add(introText);
 
-            foreach (EnvItem it in rep.Items) col.Children.Add(ItemRow(it));
+            itemsHost = new StackPanel();
+            col.Children.Add(itemsHost);
 
             statusLine = Ui.Txt("", 11.5, MainForm.HudDim, false);
             statusLine.TextWrapping = TextWrapping.Wrap;
@@ -67,7 +73,32 @@ namespace RepRecorder
             Ui.Id(statusLine, "envStatus");
             col.Children.Add(statusLine);
 
-            StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            actionRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            col.Children.Add(actionRow);
+
+            Content = new ScrollViewer { Content = col, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+
+            Render(report);
+            Current = this;
+            Closed += delegate { if (Current == this) Current = null; };
+        }
+
+        // 按一份报告把整张卡重画一遍。构造时调一次；之后"后台查找落定了"可以再调。
+        // 行和按钮都要重画 —— 按钮是按状态出现的（缺 OBS 才有「复制安装命令」，
+        // 缺游戏/ffmpeg 才有「去设置里指一下」），只换行不换按钮就会对不上。
+        internal void Render(EnvReport r)
+        {
+            rep = r;
+            if (rep == null) return;
+
+            introText.Text = rep.AllOk
+                ? "环境没问题，可以直接用了。"
+                : "下面几项还差点东西 —— 补完就能开录（单个录制只要「游戏目录」和 OBS 就行）。";
+
+            itemsHost.Children.Clear();
+            foreach (EnvItem it in rep.Items) itemsHost.Children.Add(ItemRow(it));
+
+            actionRow.Children.Clear();
 
             EnvItem obs = rep.Get("obs");
             if (obs != null && !obs.Ok)
@@ -83,29 +114,28 @@ namespace RepRecorder
                     }
                     catch { statusLine.Text = "复制失败，请手动敲：winget install --id OBSProject.OBSStudio -e"; }
                 };
-                row.Children.Add(copy);
+                actionRow.Children.Add(copy);
             }
 
             // 游戏 或 ffmpeg 缺了 —— 两个都得去设置里指。只做一个按钮：
             // 上面每一行自己写着该怎么修，两个一模一样的按钮只是碍事。
             EnvItem game = rep.Get("game");
             EnvItem ffmRow = rep.Get("ffmpeg");
-            bool needSettings = (game != null && !game.Ok) || (ffmRow != null && !ffmRow.Ok);
-            if (needSettings)
+            if ((game != null && !game.Ok) || (ffmRow != null && !ffmRow.Ok))
             {
                 Button goSet = Ui.FlatButton("去设置里指一下", "envOpenSettings");
                 goSet.Height = 28; goSet.Margin = new Thickness(8, 0, 0, 0);
                 goSet.Click += delegate { Close(); Ui.ShowSettings(); };
-                row.Children.Add(goSet);
+                actionRow.Children.Add(goSet);
             }
 
-            closeBtn = Ui.FlatButton("关闭", "envClose");
+            Button closeBtn = Ui.FlatButton("关闭", "envClose");
             closeBtn.Height = 28; closeBtn.Margin = new Thickness(8, 0, 0, 0);
             closeBtn.Click += delegate { Close(); };
-            row.Children.Add(closeBtn);
+            actionRow.Children.Add(closeBtn);
 
-            col.Children.Add(row);
-            Content = new ScrollViewer { Content = col, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            // 重画之后就当作"什么都没说过"：状态行里那句提示（"命令已复制"）是给上一版内容看的
+            statusLine.Text = "";
         }
 
         // 一行 = ✓/✗ + 名字 + 当前值；不 OK 的话下面再跟一句"怎么修"
@@ -115,9 +145,9 @@ namespace RepRecorder
             StackPanel head = new StackPanel { Orientation = Orientation.Horizontal };
             TextBlock mark = Ui.Txt(it.Ok ? "✓" : "✗", 12.5, it.Ok ? MainForm.HudAccent2 : MainForm.HudRed, true);
             mark.Width = 18;
-            // 给验收脚本读的：这个窗是【一次性快照】，弹出来之后内容再也不会变
-            // （2026-10-09 就因为这一点报了个假警 —— 卡上打叉、设置里却已经填好）。
-            // text:<这个 id> 直接返回 "✓" / "✗"，能把"卡片当时到底画的是什么"钉死。
+            // 给验收脚本读的：text:<这个 id> 直接返回 "✓" / "✗"。
+            // 卡上的内容原本是"弹出那一刻的事实"；2026-10-10 起后台查找落定后会重画
+            // （见 Render），所以这个标记现在也可能中途从 ✗ 变成 ✓ —— 正是要能测这件事。
             Ui.Id(mark, "env_" + it.Key + "Mark");
             head.Children.Add(mark);
             TextBlock name = Ui.Txt(it.Label, 12.5, MainForm.HudText, false);
@@ -139,6 +169,167 @@ namespace RepRecorder
             }
             Ui.Id(sp, "env_" + it.Key);
             return sp;
+        }
+    }
+
+    // ================================================================ 发现新版本（2026-10-10）
+    // 只在启动时查到有新版才弹，而且同一个版本弹过一次就不再弹（「以后再说」记在设置里）。
+    // 样式照 EnvBox：无边框 HUD + SizeToContent。
+    class UpdateBox : Window
+    {
+        readonly UpdateInfo info;
+        TextBlock statusLine;
+        Button primary;
+        bool busy, applied;
+
+        public UpdateBox(UpdateInfo info)
+        {
+            this.info = info;
+            Title = "发现新版本";
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            SizeToContent = SizeToContent.Height;
+            Width = 560;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Background = Ui.Br(MainForm.HudBg);
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            Ui.Id(this, "updateDialog");
+            Ui.MakeDraggable(this);
+
+            StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+            TextBlock head = Ui.Txt("发现新版本 v" + info.Version +
+                                    "（你现在是 v" + AppInfo.Version + "）", 13, MainForm.HudText, true);
+            Ui.Id(head, "updateVersion");
+            col.Children.Add(head);
+
+            // 更新说明可能好几行，用只读 TextBox —— 顺手能复制
+            TextBox notes = new TextBox();
+            notes.Text = info.Notes;
+            notes.IsReadOnly = true;
+            notes.TextWrapping = TextWrapping.Wrap;
+            notes.MaxHeight = 220;
+            notes.Margin = new Thickness(0, 10, 0, 0);
+            notes.Background = Ui.Br(MainForm.HudPanel2);
+            notes.Foreground = Ui.Br(MainForm.HudDim);
+            notes.BorderBrush = Ui.Br(MainForm.HudLine);
+            Ui.Id(notes, "updateNotes");
+            col.Children.Add(notes);
+
+            statusLine = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusLine.TextWrapping = TextWrapping.Wrap;
+            statusLine.Margin = new Thickness(0, 10, 0, 0);
+            Ui.Id(statusLine, "updateStatus");
+            col.Children.Add(statusLine);
+
+            StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            primary = Ui.FlatButton("下载并更新", "updateGo");
+            primary.Height = 28;
+            primary.Click += delegate { OnPrimary(); };
+            row.Children.Add(primary);
+
+            Button later = Ui.FlatButton("以后再说", "updateLater");
+            later.Height = 28; later.Margin = new Thickness(8, 0, 0, 0);
+            later.Click += delegate { OnLater(); };
+            row.Children.Add(later);
+
+            Button page = Ui.FlatButton("打开下载页", "updatePage");
+            page.Height = 28; page.Margin = new Thickness(8, 0, 0, 0);
+            page.Click += delegate { OpenPage(); };
+            row.Children.Add(page);
+
+            col.Children.Add(row);
+            Content = new ScrollViewer { Content = col, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        }
+
+        // 「下载并更新」/「马上重启」——同一个按钮，按状态换意思。
+        // 下载在后台线程上跑（450KB 的包，但网络不可控，不能让模态窗假装卡死）；
+        // 回来时走这个窗自己的 Dispatcher —— 它是 Window，一定有 Dispatcher，
+        // 不牵扯 Ui.OnUi 那个"Application 还没建好时就地执行"的坑。
+        void OnPrimary()
+        {
+            if (busy) return;
+            if (applied) { Restart(); return; }
+            busy = true;
+            primary.IsEnabled = false;
+            statusLine.Text = "正在下载…";
+            System.Threading.Thread t = new System.Threading.Thread(delegate ()
+            {
+                string err;
+                bool ok;
+                try
+                {
+                    ok = UpdateCheck.DownloadAndApply(info, UpdateCheck.RunningExePath,
+                                                     UpdateCheck.InstallDir, out err);
+                }
+                catch (Exception ex) { ok = false; err = ex.Message; }
+                try
+                {
+                    Dispatcher.Invoke(delegate
+                    {
+                        busy = false;
+                        primary.IsEnabled = true;
+                        if (ok)
+                        {
+                            applied = true;
+                            primary.Content = "马上重启";     // Content 是字符串（2 参数版 FlatButton）
+                            statusLine.Text = "已更新到 v" + info.Version +
+                                              "。点「马上重启」立刻用新版，或者下次自己打开也行。";
+                        }
+                        else
+                        {
+                            statusLine.Text = "更新失败：" + err + "。可以点「打开下载页」自己下下来替换。";
+                        }
+                    });
+                }
+                catch { }   // 窗已经被关掉就别管了
+            });
+            t.IsBackground = true;
+            t.Name = "下载更新";
+            t.Start();
+        }
+
+        void Restart()
+        {
+            try
+            {
+                string exe = UpdateCheck.RunningExePath;
+                if (!string.IsNullOrEmpty(exe)) System.Diagnostics.Process.Start(exe);
+            }
+            catch (Exception ex) { statusLine.Text = "重启失败，请自己关掉再打开：" + ex.Message; return; }
+            try { System.Windows.Application.Current.Shutdown(); } catch { }
+        }
+
+        // 「以后再说」= 记住这个版本，以后不再为它弹。
+        // ⚠ 写设置只走 Ui.CfgNow（那就是 Ui.Start 里 Load 出来的那一份），
+        //   不自己 Load 一份新的 —— 否则会覆盖掉界面上的其它改动。
+        void OnLater()
+        {
+            Settings cur = Ui.CfgNow;
+            if (cur != null)
+            {
+                cur.SkippedUpdateVersion = info.Version;
+                try { cur.Save(); } catch { }
+            }
+            Close();
+        }
+
+        void OpenPage()
+        {
+            string u = info.FullPackage.Length > 0
+                       ? info.FullPackage
+                       : (info.Urls.Count > 0 ? info.Urls[0] : "");
+            if (u.Length == 0) { statusLine.Text = "清单里没有下载地址"; return; }
+            // ⚠ 只放行 http/https。这个字符串来自网上的清单 —— 清单一被改，file:// 或
+            //   UNC 路径就能让「打开下载页」变成"运行任意本地文件"。这是本功能唯一的
+            //   信任边界，宁可挡错也不能放开。
+            if (!(u.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                  u.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+            {
+                statusLine.Text = "清单里的下载地址不是网页地址，已忽略：" + u;
+                return;
+            }
+            try { System.Diagnostics.Process.Start(u); }
+            catch (Exception ex) { statusLine.Text = "打不开：" + ex.Message; }
         }
     }
 

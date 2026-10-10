@@ -40,6 +40,26 @@ function Cfg([string]$key) {
   try { return (Get-Content $cfg -Raw -Encoding UTF8 | ConvertFrom-Json).$key } catch { return $null }
 }
 
+function StopApp { Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }; Start-Sleep -Milliseconds 700 }
+function StartApp {
+  $p = Start-Process -FilePath $exe -WorkingDirectory $app -ArgumentList @('--wpf', "--debug-port=$port") -PassThru
+  for ($i = 0; $i -lt 40; $i++) { Start-Sleep -Milliseconds 400; if ((Dbg 'status') -ne $null) { return $p } }
+  return $p
+}
+# Fire a command and do NOT wait for the reply.
+# Needed for anything that opens a MODAL dialog: `press:btnCheck` goes through
+# Dispatcher.Invoke, so it does not return until that dialog is closed -- a normal Dbg call
+# would sit there until its receive timeout, by which time the thing we wanted to watch has
+# long since happened.  (The reply write then fails on the app side, which it swallows.)
+function DbgFire([string]$cmd) {
+  try {
+    $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port)
+    $w = New-Object System.IO.StreamWriter($c.GetStream()); $w.AutoFlush = $true; $w.WriteLine($cmd)
+    Start-Sleep -Milliseconds 120
+    $c.Close()
+  } catch { }
+}
+
 # ---------------------------------------------------------------- setup
 Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
 Start-Sleep -Milliseconds 500
@@ -68,7 +88,7 @@ Set-Content -LiteralPath (Join-Path $deepGame 'th123a.dat') -Value 'x' -Encoding
   ConvertTo-Json -Compress | Set-Content -LiteralPath $cfg -Encoding UTF8
 
 # ============ start it and watch the dialog ==========================================
-$p = Start-Process -FilePath $exe -WorkingDirectory $app -ArgumentList @('--wpf', "--debug-port=$port") -PassThru
+$p = StartApp
 $sawDialog = $false
 $marks = @()
 $scanMs = 0
@@ -95,6 +115,34 @@ Check 'and it shows the game as found' ($marks -contains $([char]0x2713)) ('mark
 $g = Cfg 'GameDir'
 Check 'the game dir was adopted into settings' (($g -ne $null) -and ($g -ne '') -and (Test-Path (Join-Path $g 'th123.exe'))) ('GameDir=' + $g)
 Check 'the first-run check was remembered' ((Cfg 'EnvChecked') -eq $true) ('EnvChecked=' + (Cfg 'EnvChecked'))
+
+# ============ 7) the open dialog must follow a fresh search (2026-10-10) =============
+# The card used to be a one-shot snapshot: whatever it said when it opened, it said forever.
+# Real scenario -- the game was pointed at somewhere that has since gone away, the user hits
+# 「检查环境」, and the background search finds the pack again a second later.  The card must
+# stop claiming the game is missing, or the user is left staring at a contradiction.
+# GameDir is deliberately valid at startup so no search runs then; it only goes stale after.
+$stale = Join-Path $root 'stale\th123'
+New-Item -ItemType Directory -Force -Path $stale | Out-Null
+Set-Content -LiteralPath (Join-Path $stale 'th123.exe') -Value 'x' -Encoding ASCII
+[pscustomobject]@{ GameDir = $stale; ObsExe = ''; EnvChecked = $true } |
+  ConvertTo-Json -Compress | Set-Content -LiteralPath $cfg -Encoding UTF8
+StopApp
+$p = StartApp
+Remove-Item -LiteralPath (Join-Path $stale 'th123.exe') -Force       # the game "moves away"
+DbgFire 'press:btnCheck'
+Start-Sleep -Milliseconds 500
+$first = (Dbg 'text:env_gameMark' | ConvertFrom-Json).text
+$flipped = $false
+for ($i = 0; $i -lt 40; $i++) {
+  Start-Sleep -Milliseconds 500
+  $t = (Dbg 'text:env_gameMark' | ConvertFrom-Json).text
+  if ($t -eq $([char]0x2713)) { $flipped = $true; break }
+}
+Check 'the card starts by reporting the game as missing' ($first -eq $([char]0x2717)) ('first=' + $first)
+Check 'and it picks up the fresh search on its own' ($flipped -eq $true) ('flipped=' + $flipped)
+if ((Dbg 'find:envClose' | ConvertFrom-Json).found -eq $true) { Dbg 'press:envClose' | Out-Null }
+StopApp
 
 $logTxt = if (Test-Path (Join-Path $app 'RepRecorder.log')) { Get-Content (Join-Path $app 'RepRecorder.log') -Raw -Encoding UTF8 } else { '' }
 Check 'no exception in log' ($logTxt -notmatch 'Exception') ''

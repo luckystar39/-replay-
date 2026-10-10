@@ -270,6 +270,11 @@ namespace RepRecorder
                 if (cmd == "" || cmd == "status") return Status();
                 if (cmd == "bgstate") return Ui.OnUi<string>(delegate { ShellWindow sw = win as ShellWindow; return sw == null ? "{}" : sw.BgState(); });
                 if (cmd == "env") return Ui.OnUi<string>(delegate { return EnvJson(); });
+                if (cmd == "obsreg") return ObsRegJson();
+                if (cmd.StartsWith("cmpver:")) return CmpVerJson(cmd.Substring(7));   // "cmpver:" 是 7 个字符
+                if (cmd.StartsWith("updatecheck:")) return UpdateCheckJson(cmd.Substring(12));   // "updatecheck:" 是 12 个字符
+                if (cmd.StartsWith("updateapply:")) return UpdateApplyJson(cmd.Substring(12));   // "updateapply:" 也是 12 个字符
+                if (cmd == "updatecheck") return UpdateCheckJson(UpdateCheck.ManifestUrl);
                 if (cmd == "findgame") return FindGameJson();
                 if (cmd.StartsWith("findgame:scope=")) return FindGameScopedJson(cmd.Substring(15));   // "findgame:scope=" 是 15 个字符
                 if (cmd == "findffmpeg") return FindFfmpegJson();
@@ -309,7 +314,8 @@ namespace RepRecorder
                 // recording 从「停止」按钮的可用状态推出来 —— SetRecordingLook() 是唯一改它的地方，
                 // 以前这里硬编码 false，脚本按它判「在不在录」会一律误判。
                 bool rec = sw.StopEnabledNow;
-                return "{\"wpf\":true,\"stage\":\"7-switched\",\"recording\":" + (rec ? "true" : "false") + ","
+                return "{\"wpf\":true,\"stage\":\"7-switched\",\"version\":" + Json(AppInfo.Version)
+                     + ",\"recording\":" + (rec ? "true" : "false") + ","
                      + "\"queue\":" + sw.Rows.Count + ","
                      + "\"statusText\":" + Json(sw.StatusText == null ? "" : sw.StatusText.Text) + ","
                      + "\"env\":" + Json(sw.StatusEnv == null ? "" : sw.StatusEnv.Text) + ","
@@ -419,6 +425,66 @@ namespace RepRecorder
                  + ",\"count\":" + count
                  + ",\"scanning\":" + (Settings.FfmpegScanRunning ? "true" : "false")
                  + ",\"ms\":" + Settings.FfmpegScanMs + "}";
+        }
+
+        // 「从注册表里读到了哪些候选」的机器可读版（2026-10-10）。
+        // 为什么需要它：FindObsExe 现在 HKLM 和 HKCU 都读，但一台【已经装了真 OBS】的机器上，
+        // "最后选中了谁"永远是那个真 OBS —— 光看结果没法知道 HKCU 那半边有没有生效。
+        // 所以把这一步的候选单独报出来，脚本才能断言"HKCU 里那条确实被看到了"。
+        static string ObsRegJson()
+        {
+            try
+            {
+                List<string> cs = Settings.ObsRegistryCandidates();
+                StringBuilder sb = new StringBuilder("{\"cands\":[");
+                for (int i = 0; i < cs.Count; i++)
+                {
+                    if (i > 0) sb.Append(",");
+                    sb.Append(Json(cs[i]));
+                }
+                return sb.Append("]}").ToString();
+            }
+            catch (Exception ex) { return "{\"error\":" + Json(ex.Message) + "}"; }
+        }
+
+        // 版本比较的机器可读版（给 验证WPF-18）。两个版本号用 | 隔开。
+        // 结果直接就是 CompareVersions 的返回值：1 / 0 / -1，无效时是 int.MinValue。
+        static string CmpVerJson(string arg)
+        {
+            int bar = arg.IndexOf('|');
+            if (bar < 0) return "{\"error\":\"need a|b\"}";
+            int r = UpdateCheck.CompareVersions(arg.Substring(0, bar), arg.Substring(bar + 1));
+            return "{\"result\":" + r + "}";
+        }
+
+        // 检查更新的机器可读版（给 验证WPF-18）。
+        // result = newer / same / older / invalid / off；失败时 error 有话说。
+        // 正式地址从 UpdateCheck.ManifestUrl 来（空 = 没配，返回 off）。
+        static string UpdateCheckJson(string url)
+        {
+            string err;
+            string r = UpdateCheck.CheckOnce(url, out err);
+            return "{\"result\":" + Json(r) + ",\"error\":" + Json(err.Length == 0 ? null : err) + "}";
+        }
+
+        // 「把更新包装到某个 exe 上」的机器可读版（给 验证WPF-18）。
+        // 格式：updateapply:<zip路径>|<目标exe路径>[|<期望sha256>]
+        // ⚠ 这是【生产代码里的测试缝】：它允许指定任意的替换目标，为的是验收脚本能拿
+        //   一个临时目录里的假 exe 当靶子 —— 绝不能让它去替换正在运行的那个程序。
+        //   只有带 --debug-port 启动时才可达（正式用户不会带这个参数）。
+        //   第三段就是 sha 校验不通过那条断言用的。
+        static string UpdateApplyJson(string arg)
+        {
+            string[] a = arg.Split('|');
+            if (a.Length < 2) return "{\"error\":\"need zip|target[|sha]\"}";
+            UpdateInfo info = new UpdateInfo();
+            info.Version = "test";
+            info.Urls.Add("file:///" + a[0].Replace('\\', '/'));   // WebRequest 支持 file://
+            string err;
+            string sha = a.Length > 2 ? a[2] : null;
+            // Path 要和 WPF 的 System.Windows.Shapes.Path 区分开，这里写全名
+            bool ok = UpdateCheck.DownloadAndApply(info, a[1], System.IO.Path.GetDirectoryName(a[1]), out err, sha);
+            return "{\"result\":" + Json(ok ? "ok" : "fail") + ",\"error\":" + Json(err.Length == 0 ? null : err) + "}";
         }
 
         static string RowsJson()

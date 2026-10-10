@@ -44,6 +44,9 @@ namespace RepRecorder
         {
             MakeDpiAware();
             cfg = Settings.Load();
+            // 只认 --update-url=（验收脚本用，正式用户不会带）—— 必须在 StartBackgroundCheck
+            // 之前调，所以放在这儿、离启动最近的地方。
+            UpdateCheck.ApplyUrlOverride(args);
             RepRecorder.Log.Write("==== WPF 界面启动（阶段 0.3：骨架）====");
             try
             {
@@ -83,10 +86,22 @@ namespace RepRecorder
         public static Settings CfgNow { get { return cfg; } }
 
         // 在 UI 线程上跑一段并取回结果（调试接口跑在别的线程上，碰控件必须绕回 UI 线程）
+        // ⚠ `app == null` 那一支是【在调用线程上直接跑】的。调用方要是后台线程，那就等于
+        //   从非 UI 线程碰控件 —— 有时抛异常、有时静默画错，现场极难看懂。
+        //   2026-10-10 写"后台找到东西之后通知界面"时差点踩中：扫描可能在 new Application()
+        //   之前就跑完。这一支留着是因为启动早期确实要靠它，但现在会留一行日志，
+        //   免得下次又靠猜（当时是靠"把通知改挂到已有的 UI 定时器上"绕开的）。
         public static T OnUi<T>(Func<T> f)
         {
             Application app = Application.Current;
-            if (app == null || app.Dispatcher.CheckAccess()) return f();
+            if (app == null)
+            {
+                if (System.Threading.Thread.CurrentThread.IsBackground)
+                    RepRecorder.Log.Write("⚠ 界面还没建好，后台线程直接调了 OnUi（会在该线程上执行）：" +
+                              (f == null || f.Method == null ? "?" : f.Method.Name));
+                return f();
+            }
+            if (app.Dispatcher.CheckAccess()) return f();
             return app.Dispatcher.Invoke<T>(f);
         }
 
@@ -651,6 +666,28 @@ namespace RepRecorder
             ShellWindow w = W;
             if (w == null) return;
             EnvBox box = new EnvBox(rep);
+            box.Owner = w;
+            box.ShowDialog();
+        }
+
+        // 环境卡还开着的话，按新报告把内容重画一遍。
+        // 用在"后台找游戏 / 找 ffmpeg 落定"的时候 —— 不然卡上会一直写着「未找到」，
+        // 而设置里其实已经填好了（2026-10-09 用户报的那个矛盾）。
+        // ⚠ 必须在 UI 线程上调（调用方是那 2 秒的界面定时器，本来就是）。
+        public static void RefreshEnvDialogIfOpen(EnvReport rep)
+        {
+            EnvBox b = EnvBox.Current;
+            if (b == null || rep == null) return;
+            try { b.Render(rep); }
+            catch (Exception ex) { RepRecorder.Log.Write("环境卡刷新失败（不影响使用）：" + ex.Message); }
+        }
+
+        // 门面：弹出"发现新版本"（模态，和 EnvBox 一样）
+        public static void ShowUpdateDialog(UpdateInfo info)
+        {
+            ShellWindow w = W;
+            if (w == null || info == null) return;
+            UpdateBox box = new UpdateBox(info);
             box.Owner = w;
             box.ShowDialog();
         }
