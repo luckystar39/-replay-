@@ -279,7 +279,6 @@ function CN([int[]]$cp) { -join ($cp | ForEach-Object { [char]$_ }) }
 # NOTE: build each Chinese name into a variable FIRST and hand only that to Join-Path.
 # "Join-Path A '_ + B" does NOT parse the obvious way -- the + is taken as another
 # positional argument, the call fails, and every path below silently becomes $null.
-$relName   = '_' + (CN 0x53D1,0x7248)
 # Point the release script at a throwaway output dir.  Without this, running this test
 # OVERWRITES the real release materials with ones made for the test's fake version number --
 # which then claim 1.1 while holding the 1.0 exe, so publishing them makes every user see
@@ -288,9 +287,15 @@ $relName   = '_' + (CN 0x53D1,0x7248)
 $rel                = Join-Path $root 'release-out'
 $env:RELEASE_OUT    = $rel
 Remove-Item -LiteralPath $rel -Recurse -Force -ErrorAction SilentlyContinue
-$rel       = Join-Path (Split-Path $dir -Parent) $relName
+# NOTE: $rel must stay pointed at the ISOLATED dir.  It used to be reassigned to the real
+#       materials dir right here, so every assertion below read the developer's own release
+#       materials instead of the ones this run produced --
+#       and it stayed green only because that directory happened to hold 1.1 leftovers from an
+#       earlier clobbering.  Regenerating the real materials for 1.0 exposed it.  (2026-10-10)
 $relBat    = Join-Path $dir ((CN 0x53D1,0x7248) + '.bat')
-$updName   = 'RepRecorder-1.1-' + (CN 0x66F4,0x65B0,0x5305) + '.zip'
+# ASCII on purpose (2026-10-10): the release script names its assets in plain ASCII because a
+# Chinese asset name does not survive a GitHub upload, and the download url is built from it.
+$updName   = 'RepRecorder-1.1-update.zip'
 $stepsName = (CN 0x7167,0x7740,0x505A) + '-' + (CN 0x53D1,0x7248) + '.txt'
 $stepsTxt  = Join-Path $rel $stepsName
 $updZip    = Join-Path $rel $updName
@@ -319,6 +324,16 @@ Check 'the github link is present' (($j -ne $null) -and (($j.DownloadLinks | Whe
 # (Before the repo existed this asserted the opposite; it flipped exactly as advertised.)
 Check 'the manifest carries a gitee link now that the repo exists' (($j -ne $null) -and (($j.DownloadLinks | Where-Object { $_.Type -eq 'Gitee' }).Url.Length -gt 0)) ''
 
+# Every url in the manifest must be pure ASCII.  This is the guard for the failure that cost a
+# whole release round (2026-10-10): the script advertised a chinese-named package url, the
+# file was uploaded under that name, GitHub dropped the Chinese and served it as
+# ".../RepRecorder-1.1-.zip" -- so the advertised url 404'd and the fallback download was dead.
+# With no non-ascii byte anywhere in a url, that whole class cannot happen.
+$urls = @($j.FullPackage) + @($j.DownloadLinks | ForEach-Object { $_.Url })
+$badUrl = @($urls | Where-Object { $_ -match '[^\x00-\x7F]' })
+Check 'every url in the manifest is ascii-only' (($urls.Count -ge 3) -and ($badUrl.Count -eq 0)) ('urls=' + $urls.Count + ' non-ascii=' + $badUrl.Count)
+Check 'it names the full package too (ascii)' (($j -ne $null) -and ($j.FullPackage -like '*RepRecorder-1.1-full.zip')) ('full=' + $j.FullPackage)
+
 # The single most valuable assertion here: the update package must NOT drag ffmpeg along
 # (217 MB) -- that would turn "one-click update" into an 85 MB download.
 $updBytes = if (Test-Path $updZip) { (Get-Item $updZip).Length } else { -1 }
@@ -332,6 +347,81 @@ $z = [System.IO.Compression.ZipFile]::OpenRead($updZip)
 try { $names = @($z.Entries | ForEach-Object { $_.FullName }) } finally { $z.Dispose() }
 Check 'the package has RepRecorder.exe at its root' ($names -contains 'RepRecorder.exe') ('entries=' + ($names -join ','))
 Check 'and it carries the docs but nothing bulky' (($names.Count -ge 2) -and ($names.Count -le 4)) ('n=' + $names.Count)
+
+# ============ 7) the manual "check for updates" button =================================
+# The environment card gets a button (2026-10-10, user request) so nobody has to wait for the
+# startup check (6-hour throttle) or read the log to find out.  Every outcome pops a dialog --
+# that is the user's explicit choice: already-latest and failure both get a small info window.
+#
+# Both cases set the throttle timestamp to NOW on purpose.  That suppresses the startup check
+# completely, so any dialog that appears must have come from the button -- without this the
+# assertions could pass on the startup check's work and prove nothing.
+function DbgFire([string]$cmd) {
+  # press: goes through Dispatcher.Invoke, and a handler that opened a modal dialog would block
+  # that call until the dialog closed (you would see a 25 s receive timeout instead of an
+  # answer).  Send and hang up; 150 ms is plenty for the line to arrive.
+  try {
+    $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port)
+    $w = New-Object System.IO.StreamWriter($c.GetStream()); $w.AutoFlush = $true; $w.WriteLine($cmd)
+    Start-Sleep -Milliseconds 150
+    $c.Close()
+  } catch { }
+}
+function WaitDialog([string]$id) {
+  for ($i = 0; $i -lt 60; $i++) {
+    Start-Sleep -Milliseconds 300
+    if ((Dbg ('find:' + $id) | ConvertFrom-Json).found -eq $true) { return $true }
+  }
+  return $false
+}
+
+$cnLatest = CN 0x5DF2, 0x662F, 0x6700, 0x65B0      # "already the latest"
+$cnFailed = CN 0x68C0, 0x67E5, 0x5931, 0x8D25      # "check failed"
+
+# --- a newer version is offered -> the EXISTING "found a new version" dialog ------------
+StopApp
+$stampBefore = [DateTime]::UtcNow.ToString('o')
+Patch 'LastUpdateCheckUtc' $stampBefore
+# A "later" skip marker is set too: clicking the button means "tell me NOW", so the marker --
+# which only exists to stop the AUTOMATIC prompt -- must not suppress a manual check.
+Patch 'SkippedUpdateVersion' '9.9'
+$p = StartAppWith $good
+Check 'the check button is on the environment card' ((Dbg 'find:btnCheckUpdate' | ConvertFrom-Json).found -eq $true) ''
+DbgFire 'press:btnCheckUpdate'
+$shownA = WaitDialog 'updateDialog'
+Check 'the button finds a newer version (throttle and skip ignored)' $shownA ''
+Check 'and the manual check re-stamped the time' (((Cfg 'LastUpdateCheckUtc') -ne '') -and ((Cfg 'LastUpdateCheckUtc') -ne $stampBefore)) ('was=' + $stampBefore.Substring(11, 8) + ' now=' + ([string](Cfg 'LastUpdateCheckUtc')).Substring(11, 8))
+Dbg 'press:updateLater' | Out-Null
+Start-Sleep -Milliseconds 900
+Check 'the button is usable again after the dialog' ((Dbg 'find:btnCheckUpdate' | ConvertFrom-Json).enabled -eq $true) ''
+StopApp
+
+# --- already up to date -> the small info dialog ---------------------------------------
+$p = StartAppWith $same
+Patch 'LastUpdateCheckUtc' ([DateTime]::UtcNow.ToString('o'))
+DbgFire 'press:btnCheckUpdate'
+$shownB = WaitDialog 'infoDialog'
+Check 'being up to date opens the info dialog' $shownB ''
+$tB = ''
+if ($shownB) { $tB = [string](Dbg 'text:infoText' | ConvertFrom-Json).text }
+Check 'and it says there is nothing to update' ($tB -match $cnLatest) ('len=' + $tB.Length)
+Dbg 'press:infoClose' | Out-Null
+Start-Sleep -Milliseconds 900
+Check 'the info dialog closes' ((Dbg 'find:infoDialog' | ConvertFrom-Json).found -eq $false) ''
+StopApp
+
+# --- the manifest cannot be reached -> the same info dialog, saying what went wrong -----
+$p = StartAppWith 'file:///D:/_reptest18/nope-chk.json'
+Patch 'LastUpdateCheckUtc' ([DateTime]::UtcNow.ToString('o'))
+DbgFire 'press:btnCheckUpdate'
+$shownC = WaitDialog 'infoDialog'
+Check 'an unreachable manifest opens the info dialog too' $shownC ''
+$tC = ''
+if ($shownC) { $tC = [string](Dbg 'text:infoText' | ConvertFrom-Json).text }
+Check 'and it reports the failure instead of going quiet' ($tC -match $cnFailed) ('len=' + $tC.Length)
+Dbg 'press:infoClose' | Out-Null
+Start-Sleep -Milliseconds 600
+StopApp
 
 # ---------------------------------------------------------------- teardown
 StopApp

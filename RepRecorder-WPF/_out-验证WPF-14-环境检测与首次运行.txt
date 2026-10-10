@@ -1,0 +1,19 @@
+OK  env reports five items  n=5
+OK  a healthy machine reports allOk  allOk=True
+OK  the env line is actually rendered in the UI  text=OBS：已就绪    游戏：已就绪
+OK  no dialog pops when nothing is wrong  
+OK  the first-run check was remembered  EnvChecked=True
+OK  a missing mod is reported  mod=整合包里没有这个文件
+OK  allOk goes false  allOk=False
+OK  the first-run dialog pops up  
+OK  the env line now shows a problem  text=OBS：已就绪    游戏：已就绪
+OK  the dialog carries the recall id  
+OK  closing it works  
+OK  the first-run self-check does not nag twice  EnvChecked=True
+OK  recording is refused when the game dir is broken  recording=False
+OK  and the user is told why (dialog)  
+OK  no exception in log  
+OK  the OBS registry step reads HKCU too  cands=D:\obs\obs-studio\bin\64bit\obs64.exe | C:\Users\江博文\AppData\Local\Temp\repobs-verify\bin\64bit\obs64.exe
+settings restored
+dump -> D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\_dump-utf8.json
+PASS

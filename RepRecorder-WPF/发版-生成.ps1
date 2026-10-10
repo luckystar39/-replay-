@@ -99,7 +99,12 @@ if (-not $check) {
 # ---------------------------------------------------------------- 3) 更新包
 # 只装三样：exe + 两份说明。⚠ 绝不含 ffmpeg（217MB）—— 更新包必须小，
 # 否则"一键更新"就变成下 85MB。验证WPF-18 有一条断言钉着"小于 20MB"。
-$updName = 'RepRecorder-' + $ver + '-更新包.zip'
+# ⚠ 附件名一律用纯 ASCII，Gitee 那边也一起用（2026-10-10 实测的教训）：
+#   往 GitHub 发行版传 RepRecorder-1.0-更新包.zip，落地后名字变成 RepRecorder-1.0-.zip
+#   —— 中文被吃掉了。而下载地址是拿这个名字拼出来的，于是链接 404，用户更新失败。
+#   两个仓库共用同一个纯 ASCII 名字，就不会再出现"传上去的名字和清单里的对不上"。
+$updName  = 'RepRecorder-' + $ver + '-update.zip'
+$fullName = 'RepRecorder-' + $ver + '-full.zip'
 $updPath = Join-Path $rel $updName
 if (Test-Path $updPath) { Remove-Item -LiteralPath $updPath -Force }
 $exeIn = Join-Path $src 'RepRecorder.exe'
@@ -111,6 +116,20 @@ $sha = (Get-FileHash $updPath -Algorithm SHA256).Hash.ToLower()
 $sizeKB = [int]((Get-Item $updPath).Length / 1024)
 Write-Host ('  更新包：' + $updName + '（' + $sizeKB + ' KB）')
 
+# 完整包也备一份"纯 ASCII 名字"的副本放进 _发版，这样"传附件"就只是把 _发版 里那两个文件
+# 拖上去，不用临时改名、也不会因为名字对不上而 404。（原件 RepRecorder-发给别人.zip 不动，
+# 网盘/直接发人那条路还在用它。）
+$fullCopy = Join-Path $rel $fullName
+$haveFull = $false
+$fullSrc = Join-Path $root 'RepRecorder-发给别人.zip'
+if (Test-Path -LiteralPath $fullSrc) {
+  Copy-Item -LiteralPath $fullSrc -Destination $fullCopy -Force
+  $haveFull = $true
+  Write-Host ('  完整包副本：' + $fullName + '（' + [int]((Get-Item $fullCopy).Length / 1048576) + ' MB，传完可以删）')
+} else {
+  Write-Host ('  ⚠ 没找到 ' + $fullSrc + '：完整包那条链接不写进清单')
+}
+
 # ---------------------------------------------------------------- 4) version.json
 $links = @()
 if (-not [string]::IsNullOrEmpty($gitee)) {
@@ -120,8 +139,8 @@ if (-not [string]::IsNullOrEmpty($github)) {
   $links += [pscustomobject]@{ Type = 'GitHub'; Url = 'https://github.com/' + $github + '/releases/download/v' + $ver + '/' + $updName }
 }
 $full = ''
-if (-not [string]::IsNullOrEmpty($github)) {
-  $full = 'https://github.com/' + $github + '/releases/download/v' + $ver + '/RepRecorder-发给别人.zip'
+if ((-not [string]::IsNullOrEmpty($github)) -and $haveFull) {
+  $full = 'https://github.com/' + $github + '/releases/download/v' + $ver + '/' + $fullName
 }
 $manifest = [pscustomobject]@{
   Version      = $ver
@@ -141,25 +160,37 @@ if ([string]::IsNullOrEmpty($gitee)) {
 
 # ---------------------------------------------------------------- 5) 手把手清单
 $steps = @()
-$steps += '发版 ' + $ver + ' —— 还剩三步（脚本已经备好料，放在 ' + $rel + '）'
+$steps += '发版 ' + $ver + ' —— 还剩这几步（脚本已经备好料，放在 ' + $rel + '）'
 $steps += ''
-$steps += '1) 传更新包到 Release v' + $ver + '：' + $updName + '（' + $sizeKB + ' KB）'
+$steps += '1) 建 Release。⚠ 标签（tag）必须正好是 v' + $ver + '——清单里的下载地址是靠标签定位的，'
+$steps += '   标签写成别的（比如中文名）链接就永远是 404。发行版的"名称"可以随便写，标签不行。'
+$steps += '   附件就传 ' + $rel + ' 里这两个（名字别改，都是纯 ASCII）：'
+$steps += '     更新包：' + $updName + '（' + $sizeKB + ' KB）'
+if ($haveFull) { $steps += '     完整包：' + $fullName + '（84.8MB，传完可以删掉这个副本）' }
 if (-not [string]::IsNullOrEmpty($gitee))  { $steps += '     Gitee ：https://gitee.com/' + $gitee + '/releases/new' }
 if (-not [string]::IsNullOrEmpty($github)) { $steps += '     GitHub：https://github.com/' + $github + '/releases/new' }
-if (-not $check) {
-  $steps += '     完整包（84.8MB）也传 GitHub 那个 Release：' + (Join-Path $root 'RepRecorder-发给别人.zip')
-} else {
-  $steps += '     （--check 模式没重新打包，正式发版时会一并生成完整包）'
-}
+$steps += '   ⚠ 为什么必须是纯 ASCII：往 GitHub 传中文名的附件，落地后中文会被吃掉'
+$steps += '     （2026-10-10 实测：RepRecorder-1.0-更新包.zip 变成了 RepRecorder-1.0-.zip），'
+$steps += '     而下载地址是拿这个名字拼的 → 链接 404、用户更新失败。'
+$steps += '     传完一定要去发行版页面照一眼名字和清单里的是否一字不差。'
 $steps += ''
 $steps += '2) 把 version.json 的内容整段复制到 Gitee 仓库的 version.json 里，提交'
 $steps += '     （内容就在 ' + $jsonPath + '）'
 $steps += ''
 $steps += '3) 完整包按你原来的方式发（网盘 / 直接发人）—— Gitee 每仓库附件总共只有 1GB，'
-$steps += '   完整包 84.8MB 传几次就满，所以它走 GitHub。'
+$steps += '   完整包 84.8MB 传几次就满，所以它走 GitHub（GitHub 传的就是 _发版 里那份 ASCII 副本）。'
 $steps += ''
-$steps += '⚠ 清单地址写在程序里（Update.cs 的 ManifestUrl）。第一次发版时确认它已指向'
-$steps += '   https://gitee.com/<你>/<仓库>/raw/main/version.json，否则用户的程序不会来查。'
+$steps += '4) 发完自己验一次：跑 RepRecorder-WPF\_netcheck.ps1（要联网、要有已发布的发行版）。'
+$steps += '   它会真的从线上把更新包下下来、校验 sha、替换自身再重启，还会逐条 HEAD 两个下载地址'
+$steps += '   确认没有 404——全绿才算发好了。'
+$steps += ''
+if (-not [string]::IsNullOrEmpty($gitee)) {
+  $steps += '⚠ 清单地址写在程序里（Update.cs 的 ManifestUrl），现在是：'
+  $steps += '   https://gitee.com/' + $gitee + '/raw/master/version.json'
+} else {
+  $steps += '⚠ 清单地址写在程序里（Update.cs 的 ManifestUrl）——还没配 Gitee 仓库时它是空的。'
+}
+$steps += '   改这一处要重新编译；⚠ 分支名（master / main）必须和 Gitee 仓库的默认分支一致。'
 $stepsTxt = Join-Path $rel '照着做-发版.txt'
 $steps | Set-Content -LiteralPath $stepsTxt -Encoding UTF8
 Write-Host ('  照着做-发版.txt：' + $stepsTxt)

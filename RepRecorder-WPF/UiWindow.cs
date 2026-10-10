@@ -45,7 +45,7 @@ namespace RepRecorder
         StackPanel leftCol;
         Border activityBar;
         GridSplitter splitterV;
-        Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnRefresh, btnPrepare, btnCheck, btnSet, btnOpenLog;
+        Button btnStart, btnStop, btnClear, btnRemove, btnMark, btnRefresh, btnPrepare, btnCheck, btnCheckUpdate, btnSet, btnOpenLog;
         Button btnSound, btnGameAudio, btnBgm, btnPanel, btnBg;
         bool micLockShown;                   // 那个下拉现在是"被锁住替用户显示 0"的状态（见 ApplyMicLock）
         CheckBox chkPrepare, chkCloseObs, chkRound;
@@ -139,6 +139,7 @@ namespace RepRecorder
         public TextBlock StatusText { get { return statusText; } }
         public TextBlock StatusEnv { get { return statusEnv; } }
         public TextBlock HintText { get { return hintText; } }
+        public Button CheckUpdateButton { get { return btnCheckUpdate; } }
         public TextBlock ParHint { get { return lblParHint; } }
         public ComboBox ComboParallel { get { return cbParallel; } }
         public Settings CfgPublic { get { return cfg; } }
@@ -589,6 +590,11 @@ namespace RepRecorder
             btnSet = Ui.FlatButton("设置…", "btnSet");
             btnOpenLog = Ui.FlatButton("日志", "btnOpenLog");
             env.Children.Add(EvenRow(btnPrepare, btnCheck, btnSet, btnOpenLog));
+            // 「检查更新」单独一行（2026-10-10 用户要求）：那四颗并排已经占满左栏默认的
+            // 322 DIP，再塞第五颗每颗只剩 ~55 DIP，「准备 OBS」会被截字。
+            btnCheckUpdate = Ui.FlatButton("检查更新", "btnCheckUpdate");
+            btnCheckUpdate.Margin = new Thickness(0, 6, 0, 0);
+            env.Children.Add(btnCheckUpdate);
             // 「拖入后自动开始」2026-10-05 用户要求整条删掉：拖进来只入队，
             // 一定要用户自己点「开始录制」。设置项 AutoStartOnDrop 保留（老设置文件里可能有），
             // 但程序里再也不读它了。
@@ -1821,6 +1827,7 @@ namespace RepRecorder
             if (btnMark != null) btnMark.Click += delegate { rec.UiMarkBatch(); };
             if (btnRefresh != null) btnRefresh.Click += delegate { rec.UiRefreshQueue(); };
             if (btnCheck != null) btnCheck.Click += delegate { rec.UiCheck(); };
+            if (btnCheckUpdate != null) btnCheckUpdate.Click += delegate { rec.UiCheckUpdate(); };
             if (btnPrepare != null) btnPrepare.Click += delegate { rec.UiPrepareObs(); };
             if (btnSet != null) btnSet.Click += delegate { rec.UiOpenSettings(); };
             if (btnOpenLog != null) btnOpenLog.Click += delegate { rec.UiOpenLog(); };

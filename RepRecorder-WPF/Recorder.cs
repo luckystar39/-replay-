@@ -208,6 +208,7 @@ namespace RepRecorder
         public void UiMarkBatch() { OnMarkBatch(null, null); }
         public void UiRefreshQueue() { OnRefreshQueue(null, null); }
         public void UiCheck() { OnCheck(null, null); }
+        public void UiCheckUpdate() { OnCheckUpdate(null, null); }
         public void UiPrepareObs() { OnPrepare(null, null); }
         public void UiOpenSettings() { OnSettings(null, null); }
         public void UiOpenLog() { OnOpenLog(null, null); }
@@ -309,6 +310,9 @@ namespace RepRecorder
         // 首次自检那个窗还没弹过 —— 在等自动找游戏落定（见 UiOnShown 里那段注释）
         bool firstRunPending;
         int firstRunSince;
+
+        // 「检查更新」正在查（防止连点：按钮也是靠它变灰的）
+        bool checkingUpdate;
 
         // 首次自检：只报事实，不修任何东西。
         // ⚠ 先把 EnvChecked 落盘再弹：这个窗是**模态**的（Ui.ShowEnvDialog → ShowDialog），
@@ -3707,6 +3711,70 @@ namespace RepRecorder
             }
             catch { }
         }
+        // 「检查更新」：手动查一次（2026-10-10 用户要求，放在环境卡里）。
+        // 和启动时那条后台检查的三点区别，都是有意的：
+        //   ① 无视 6 小时节流 —— 手动点就是要【现在】查（那条节流是防"每次启动都敲服务器"）。
+        //   ② 无视「以后再说」的跳过标记 —— 那个标记只用来挡【自动】弹窗。
+        //   ③ 每种结果都弹窗（用户选的）：有新版走 UpdateBox，其余三种走 InfoBox。
+        // ⚠ 查在后台线程、结果回 UI 线程处理；设置仍然只在 UI 线程落盘（这个项目的不变量）。
+        void OnCheckUpdate(object sender, EventArgs e)
+        {
+            if (checkingUpdate) return;
+            checkingUpdate = true;
+            Ui.SetCheckUpdateBusy(true);
+
+            Thread t = new Thread(delegate ()
+            {
+                string err = "";
+                UpdateInfo info = null;
+                string result = "invalid";
+                try
+                {
+                    // ⚠ 只取一次清单（别写成"先 CheckOnce 再 FetchManifest"，那是两次 HTTP）。
+                    info = UpdateCheck.FetchManifest(UpdateCheck.ManifestUrl, out err);
+                    if (info == null) { result = "invalid"; }
+                    else
+                    {
+                        int c = UpdateCheck.CompareVersions(info.Version, AppInfo.Version);
+                        if (c == int.MinValue)
+                        { err = "清单里的版本号看不懂：" + info.Version; info = null; result = "invalid"; }
+                        else result = c > 0 ? "newer" : (c == 0 ? "same" : "older");
+                    }
+                }
+                catch (Exception ex) { err = ex.Message; info = null; result = "invalid"; }
+
+                Ui.Post(delegate
+                {
+                    checkingUpdate = false;
+                    Ui.SetCheckUpdateBusy(false);
+
+                    // 时间戳不管成败都记，而且【在 UI 线程落盘】：失败还死缠着查会一直敲人家的服务器；
+                    // 记上之后启动那次后台检查也不会紧跟着再查一遍。设置只在 UI 线程写 —— 不变量。
+                    try
+                    {
+                        if (cfg != null) { cfg.LastUpdateCheckUtc = DateTime.UtcNow.ToString("o"); cfg.Save(); }
+                    }
+                    catch (Exception ex) { Log.Write("检查更新：时间戳没写进去（不影响使用）：" + ex.Message); }
+
+                    Log.Write("手动检查更新：" + result +
+                              (string.IsNullOrEmpty(err) ? "" : "（" + err + "）"));
+
+                    if (result == "newer") Ui.ShowUpdateDialog(info);
+                    else if (result == "same")
+                        Ui.ShowInfo("检查更新", "已是最新版本（v" + AppInfo.Version + "），不用更新。");
+                    else if (result == "older")
+                        Ui.ShowInfo("检查更新", "服务器上是 v" + info.Version + "，比你这版旧 —— 你可能在用测试版。");
+                    else
+                        Ui.ShowInfo("检查更新", "检查失败：" +
+                                    (string.IsNullOrEmpty(err) ? "拿不到更新清单" : err) +
+                                    "。\n\n不影响录制，稍后再试就行。");
+                });
+            });
+            t.IsBackground = true;
+            t.Name = "检查更新（手动）";
+            t.Start();
+        }
+
         // ---- moved from MainForm ----
         // 「检查环境」：把五项报给用户看。
         // 2026-10-08 之前这里【只写日志】—— 用户点完一个窗都不弹，得自己开终端去翻，

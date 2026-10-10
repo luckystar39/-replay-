@@ -8,7 +8,7 @@ setlocal
 
 rem ↓↓↓ 你的 Gitee 用户名/仓库名，只填这一行。留空 = 还没建仓库，那就先跳过 Gitee 那条链接。
 set GITEE=xingya30/reprecorder-update
-set GITHUB=luckystar39/------------2026-06-15
+set GITHUB=luckystar39/soku-RepRecorder
 
 set VER=%1
 set MODE=

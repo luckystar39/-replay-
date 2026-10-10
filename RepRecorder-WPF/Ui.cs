@@ -692,6 +692,29 @@ namespace RepRecorder
             box.ShowDialog();
         }
 
+        // 门面：弹一个只说一句话的小窗（模态）。手动「检查更新」的"已是最新 / 检查失败"用它。
+        // ⚠ 必须跑在 UI 线程上（里面会 ShowDialog）。
+        public static void ShowInfo(string title, string msg)
+        {
+            ShellWindow w = W;
+            if (w == null) return;
+            InfoBox box = new InfoBox(title, msg);
+            box.Owner = w;
+            box.ShowDialog();
+        }
+
+        // 「检查更新」按钮的忙 / 闲：检查中变灰、文字改「检查中…」，免得连点把服务器敲爆。
+        // 走 Post（不阻塞调用方）—— 后台线程收尾时也会调它。
+        public static void SetCheckUpdateBusy(bool busy)
+        {
+            Post(delegate
+            {
+                if (W == null || W.CheckUpdateButton == null) return;
+                W.CheckUpdateButton.IsEnabled = !busy;
+                W.CheckUpdateButton.Content = busy ? "检查中…" : "检查更新";
+            });
+        }
+
         // 门面：弹出"视频放哪"的询问框（返回 Choice/Checked/Picked）
         public static AskResult ShowAskDialog(bool upfront, string info, string lastFolder, string checkText)
         {

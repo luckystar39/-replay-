@@ -1,5 +1,5 @@
 settings ParallelCount before test = 1
-OK  app alive  pid=33580
+OK  app alive  pid=7692
 OK  panel starts expanded  already expanded
 OK  all left-panel controls present  missing=
 OK  btnStart has a playlist glyph + CJK  raw=? 开始录制
@@ -9,19 +9,23 @@ OK  cbMic has a selection  raw=只录游戏声音
 OK  set cbParallel=2  ok=True
 OK  settings ParallelCount==3  file=3
 OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
-OK  panel width > 120  panel=298
+OK  panel width > 120  panel=794
 OK  not collapsed  collapsed=False
 OK  collapsed after press  collapsed=True
 OK  panel width 0 when collapsed  panel=0
 OK  settings PanelCollapsed==true  file=True
 OK  top button shows the expand arrow (U+25B6)  raw=?  展开面板
 OK  expanded again  collapsed=False
-OK  panel width restored  panel=298
+OK  panel width restored  panel=794
 OK  top button back to the collapse arrow (U+25C0)  raw=?  收起面板
-OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
 OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
 OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
 OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
 settings restored
 dump -> D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\_dump-utf8.json
 PASS

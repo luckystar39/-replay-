@@ -7,7 +7,7 @@
     {
         "what":  "a background disk walk really ran",
         "ok":  true,
-        "detail":  "scanMs=1921"
+        "detail":  "scanMs=1940"
     },
     {
         "what":  "the dialog never claims the game is missing",

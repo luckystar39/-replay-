@@ -1,4 +1,4 @@
-OK   app alive  pid=36056 waited=0s
+OK   app alive  pid=12676 waited=0s
 OK   sysmute reads the current state  muted=False
 OK   sysmute:on reports success  ok=True
 OK   the endpoint is now muted  muted=True
@@ -11,7 +11,15 @@ OK   refresh is logged
 OK   refresh found the new video  recorded=1 of 2
 OK   it is the right row  file=r1.rep
 OK   refresh did not drop any row  count=2
-OK   app alive after refresh  pid=36056
+OK   app alive after refresh  pid=12676
 OK   no exception in log  
+OK   mic row is enabled when not parallel  
+OK   picking game+mic stores gameAndMic (not "both")  file=gameAndMic
+OK   parallel locks the mic row  
+OK   parallel shows "game only" (index 0)  index=0
+OK   parallel forces the EFFECTIVE mode to gameOnly  micEff=gameOnly
+OK   locking did NOT overwrite the stored choice  file=gameAndMic
+OK   going back to 1 unlocks the mic row  
+OK   and the user's own choice comes back (index 1)  index=1
 settings restored
 PASS

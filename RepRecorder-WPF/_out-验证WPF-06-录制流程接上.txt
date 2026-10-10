@@ -1,9 +1,9 @@
 OK   test reps available  count=2
-OK   app alive  pid=33128
-OK   log has the startup banner  len=264
+OK   app alive  pid=21576
+OK   log has the startup banner  len=297
 OK   log has the game dir line  
 OK   no exception in log  
-OK   terminal panel shows the startup log  shown=7
+OK   terminal panel shows the startup log  shown=8
 OK   one row in the queue  count=1
 OK   row shows the rep file name  file=t1.rep
 OK   row starts as waiting  status=µÈ´ý

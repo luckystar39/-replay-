@@ -1,0 +1,17 @@
+OK  a saved game dir is reported as cfg  cfgValid=True
+OK  and no scan is started at all  scanning=False ms=0
+OK  the launcher file is what found the game  via=launcher dir=D:\_reptest15\pkg\game\th123
+OK  and it resolved to the path the pack declared  dir=D:\_reptest15\pkg\game\th123
+OK  no disk walk was needed for that  scanning=False ms=0
+OK  the found dir is saved back into settings  GameDir=D:\_reptest15\pkg\game\th123
+OK  the walk reports the scan layer  via=scan
+OK  the walk found a game  dir=D:\【完整包】非想天则整合包2026-06-15\【完整包】非想天则整合包2026-06-15\th123
+OK  the found dir really holds th123.exe  dir=D:\【完整包】非想天则整合包2026-06-15\【完整包】非想天则整合包2026-06-15\th123
+OK  an empty scope finds nothing  found=False dir=
+OK  a scoped walk finds the game it was pointed at  found=True
+OK  and reports the exact folder  dir=D:\_reptest15\pkg\game\th123
+OK  the window kept answering while the walk ran  worst round trip=3 ms
+OK  a background walk was actually observed  sawScanning=True
+OK  no exception in log  
+OK  the pack the launcher names beats earlier-named stale copies  dir=D:\_reptest15\app\zzz\th123
+PASS

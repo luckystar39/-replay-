@@ -11,4 +11,9 @@
 验证WPF-11-重录询问.ps1 -> PASS
 验证WPF-12-快捷键.ps1 -> PASS
 验证WPF-13-刷新与静音.ps1 -> PASS
+验证WPF-14-环境检测与首次运行.ps1 -> PASS
+验证WPF-15-自动找游戏.ps1 -> PASS
+验证WPF-16-首次自检等自动找游戏.ps1 -> PASS
+验证WPF-17-自动找ffmpeg.ps1 -> PASS
+验证WPF-18-检查更新.ps1 -> PASS
 ALL DONE

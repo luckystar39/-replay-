@@ -1,0 +1,12 @@
+fixtures compiled
+OK  a user-looking install beats an app-bundled copy  path=D:\_reptest17\tree1\ffmpeg\bin\ffmpeg.exe
+OK  and both were seen  count=2
+OK  a file named ffmpeg.exe that cannot encode is rejected  path=
+OK  the impostor is skipped for a usable one further down  path=D:\_reptest17\tree3\zz\bin\ffmpeg.exe
+OK  an empty tree finds nothing  found=False
+OK  a path saved in settings is what gets used  via=cfg
+OK  and it is the one that was saved  path=D:\_reptest17\tree1\ffmpeg\bin\ffmpeg.exe
+OK  a found ffmpeg is written back into settings  FfmpegExe=C:\Users\江博文\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe
+OK  and the saved path is a real file  FfmpegExe=C:\Users\江博文\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build\bin\ffmpeg.exe
+OK  no exception in log  
+PASS

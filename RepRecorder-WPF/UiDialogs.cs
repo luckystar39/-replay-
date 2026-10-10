@@ -333,6 +333,52 @@ namespace RepRecorder
         }
     }
 
+    // ================================================================ 一句话提示窗
+    // 2026-10-10 加「检查更新」按钮时建的：手动查完了得让用户看见结果，而
+    // 「已是最新」「检查失败」这两种既不该静默（用户会以为按钮坏了），也不该塞进 UpdateBox
+    // ——那个窗是"有新版要下载"专用的（按钮是下载/重启），硬塞会把它的语义搞乱。
+    // 样式、拖动、AutomationId 的做法照 EnvBox / UpdateBox。
+    class InfoBox : Window
+    {
+        public InfoBox(string title, string msg)
+        {
+            Title = title;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            SizeToContent = SizeToContent.Height;
+            Width = 460;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Background = Ui.Br(MainForm.HudBg);
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            Ui.Id(this, "infoDialog");
+            Ui.MakeDraggable(this);
+
+            StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+
+            TextBlock head = Ui.Txt(title, 13, MainForm.HudText, true);
+            Ui.Id(head, "infoTitle");
+            col.Children.Add(head);
+
+            // ⚠ 必须 Wrap（同 EnvBox 里那段说明）：StackPanel 取最宽子元素的宽度，
+            //   一句不换行的长提示会把内容撑得比窗还宽、右边被裁掉。
+            TextBlock body = Ui.Txt(msg, 12, MainForm.HudDim, false);
+            body.TextWrapping = TextWrapping.Wrap;
+            body.MaxWidth = 410;
+            body.Margin = new Thickness(0, 10, 0, 0);
+            Ui.Id(body, "infoText");
+            col.Children.Add(body);
+
+            StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
+            Button close = Ui.FlatButton("关闭", "infoClose");
+            close.Height = 28;
+            close.Click += delegate { Close(); };
+            row.Children.Add(close);
+            col.Children.Add(row);
+
+            Content = col;
+        }
+    }
+
     // ================================================================ 询问框（视频放哪）
     //  Choice 0 = 第一个（留在 / 和 rep 放在一起）  1 = 另存到文件夹…  2 = 第三个（以后不再询问 / 取消）
     class AskDialog : Window
