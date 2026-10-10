@@ -270,6 +270,10 @@ namespace RepRecorder
                 if (cmd == "" || cmd == "status") return Status();
                 if (cmd == "bgstate") return Ui.OnUi<string>(delegate { ShellWindow sw = win as ShellWindow; return sw == null ? "{}" : sw.BgState(); });
                 if (cmd == "env") return Ui.OnUi<string>(delegate { return EnvJson(); });
+                if (cmd == "findgame") return FindGameJson();
+                if (cmd.StartsWith("findgame:scope=")) return FindGameScopedJson(cmd.Substring(15));   // "findgame:scope=" 是 15 个字符
+                if (cmd == "findffmpeg") return FindFfmpegJson();
+                if (cmd.StartsWith("findffmpeg:scope=")) return FindFfmpegScopedJson(cmd.Substring(17));   // "findffmpeg:scope=" 是 17 个字符
                 if (cmd == "rows") return RowsJson();
                 if (cmd == "clear") { Ui.OnUi<int>(delegate { ShellWindow sw = win as ShellWindow; if (sw != null) sw.Rows.Clear(); return 0; }); return "{\"ok\":true}"; }
                 if (cmd.StartsWith("addrows:")) return AddRows(cmd.Substring(8));
@@ -345,6 +349,76 @@ namespace RepRecorder
                 return sb.ToString();
             }
             catch (Exception ex) { return "{\"error\":" + Json(ex.Message) + "}"; }
+        }
+
+        // 「自动找游戏」的机器可读版（2026-10-09）。
+        // via 报的是【哪一层命中的】：cfg / near / launcher / scan —— 验证WPF-15 靠它断言
+        // 分层回退真的按设计的顺序走，而不是"反正最后能找到就算过"。
+        //   near     程序旁边；launcher 整合包的 SokuLauncher.json；scan 后台全盘走一遍
+        static string FindGameJson()
+        {
+            Settings c = Settings.Load();   // 启动时该发生的解析已经发生了
+            // Path 要和 WPF 的 System.Windows.Shapes.Path 区分开，这里写全名
+            bool cfgValid = !string.IsNullOrEmpty(c.GameDir) && File.Exists(System.IO.Path.Combine(c.GameDir, "th123.exe"));
+            string via;
+            string dir;
+            // 设置里已经有可用的目录时【不解析】—— 解析会顺手起一次后台扫描，
+            // 那样这条命令自己就把"没有配置才扫"这件事测没了。
+            if (cfgValid) { dir = c.GameDir; via = Settings.LastGameVia; }
+            else dir = Settings.ResolveGameDir(out via);
+            return GameJson(dir, via, cfgValid);
+        }
+
+        // 限定范围同步扫一遍。给脚本用：在开发机上整盘扫必然会撞到仓库里那个真游戏，
+        // 分不清找到的是被测目标还是它，所以把扫描算法单独拎出来喂一个小目录。
+        static string FindGameScopedJson(string root)
+        {
+            string dir = Settings.ScanForGameUnder(root);
+            return GameJson(dir, dir == null ? "" : "scan", false);
+        }
+
+        static string GameJson(string dir, string via, bool cfgValid)
+        {
+            return "{\"found\":" + (dir == null ? "false" : "true")
+                 + ",\"dir\":" + Json(dir)
+                 + ",\"via\":" + Json(via)
+                 + ",\"cfgValid\":" + (cfgValid ? "true" : "false")
+                 + ",\"scanning\":" + (Settings.GameScanRunning ? "true" : "false")
+                 + ",\"ms\":" + Settings.GameScanMs + "}";
+        }
+
+        // 「自动找 ffmpeg」的机器可读版（2026-10-10）。和 findgame 同一套路子：
+        // via 报哪一层命中的（cfg / near / winget / fixed / path / scan）。
+        // 只在找游戏时用的 scope 版本这里也有，而且额外报 count —— 走盘是"先全收集再排序"
+        // 的，脚本要能断言"它确实看见了那几个候选"，不然"排序对不对"根本无从验起。
+        static string FindFfmpegJson()
+        {
+            Settings c = Settings.Load();
+            bool cfgValid = !string.IsNullOrEmpty(c.FfmpegExe) && File.Exists(c.FfmpegExe);
+            string path;
+            string via;
+            // 设置里有可用值就【不解析】—— 解析会顺手起一次后台走盘，
+            // 那样这条命令自己就把"没有配置才扫"这件事测没了（同 FindGameJson）。
+            if (cfgValid) { path = c.FfmpegExe; via = "cfg"; }
+            else { path = Settings.FindFfmpeg(); via = Settings.LastFfmpegVia; }
+            return FfmpegJson(path, via, -1);
+        }
+
+        static string FindFfmpegScopedJson(string root)
+        {
+            int n;
+            string path = Settings.ScanForFfmpegUnder(root, out n);
+            return FfmpegJson(path, path == null ? "" : "scan", n);
+        }
+
+        static string FfmpegJson(string path, string via, int count)
+        {
+            return "{\"found\":" + (path == null ? "false" : "true")
+                 + ",\"path\":" + Json(path)
+                 + ",\"via\":" + Json(via)
+                 + ",\"count\":" + count
+                 + ",\"scanning\":" + (Settings.FfmpegScanRunning ? "true" : "false")
+                 + ",\"ms\":" + Settings.FfmpegScanMs + "}";
         }
 
         static string RowsJson()

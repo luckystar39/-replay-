@@ -217,6 +217,22 @@ namespace RepRecorder
         public void UiAddPaths(string[] paths) { if (paths != null && paths.Length > 0) AddPaths(paths); }
         public void UiRefreshSoundButtons() { RefreshSoundButtons(); }
 
+        // 后台全盘扫描找到游戏后，界面每 2 秒来取一次（挂在 UiWindow.cs 的 soundTimer 上）。
+        // 走定时器而不用回调，是因为那个定时器本来就在 UI 线程上 —— 回填设置在 UI 线程做，
+        // 就完全不用跨线程碰控件。特意这么设计：Ui.OnUi 在 Application 还没建好时会直接在
+        // 调用线程上跑（Ui.cs: `app == null → return f()`），扫描快的话正好能撞上。
+        public void UiAdoptSearches()
+        {
+            bool got = Settings.AdoptScannedGameDir(cfg);
+            if (Settings.AdoptScannedFfmpeg(cfg)) got = true;
+            if (got) RefreshEnvLabel();
+            // 等两个自动查找都落定的那个首次自检窗（见 UiOnShown 里那段）。
+            // 75 秒兜底：万一扫描线程出什么意外、Running 一直挂着，也不能让这个窗永远不弹
+            // —— 那等于把"新用户当场知道缺什么"整个弄没了。
+            if (firstRunPending && (!Settings.AnyScanRunning || Environment.TickCount - firstRunSince > 75000))
+                ShowFirstRunEnvDialog();
+        }
+
         // 旧版是挂在 list.ItemSelectionChanged 上的那句「列表里选中几个 rep，「同时录制数量」就跟着变（用户要求）」。
         // 移植时这根线漏接了（WPF 的 ListBox 没有原生句柄，没人提醒），靠 验证WPF-10 抓出来 —— 补在 HookRecorder 里。
         // 设置窗里改了音频相关的项 → 立刻生效并刷新那几个按钮（Ui.ShowSettings 里调）
@@ -267,6 +283,29 @@ namespace RepRecorder
             return true;
         }
 
+        // 首次自检那个窗还没弹过 —— 在等自动找游戏落定（见 UiOnShown 里那段注释）
+        bool firstRunPending;
+        int firstRunSince;
+
+        // 首次自检：只报事实，不修任何东西。
+        // ⚠ 先把 EnvChecked 落盘再弹：这个窗是**模态**的（Ui.ShowEnvDialog → ShowDialog），
+        //   用户在窗开着的时候把程序结束掉，放在后面那句就永远执行不到、下次启动又弹一遍。
+        void ShowFirstRunEnvDialog()
+        {
+            // ⚠ 必须在 ShowDialog 之前清掉：模态期间定时器照样在跑，不清就会重入、
+            //   弹出第二个第三个一模一样的窗。
+            firstRunPending = false;
+            cfg.EnvChecked = true;
+            cfg.Save();
+            try
+            {
+                EnvReport rep0 = EnvReport.Build(cfg);
+                if (!rep0.AllOk) Ui.ShowEnvDialog(rep0);
+                RefreshEnvLabel();   // 用户可能顺手在设置里把游戏目录指对了
+            }
+            catch (Exception ex) { Log.Write("首次自检弹窗失败（不影响使用）：" + ex.Message); }
+        }
+
         // 启动那一段（旧版写在 MainForm 的 Shown 里，顺序照搬）
         public void UiOnShown(string[] args)
         {
@@ -294,16 +333,15 @@ namespace RepRecorder
                 // 首次启动自检（2026-10-08）：新用户拿到包，双击之后必须当场知道缺什么。
                 // 只在【有问题时】弹，而且一台机器只弹一次（EnvChecked）—— 环境正常的人永远看不到它，
                 // 想看随时点「检查环境」，那个永远会弹。
+                // 2026-10-09（用户报的）：自动找游戏**还在跑**的时候不能弹这个窗。
+                //   它是一次性快照，弹出来之后内容再也不会变；而扫描要一两秒才回来、
+                //   回来才把 GameDir 填进设置。启动那一瞬就照"游戏目录：<未找到>"建卡，
+                //   用户隔一秒进设置却看到路径已经填好了 —— 卡片和设置互相矛盾。
+                //   所以扫描在跑就等着，落定之后再弹，看到的才是终值。
                 if (!cfg.EnvChecked)
                 {
-                    EnvReport rep0 = EnvReport.Build(cfg);
-                    if (!rep0.AllOk)
-                    {
-                        Ui.ShowEnvDialog(rep0);
-                        RefreshEnvLabel();   // 用户可能顺手在设置里把游戏目录指对了
-                    }
-                    cfg.EnvChecked = true;
-                    cfg.Save();
+                    if (Settings.AnyScanRunning) { firstRunPending = true; firstRunSince = Environment.TickCount; }
+                    else ShowFirstRunEnvDialog();
                 }
             }
             catch (Exception ex) { Log.Write("启动初始化出错：" + ex); }
@@ -607,41 +645,11 @@ namespace RepRecorder
         }
         // ---- moved from MainForm ----
         // internal（不是 private）：EnvReport 要问它 ffmpeg 在不在，好把结论一起报给用户。
-        internal static string FindFfmpeg()
-        {
-            List<string> cands = new List<string>();
-            try { cands.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe")); } catch { }
-            try
-            {
-                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                       @"Microsoft\WinGet\Links\ffmpeg.exe"));
-            }
-            catch { }
-            try
-            {
-                string pkg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                          @"Microsoft\WinGet\Packages");
-                if (Directory.Exists(pkg))
-                    foreach (string d in Directory.GetDirectories(pkg, "Gyan.FFmpeg*"))
-                        foreach (string b in Directory.GetDirectories(d, "ffmpeg*"))
-                            cands.Add(Path.Combine(b, @"bin\ffmpeg.exe"));
-            }
-            catch { }
-            foreach (string c in cands) { try { if (File.Exists(c)) return c; } catch { } }
-            try
-            {
-                string path = Environment.GetEnvironmentVariable("PATH");
-                if (path != null)
-                    foreach (string d in path.Split(';'))
-                    {
-                        if (d.Trim().Length == 0) continue;
-                        string p = Path.Combine(d.Trim(), "ffmpeg.exe");
-                        if (File.Exists(p)) return p;
-                    }
-            }
-            catch { }
-            return null;
-        }
+        // 实现只有一份，在 Core.cs 的 Settings 里（那边还要做走盘 + 实跑校验，放不到这儿）。
+        // 保留这个名字当转发器：调用点多，而且 EnvReport 认的就是它。
+        // ⚠ 改之前这里是【一整份和 Core.cs 逐字相同的副本】—— 加一个查找位置要改两处，
+        //   漏一处的表现是"旧界面找得到、新界面找不到"。2026-10-10 合并成一份。
+        internal static string FindFfmpeg() { return Settings.FindFfmpeg(); }
         // ---- moved from MainForm ----
         bool SplitOne(string grid, Job job, int idx, int cw, int ch, int x, int y, double startSec, double maxSeconds, out string err)
         {
@@ -3668,6 +3676,7 @@ namespace RepRecorder
         // 而左下角那张环境卡又只报两项。现在先弹窗，日志照写（脚本和排查都还要看它）。
         void OnCheck(object sender, EventArgs e)
         {
+            Settings.RestartSearchesIfNeeded(cfg);   // 点「检查环境」= 当场重新找一次游戏和 ffmpeg
             cfg.FillDefaults();
             cfg.Save();
             RefreshEnvLabel();

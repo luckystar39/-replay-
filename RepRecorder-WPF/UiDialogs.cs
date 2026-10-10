@@ -86,8 +86,12 @@ namespace RepRecorder
                 row.Children.Add(copy);
             }
 
+            // 游戏 或 ffmpeg 缺了 —— 两个都得去设置里指。只做一个按钮：
+            // 上面每一行自己写着该怎么修，两个一模一样的按钮只是碍事。
             EnvItem game = rep.Get("game");
-            if (game != null && !game.Ok)
+            EnvItem ffmRow = rep.Get("ffmpeg");
+            bool needSettings = (game != null && !game.Ok) || (ffmRow != null && !ffmRow.Ok);
+            if (needSettings)
             {
                 Button goSet = Ui.FlatButton("去设置里指一下", "envOpenSettings");
                 goSet.Height = 28; goSet.Margin = new Thickness(8, 0, 0, 0);
@@ -111,6 +115,10 @@ namespace RepRecorder
             StackPanel head = new StackPanel { Orientation = Orientation.Horizontal };
             TextBlock mark = Ui.Txt(it.Ok ? "✓" : "✗", 12.5, it.Ok ? MainForm.HudAccent2 : MainForm.HudRed, true);
             mark.Width = 18;
+            // 给验收脚本读的：这个窗是【一次性快照】，弹出来之后内容再也不会变
+            // （2026-10-09 就因为这一点报了个假警 —— 卡上打叉、设置里却已经填好）。
+            // text:<这个 id> 直接返回 "✓" / "✗"，能把"卡片当时到底画的是什么"钉死。
+            Ui.Id(mark, "env_" + it.Key + "Mark");
             head.Children.Add(mark);
             TextBlock name = Ui.Txt(it.Label, 12.5, MainForm.HudText, false);
             name.Width = 118;
@@ -457,16 +465,19 @@ namespace RepRecorder
                 cfg.FillDefaults();
                 foreach (Field f in fields)
                     if (f.SetBox != null) f.SetBox(Convert.ToString(f.Pi.GetValue(cfg, null)));
-                RepRecorder.Log.Write("设置窗：已重新自动检测游戏目录 / OBS / 端口 / 密码");
+                RepRecorder.Log.Write("设置窗：已重新自动检测游戏目录 / OBS / ffmpeg / 端口 / 密码");
             };
             head.Children.Add(auto);
             root.Children.Add(head);
 
             StackPanel col = new StackPanel { Margin = new Thickness(18, 0, 12, 8) };
 
-            Section(col, "OBS 与游戏");
+            Section(col, "OBS、游戏与 ffmpeg");
             PathRow(col, "OBS 程序", "ObsExe", false, "");
             PathRow(col, "游戏目录", "GameDir", true, "（里面要有 th123.exe）");
+            // 2026-10-10 加的。以前 ffmpeg 没有任何设置项 —— 用户自己下了一份放在别处就
+            // 永远找不到，而且是三个依赖里唯一不能手动指定的（OBS 和游戏都能在这儿填）。
+            PathRow(col, "ffmpeg 程序", "FfmpegExe", false, "（留空自动查找）");
             NumberRow(col, "obs-websocket 端口", "Port", "");
             PasswordRow(col, "obs-websocket 密码", "Password", "（自动从 OBS 里读）");
 

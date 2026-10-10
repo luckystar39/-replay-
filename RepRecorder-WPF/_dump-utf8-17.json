@@ -1,0 +1,52 @@
+[
+    {
+        "what":  "a user-looking install beats an app-bundled copy",
+        "ok":  true,
+        "detail":  "path=D:\\_reptest17\\tree1\\ffmpeg\\bin\\ffmpeg.exe"
+    },
+    {
+        "what":  "and both were seen",
+        "ok":  true,
+        "detail":  "count=2"
+    },
+    {
+        "what":  "a file named ffmpeg.exe that cannot encode is rejected",
+        "ok":  true,
+        "detail":  "path="
+    },
+    {
+        "what":  "the impostor is skipped for a usable one further down",
+        "ok":  true,
+        "detail":  "path=D:\\_reptest17\\tree3\\zz\\bin\\ffmpeg.exe"
+    },
+    {
+        "what":  "an empty tree finds nothing",
+        "ok":  true,
+        "detail":  "found=False"
+    },
+    {
+        "what":  "a path saved in settings is what gets used",
+        "ok":  true,
+        "detail":  "via=cfg"
+    },
+    {
+        "what":  "and it is the one that was saved",
+        "ok":  true,
+        "detail":  "path=D:\\_reptest17\\tree1\\ffmpeg\\bin\\ffmpeg.exe"
+    },
+    {
+        "what":  "a found ffmpeg is written back into settings",
+        "ok":  true,
+        "detail":  "FfmpegExe=C:\\Users\\江博文\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.2-full_build\\bin\\ffmpeg.exe"
+    },
+    {
+        "what":  "and the saved path is a real file",
+        "ok":  true,
+        "detail":  "FfmpegExe=C:\\Users\\江博文\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.2-full_build\\bin\\ffmpeg.exe"
+    },
+    {
+        "what":  "no exception in log",
+        "ok":  true,
+        "detail":  ""
+    }
+]

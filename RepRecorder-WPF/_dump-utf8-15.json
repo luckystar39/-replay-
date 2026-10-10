@@ -1,0 +1,77 @@
+[
+    {
+        "what":  "a saved game dir is reported as cfg",
+        "ok":  true,
+        "detail":  "cfgValid=True"
+    },
+    {
+        "what":  "and no scan is started at all",
+        "ok":  true,
+        "detail":  "scanning=False ms=0"
+    },
+    {
+        "what":  "the launcher file is what found the game",
+        "ok":  true,
+        "detail":  "via=launcher dir=D:\\_reptest15\\pkg\\game\\th123"
+    },
+    {
+        "what":  "and it resolved to the path the pack declared",
+        "ok":  true,
+        "detail":  "dir=D:\\_reptest15\\pkg\\game\\th123"
+    },
+    {
+        "what":  "no disk walk was needed for that",
+        "ok":  true,
+        "detail":  "scanning=False ms=0"
+    },
+    {
+        "what":  "the found dir is saved back into settings",
+        "ok":  true,
+        "detail":  "GameDir=D:\\_reptest15\\pkg\\game\\th123"
+    },
+    {
+        "what":  "the walk reports the scan layer",
+        "ok":  true,
+        "detail":  "via=scan"
+    },
+    {
+        "what":  "the walk found a game",
+        "ok":  true,
+        "detail":  "dir=D:\\【完整包】非想天则整合包2026-06-15\\【完整包】非想天则整合包2026-06-15\\th123"
+    },
+    {
+        "what":  "the found dir really holds th123.exe",
+        "ok":  true,
+        "detail":  "dir=D:\\【完整包】非想天则整合包2026-06-15\\【完整包】非想天则整合包2026-06-15\\th123"
+    },
+    {
+        "what":  "an empty scope finds nothing",
+        "ok":  true,
+        "detail":  "found=False dir="
+    },
+    {
+        "what":  "a scoped walk finds the game it was pointed at",
+        "ok":  true,
+        "detail":  "found=True"
+    },
+    {
+        "what":  "and reports the exact folder",
+        "ok":  true,
+        "detail":  "dir=D:\\_reptest15\\pkg\\game\\th123"
+    },
+    {
+        "what":  "the window kept answering while the walk ran",
+        "ok":  true,
+        "detail":  "worst round trip=7 ms"
+    },
+    {
+        "what":  "a background walk was actually observed",
+        "ok":  true,
+        "detail":  "sawScanning=True"
+    },
+    {
+        "what":  "no exception in log",
+        "ok":  true,
+        "detail":  ""
+    }
+]

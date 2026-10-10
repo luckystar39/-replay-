@@ -1,0 +1,37 @@
+[
+    {
+        "what":  "the first-run dialog did appear",
+        "ok":  true,
+        "detail":  "sawDialog=True"
+    },
+    {
+        "what":  "a background disk walk really ran",
+        "ok":  true,
+        "detail":  "scanMs=1907"
+    },
+    {
+        "what":  "the dialog never claims the game is missing",
+        "ok":  true,
+        "detail":  "marks=✓"
+    },
+    {
+        "what":  "and it shows the game as found",
+        "ok":  true,
+        "detail":  "marks=✓"
+    },
+    {
+        "what":  "the game dir was adopted into settings",
+        "ok":  true,
+        "detail":  "GameDir=D:\\_reptest16\\pkg\\game\\th123"
+    },
+    {
+        "what":  "the first-run check was remembered",
+        "ok":  true,
+        "detail":  "EnvChecked=True"
+    },
+    {
+        "what":  "no exception in log",
+        "ok":  true,
+        "detail":  ""
+    }
+]

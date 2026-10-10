@@ -1875,7 +1875,7 @@ namespace RepRecorder
 
             soundTimer = new System.Windows.Threading.DispatcherTimer();
             soundTimer.Interval = TimeSpan.FromMilliseconds(2000);
-            soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } };
+            soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } try { rec.UiAdoptSearches(); } catch { } };
             soundTimer.Start();
 
             // 旧版这段挂在 MainForm 的 Shown 事件上。移植时改成了"构造完直接调" —— 那时候

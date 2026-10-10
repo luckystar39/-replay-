@@ -27,6 +27,9 @@ namespace RepRecorder
         public string ObsExe { get; set; }
         [Category("路径"), Description("th123 文件夹（里面有 th123.exe）。留空自动搜索。")]
         public string GameDir { get; set; }
+        [Category("路径"), Description("ffmpeg.exe 的完整路径。留空自动搜索。\r\n" +
+            "只有并行录制（同时录 2 个以上）和切分才用它，单个录制不需要。")]
+        public string FfmpegExe { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 端口，默认 4455。")]
         public int Port { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 密码。留空则自动从 OBS 配置文件读取。")]
@@ -323,12 +326,16 @@ namespace RepRecorder
             //   再被「确定」把所有字段写回去 —— 老用户会莫名其妙从 6 变成 1（最慢）。
             //   放在版本号判断之外，手改设置文件、从旧备份还原都绕不过去（同上面两条）。
             if (s.SplitParallel > 3) s.SplitParallel = 3;
+            // ⚠ 必须在 FillDefaults 之前：FillDefaults 里会调 FindFfmpeg，而它是 static、
+            //   只能读这份镜像。顺序反了就等于"设置里的 ffmpeg 路径第一次启动时不生效"。
+            FfmpegOverride = s.FfmpegExe == null ? "" : s.FfmpegExe;
             s.FillDefaults();
             return s;
         }
 
         public void Save()
         {
+            FfmpegOverride = FfmpegExe == null ? "" : FfmpegExe;   // 镜像给 static 的 FindFfmpeg
             try
             {
                 string txt = new JavaScriptSerializer().Serialize(this);
@@ -348,6 +355,13 @@ namespace RepRecorder
             {
                 string found = FindObsExe();
                 if (found != null) ObsExe = found;
+            }
+            // ffmpeg：2026-10-10 起也存进设置。以前它没有字段，每次调用都现搜 ——
+            // 用户自己下了一份放在别处就永远找不到，而且是三个依赖里唯一不能手动指定的。
+            if (string.IsNullOrEmpty(FfmpegExe) || !File.Exists(FfmpegExe))
+            {
+                string found = FindFfmpeg();
+                if (found != null) FfmpegExe = found;
             }
             // 从 OBS 配置文件里偷密码/端口
             try
@@ -371,13 +385,178 @@ namespace RepRecorder
             if (Port <= 0) Port = 4455;
         }
 
+        // ---------------------------------------------------------- 找游戏目录
+        //
+        // 分层回退（2026-10-09 重做）：
+        //   cfg      —— 设置里已经存好了，什么都不用找（FillDefaults 判断，不在这里）
+        //   near     —— 程序旁边：本目录 / 上一级 / 这两处的一级子目录
+        //   launcher —— SokuLauncher.json 的 SokuDirPath（整合包自己声明游戏在哪）
+        //   scan     —— 各固定盘走一遍（后台线程，深度 MaxScanDepth）
+        //
+        // 为什么要有后两层：以前的 FindGameDir 只在"程序附近两圈"里找，前提是录制器和
+        // 游戏在同一个整合包里。新用户从 RepRecorder-发给别人.zip 拿到录制器、游戏放在
+        // 别处（或者干脆把整合包文件夹改了名/挪了盘）时，它永远找不到，只能自己进设置里
+        // 指 —— 而环境卡又只说"未找到 th123.exe"，新用户根本不知道该指哪。
+        //
+        // 为什么全盘扫描要放后台：深度 8 在 NVMe 上 2~3 秒，机械硬盘上十几秒。同步跑在
+        // UI 线程上，Windows 会在这段时间把标题栏画成"未响应"。所以 FindGameDir 自己
+        // 永远不阻塞：便宜的层当场给答案，贵的丢给后台线程，结果由界面每 2 秒取一次
+        // （两个界面各有一个 2 秒声音定时器，见 UiWindow.cs / Core.cs 的 soundTimer）。
+        // 走那条路，回填必然发生在 UI 线程上，不需要任何跨线程碰控件。
+        static readonly object scanGate = new object();   // 只保护下面这两个"哪一层命中的"标记
+        static string lastVia = "";       // 最近一次解析是哪一层命中的（调试接口报给脚本看）
+        static string fmLastVia = "";
+
+        // 两个「只在便宜的办法都不管用时，才在后台跑一次的查找」：游戏目录、ffmpeg。
+        // 螺纹（锁、后台线程、只跑一轮、异常兜底）只写一份 —— 抄两份迟早跑偏，
+        // 而且这里任何一处漏清状态，界面那个"等扫描落定再弹"的自检窗就永远不弹。
+        static readonly LazyScan gameScan = new LazyScan("游戏");
+        static readonly LazyScan fmScan = new LazyScan("ffmpeg");
+
+        const int MaxScanDepth = 8;
+        const int ScanBudgetMs = 60000;   // 机械硬盘上别空转
+
+        // 全盘扫描这条路走的目录名黑名单：系统目录 + 一票缓存目录。
+        // 和 FindObsExe 不同，那里只列盘根一层，漏了就漏了；这里要往下钻，踩进
+        // C:\Windows 或者 node_modules 就是几十秒白费。
+        static readonly string[] ScanSkipDirs = new string[] {
+            "windows", "$recycle.bin", "system volume information", "program files",
+            "program files (x86)", "programdata", "appdata", "windowsapps", "recovery",
+            "perflogs", "$winreagent", "$windows.~bt", "$windows.~ws", "$sysreset",
+            "node_modules", "onedrivetemp", ".git", ".svn", ".hg", "__pycache__",
+            "venv", ".venv", "site-packages", ".gradle", ".nuget", "obj"
+        };
+
+        // 名字像游戏的先走 —— 命中的话后面那些深目录一个都不用碰，多数情况毫秒级返回。
+        static readonly string[] ScanHints = new string[] {
+            "th123", "soku", "非想天则", "东方", "touhou", "整合包", "th105", "游戏", "game"
+        };
+
+        // "这确实是游戏目录"的旁证。全盘乱撞的风险比"用户亲手指的目录"大得多，所以扫描这条
+        // 路上要求 th123.exe 旁边至少还有这些之一；near/launcher 两层不要求，维持老标准，
+        // 免得把老用户本来能用的配置判成无效。
+        static readonly string[] GameMarkers = new string[] {
+            "th123a.dat", "th123b.dat", "th123c.dat", "configex123.ini",
+            "SWRSToys.ini", "ModLoaderSettings.json", "score123.dat"
+        };
+
+        // 「只在需要时跑一次」的后台查找。
+        // 三条性质都是踩出来的，别改：
+        //   · 对调用方**永不阻塞** —— 还在扫就先返回 null，结果由界面每 2 秒的定时器取走
+        //     （那条路径本来就在 UI 线程上，回填时一行跨线程代码都不用写）。
+        //   · 收尾必须在 finally 里 —— 首次自检窗要等 Running 变 false 才肯弹。
+        //   · 异常绝不能逃出线程 —— .NET 4 里后台线程的未处理异常会直接结束整个进程。
+        class LazyScan
+        {
+            readonly object gate = new object();
+            readonly string what;
+            string found; bool running, done; long ms;
+
+            public LazyScan(string what) { this.what = what; }
+
+            public bool Running { get { lock (gate) return running; } }
+            public long Ms { get { lock (gate) return ms; } }
+            public string Cached { get { lock (gate) return found; } }
+
+            public void EnsureStarted(Func<string> work)
+            {
+                lock (gate) { if (running || done) return; running = true; }
+                Thread t = new Thread(delegate ()
+                {
+                    Stopwatch sw = Stopwatch.StartNew();
+                    string r = null;
+                    try { r = work(); }
+                    catch (Exception ex) { Log.Write("自动找" + what + "出错：" + ex.Message); }
+                    finally
+                    {
+                        sw.Stop();
+                        lock (gate) { found = r; ms = sw.ElapsedMilliseconds; running = false; done = true; }
+                    }
+                    try
+                    {
+                        Log.Write(r == null
+                            ? "自动找" + what + "：扫了一遍，没找到（" + sw.ElapsedMilliseconds + " ms）"
+                            : "自动找" + what + "：找到 " + r + "（" + sw.ElapsedMilliseconds + " ms）");
+                    }
+                    catch { }
+                });
+                t.IsBackground = true;      // 关程序时别挂着不走
+                t.Name = "找" + what;
+                t.Start();
+            }
+
+            // 「检查环境」用：清掉"已经扫过"的标记，让它能重新扫一次。
+            // 正在扫就什么都不做（不然会起第二个线程，两份结果互相盖）。
+            public void Reset()
+            {
+                lock (gate) { if (running) return; found = null; done = false; ms = 0; }
+            }
+        }
+
+        public static bool GameScanRunning { get { return gameScan.Running; } }
+        // 首次自检那个窗要等【两个】自动查找都落定才弹 —— 只等游戏的话，
+        // ffmpeg 会原地重演同一个矛盾（卡片是快照，弹完就不会再变）。
+        public static bool AnyScanRunning { get { return gameScan.Running || fmScan.Running; } }
+        public static long GameScanMs { get { return gameScan.Ms; } }
+        public static bool FfmpegScanRunning { get { return fmScan.Running; } }
+        public static long FfmpegScanMs { get { return fmScan.Ms; } }
+        public static string LastGameVia { get { lock (scanGate) { return lastVia; } } }
+        public static string LastFfmpegVia { get { lock (scanGate) { return fmLastVia; } } }
+
         public static string FindGameDir()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string via;
+            return ResolveGameDir(out via);
+        }
+
+        // 不阻塞：便宜的层当场返回，贵的（scan）只读后台线程的缓存。
+        public static string ResolveGameDir(out string via)
+        {
+            via = "";
+
+            string near = FindGameDirNearby();
+            if (near != null) { lock (scanGate) lastVia = via = "near"; return near; }
+
+            string lc = FindGameViaSokuLauncher();
+            if (lc != null) { lock (scanGate) lastVia = via = "launcher"; return lc; }
+
+            gameScan.EnsureStarted(ScanDrivesForGame);
+            string scanned = gameScan.Cached;
+            if (scanned != null) { lock (scanGate) lastVia = via = "scan"; return scanned; }
+            return null;   // 还在扫，先报没有 —— 界面过两秒自己会取到
+        }
+
+        // near 和 launcher 两层共用的一组"附近"目录：程序目录、上一级、上两级。
+        // 上两级是给 launcher 用的：整合包常常是 D:\整合包\RepRecorder-WPF\ 这种排法，
+        // SokuLauncher.json 在 D:\整合包\【完整包】…\ 里，离程序两跳。
+        static List<string> NearbyRoots()
+        {
             List<string> roots = new List<string>();
-            roots.Add(baseDir);
             try
             {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string cur = baseDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                roots.Add(cur);
+                for (int i = 0; i < 2; i++)
+                {
+                    DirectoryInfo up = Directory.GetParent(cur);
+                    if (up == null) break;
+                    cur = up.FullName;
+                    roots.Add(cur);
+                }
+            }
+            catch { }
+            return roots;
+        }
+
+        static string FindGameDirNearby()
+        {
+            // 只在程序目录和它的上一级里找（保持原样：范围越宽越容易认错）
+            List<string> roots = new List<string>();
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                roots.Add(baseDir);
                 DirectoryInfo up = Directory.GetParent(baseDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 if (up != null) roots.Add(up.FullName);
             }
@@ -395,6 +574,480 @@ namespace RepRecorder
                 catch { }
             }
             return null;
+        }
+
+        // 整合包自己的 SokuLauncher.json 写着 SokuDirPath / SokuFileName —— 这是最权威的
+        // 线索，而且**不依赖目录名**：用户把整合包文件夹改成"新建文件夹"、或者整个挪到别的
+        // 盘，只要启动器还在，就能解出游戏在哪。纯靠目录名扫要脆弱得多。
+        static string FindGameViaSokuLauncher()
+        {
+            foreach (string root in NearbyRoots())
+            {
+                // 每个 root 自己 + 它的一级子目录
+                string[] dirs;
+                try { dirs = Directory.GetDirectories(root); } catch { dirs = new string[0]; }
+                string json = Path.Combine(root, "SokuLauncher.json");
+                if (File.Exists(json)) { string g = GameDirFromSokuJson(json); if (g != null) return g; }
+                string launcher = Path.Combine(root, "SokuLauncher.exe");
+                if (File.Exists(launcher))
+                {
+                    string d = Path.Combine(Path.Combine(root, "th123"), "th123.exe");
+                    if (File.Exists(d)) return Path.Combine(root, "th123");
+                }
+                foreach (string sub in dirs)
+                {
+                    try
+                    {
+                        json = Path.Combine(sub, "SokuLauncher.json");
+                        if (File.Exists(json)) { string g = GameDirFromSokuJson(json); if (g != null) return g; }
+                        // 只有启动器没有 json：把启动器所在目录当整合包根试一下约定俗成的 th123\
+                        if (File.Exists(Path.Combine(sub, "SokuLauncher.exe")) &&
+                            File.Exists(Path.Combine(Path.Combine(sub, "th123"), "th123.exe")))
+                            return Path.Combine(sub, "th123");
+                    }
+                    catch { }
+                }
+            }
+            return null;
+        }
+
+        static string GameDirFromSokuJson(string jsonPath)
+        {
+            try
+            {
+                Dictionary<string, object> d = (Dictionary<string, object>)new JavaScriptSerializer()
+                    .DeserializeObject(File.ReadAllText(jsonPath, Encoding.UTF8));
+                string dirName = (d != null && d.ContainsKey("SokuDirPath")) ? Convert.ToString(d["SokuDirPath"]) : null;
+                string exeName = (d != null && d.ContainsKey("SokuFileName")) ? Convert.ToString(d["SokuFileName"]) : null;
+                if (string.IsNullOrEmpty(exeName)) exeName = "th123.exe";
+                if (string.IsNullOrEmpty(dirName))
+                {
+                    // 字段名对不上（别的整合包版本）—— 别静默失效，留个痕，不然"为什么没找到"查不出来
+                    Log.Write("SokuLauncher.json 里没有 SokuDirPath，这版整合包字段名可能不同：" + jsonPath);
+                    return null;
+                }
+                string baseDir = Path.GetDirectoryName(jsonPath);
+                string dir = Path.IsPathRooted(dirName) ? dirName : Path.Combine(baseDir, dirName);
+                if (File.Exists(Path.Combine(dir, exeName))) return dir;
+                Log.Write("SokuLauncher.json 指向的目录里没有 " + exeName + "：" + dir);
+                return null;
+            }
+            catch (Exception ex) { Log.Write("读 SokuLauncher.json 失败：" + ex.Message); return null; }
+        }
+
+        // 各固定盘走一遍，返回所有候选。游戏和 ffmpeg 共用（只差"什么算命中"和
+        // "哪些目录名像目标、先走一步"这两张表）。
+        static List<string> ScanFixedDrives(Func<string, bool> isTarget, string[] hints, string what)
+        {
+            List<string> hits = new List<string>();
+            Stopwatch sw = Stopwatch.StartNew();
+            foreach (DriveInfo d in DriveInfo.GetDrives())
+            {
+                // 只扫固定盘（和 FindObsExe 一致）：U 盘/光驱慢得没边，插着的读卡器还能卡死
+                if (d.DriveType != DriveType.Fixed || !d.IsReady) continue;
+                try { WalkForTarget(d.RootDirectory, 0, sw, hits, isTarget, hints); } catch { }
+                if (sw.ElapsedMilliseconds > ScanBudgetMs)
+                {
+                    Log.Write("自动找" + what + "：超过 " + (ScanBudgetMs / 1000) + " 秒，没扫完就收工了");
+                    break;
+                }
+            }
+            return hits;
+        }
+
+        // 给调试接口的"限定范围扫描"：同步、不写共享缓存。验收脚本靠它把扫描算法
+        // 单独拎出来测 —— 在开发机上整盘扫必然会撞到仓库里那个真游戏、以及一堆别的
+        // 软件捆绑的 ffmpeg，分不清找到的到底是"被测的那个"还是它们。
+        static List<string> ScanUnder(string root, Func<string, bool> isTarget, string[] hints, string what)
+        {
+            List<string> hits = new List<string>();
+            try { WalkForTarget(new DirectoryInfo(root), 0, Stopwatch.StartNew(), hits, isTarget, hints); }
+            catch (Exception ex) { Log.Write("限定范围找" + what + "出错：" + ex.Message); }
+            return hits;
+        }
+
+        static string ScanDrivesForGame()
+        {
+            return PickBestGameDir(ScanFixedDrives(IsStrictGameDir, ScanHints, "游戏"));
+        }
+
+        public static string ScanForGameUnder(string root)
+        {
+            return PickBestGameDir(ScanUnder(root, IsStrictGameDir, ScanHints, "游戏"));
+        }
+
+        static string PickBestGameDir(List<string> hits)
+        {
+            if (hits == null || hits.Count == 0) return null;
+            if (hits.Count == 1) return hits[0];
+            // 有几份副本时别"取第一个"：遍历顺序是文件系统自己的顺序，不是"最近用的"，
+            // 挂上一份旧的、mod 没配好的副本录出来是怪结果，报错还看不懂。
+            hits.Sort(delegate (string a, string b)
+            {
+                int sa = ScoreGameDir(a), sb = ScoreGameDir(b);
+                if (sa != sb) return sb.CompareTo(sa);
+                try { return Directory.GetLastWriteTimeUtc(b).CompareTo(Directory.GetLastWriteTimeUtc(a)); }
+                catch { return 0; }
+            });
+            for (int i = 1; i < hits.Count; i++) Log.Write("自动找游戏：没选它（" + ScoreGameDir(hits[i]) + " 分）：" + hits[i]);
+            return hits[0];
+        }
+
+        // 有启动器在同一级的整合包最可信（说明这份是从启动器启动的、配置齐）
+        static int ScoreGameDir(string dir)
+        {
+            try
+            {
+                string parent = Path.GetDirectoryName(dir);
+                if (string.IsNullOrEmpty(parent)) return 0;
+                if (File.Exists(Path.Combine(parent, "SokuLauncher.json"))) return 1000;
+                if (File.Exists(Path.Combine(parent, "SokuLauncher.exe"))) return 800;
+            }
+            catch { }
+            return 0;
+        }
+
+        static void WalkForTarget(DirectoryInfo dir, int depth, Stopwatch sw, List<string> hits,
+                                  Func<string, bool> isTarget, string[] hints)
+        {
+            if (dir == null) return;
+            if (depth > MaxScanDepth || sw.ElapsedMilliseconds > ScanBudgetMs) return;
+            if (isTarget(dir.FullName)) { hits.Add(dir.FullName); return; }   // 找到就不再往下钻
+            if (depth == MaxScanDepth) return;
+
+            DirectoryInfo[] subs;
+            try { subs = dir.GetDirectories(); } catch { return; }
+            Array.Sort(subs, delegate (DirectoryInfo a, DirectoryInfo b)
+            {
+                return HintRank(a.Name, hints).CompareTo(HintRank(b.Name, hints));
+            });
+            foreach (DirectoryInfo sub in subs)
+            {
+                try
+                {
+                    // 不跟 junction / 符号链接：C: 上的 "Application Data" 那种是 reparse point，
+                    // 跟进去会绕回自己，深度 8 也照样能转半天
+                    if ((sub.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                    if (SkipDirName(sub.Name)) continue;
+                }
+                catch { continue; }
+                WalkForTarget(sub, depth + 1, sw, hits, isTarget, hints);
+            }
+        }
+
+        static bool SkipDirName(string name)
+        {
+            string n = name.Trim().ToLowerInvariant();
+            foreach (string s in ScanSkipDirs) if (n == s) return true;
+            return false;
+        }
+
+        static int HintRank(string name, string[] hints)
+        {
+            string n = name.ToLowerInvariant();
+            foreach (string h in hints) if (n.IndexOf(h) >= 0) return 0;
+            return 1;
+        }
+
+        static bool IsStrictGameDir(string dir)
+        {
+            try
+            {
+                if (!File.Exists(Path.Combine(dir, "th123.exe"))) return false;
+                foreach (string m in GameMarkers)
+                    if (File.Exists(Path.Combine(dir, m))) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        // 后台扫描的结果由界面每 2 秒取一次（两个界面各有一个 2 秒的 soundTimer）。
+        // 那条路径本来就是 UI 线程，所以回填不需要任何跨线程调用 —— 特意这么设计：
+        // Ui.OnUi 在 Application 还没建好时会直接在调用线程上跑（Ui.cs 里那句
+        // `app == null → return f()`），扫描快的话正好能撞上，从后台线程碰控件。
+        // 返回 true 表示这次真的填了，调用方据此决定要不要刷状态栏。
+        public static bool AdoptScannedGameDir(Settings s)
+        {
+            if (s == null) return false;
+            string g = gameScan.Cached;
+            if (string.IsNullOrEmpty(g)) return false;
+            if (!string.IsNullOrEmpty(s.GameDir) && File.Exists(Path.Combine(s.GameDir, "th123.exe"))) return false;
+            try
+            {
+                Log.Write("自动找到游戏目录：" + g);
+                s.GameDir = g;
+                s.Save();
+                // lastVia 也要在这里记：这个目录是【扫描】给的，但回填它的是界面定时器，
+                // 不经过 ResolveGameDir。不记的话，谁先跑（定时器还是调用方）会让
+                // 调试接口的 via 时有时无 —— 验收脚本会随机假红（2026-10-09 验证WPF-15
+                // 就是这么红过一次：game dir 明明找到了，via 却是空的）。
+                lock (scanGate) lastVia = "scan";
+                return true;
+            }
+            catch (Exception ex) { Log.Write("回填游戏目录失败：" + ex.Message); return false; }
+        }
+
+        // ---------------------------------------------------------- 找 ffmpeg
+        //
+        // 2026-10-10 加的。以前 ffmpeg 没有任何设置字段，只在几个固定位置现搜，而且
+        // **每次调用都重搜**。用户自己下载后放在别处（最常见：照教程解压到 D:\ffmpeg
+        // 但忘了加 PATH）就永远找不到 —— 它又是三个依赖里唯一不能手动指定的，用户没救。
+        //
+        // 分层和游戏一样，但多一道**实跑校验**。因为 ffmpeg.exe 这个名字太不特殊：
+        // 开发机上 D 盘 6 层内有 5 个，只有 1 个是用户自己的，其余全是别的软件捆在
+        // resources\ 里的（其中一份还是音频专用版，编不了视频）。所以走盘找到的候选
+        // 必须跑一次、确认能编 H.264 才算数。
+        //
+        // 只有走盘这条路校验。前面那些固定位置不校验：它们每次调用都会跑，起子进程太贵，
+        // 而且那些位置本来就可信（分发包里带的那份、WinGet、C:\ffmpeg\bin）。
+        static readonly string[] FfmpegScanHints = new string[] { "ffmpeg", "bin", "tools" };
+
+        // 设置里那个 ffmpeg 路径的静态镜像。FindFfmpeg 是 static，而调用点近十个、跨两个
+        // 界面 —— 逐个改成"传 cfg 进来"太容易漏一两处，漏了的表现是"某个入口死活不认
+        // 用户指定的 ffmpeg"。这个项目已经被"漏接一根线"咬过好几次，所以宁可留一个
+        // 只有一个写入方（Settings.Load / Save）的可变全局。
+        static string FfmpegOverride = "";
+
+        public static string FindFfmpeg()
+        {
+            // 0) 设置里存着的：用户手选的，或者上一次自动找到后写回去的
+            string ov = FfmpegOverride;
+            if (!string.IsNullOrEmpty(ov) && File.Exists(ov)) { lock (scanGate) fmLastVia = "cfg"; return ov; }
+
+            // 1) 程序自己旁边（分发包里就带一份）；顺带看看 bin\ 和上一级 ——
+            //    用户常常把整个 ffmpeg 解压到录制器旁边
+            try
+            {
+                string bd = AppDomain.CurrentDomain.BaseDirectory;
+                string[] rel = new string[] { "ffmpeg.exe", @"bin\ffmpeg.exe", @"..\ffmpeg.exe", @"..\bin\ffmpeg.exe" };
+                foreach (string r in rel)
+                {
+                    string c = Path.GetFullPath(Path.Combine(bd, r));
+                    if (File.Exists(c)) { lock (scanGate) fmLastVia = "near"; return c; }
+                }
+            }
+            catch { }
+
+            // 2) WinGet（Links 是垫片，Packages 是本体；版本号在目录名里所以只能通配）
+            try
+            {
+                string lad = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string links = Path.Combine(lad, @"Microsoft\WinGet\Links\ffmpeg.exe");
+                if (File.Exists(links)) { lock (scanGate) fmLastVia = "winget"; return links; }
+                string pkg = Path.Combine(lad, @"Microsoft\WinGet\Packages");
+                if (Directory.Exists(pkg))
+                    foreach (string d in Directory.GetDirectories(pkg, "Gyan.FFmpeg*"))
+                        foreach (string b in Directory.GetDirectories(d, "ffmpeg*"))
+                        {
+                            string c = Path.Combine(b, @"bin\ffmpeg.exe");
+                            if (File.Exists(c)) { lock (scanGate) fmLastVia = "winget"; return c; }
+                        }
+            }
+            catch { }
+
+            // 3) 常见安装位置（教程里最经典的 C:\ffmpeg\bin、以及 scoop / choco）
+            foreach (string c in FixedFfmpegCandidates())
+            {
+                try { if (File.Exists(c)) { lock (scanGate) fmLastVia = "fixed"; return c; } }
+                catch { }
+            }
+
+            // 4) PATH 里
+            try
+            {
+                string path = Environment.GetEnvironmentVariable("PATH");
+                if (path != null)
+                    foreach (string d in path.Split(';'))
+                    {
+                        if (d.Trim().Length == 0) continue;
+                        string p = Path.Combine(d.Trim(), "ffmpeg.exe");
+                        if (File.Exists(p)) { lock (scanGate) fmLastVia = "path"; return p; }
+                    }
+            }
+            catch { }
+
+            // 5) 都不在 → 后台走一遍盘（不阻塞：还在扫就先返回 null，界面过两秒自己取）
+            fmScan.EnsureStarted(ScanDrivesForFfmpeg);
+            string scanned = fmScan.Cached;
+            if (scanned != null) { lock (scanGate) fmLastVia = "scan"; return scanned; }
+            return null;
+        }
+
+        static List<string> FixedFfmpegCandidates()
+        {
+            List<string> cands = new List<string>();
+            try
+            {
+                // 每个固定盘的 <盘>:\ffmpeg\bin\ffmpeg.exe —— 网上教程的标准装法
+                foreach (DriveInfo d in DriveInfo.GetDrives())
+                    if (d.DriveType == DriveType.Fixed && d.IsReady)
+                        cands.Add(Path.Combine(d.RootDirectory.FullName, @"ffmpeg\bin\ffmpeg.exe"));
+            }
+            catch { }
+            try
+            {
+                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"ffmpeg\bin\ffmpeg.exe"));
+                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"ffmpeg\bin\ffmpeg.exe"));
+                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\ffmpeg\bin\ffmpeg.exe"));
+                string up = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                cands.Add(Path.Combine(up, @"scoop\shims\ffmpeg.exe"));
+                cands.Add(Path.Combine(up, @"scoop\apps\ffmpeg\current\bin\ffmpeg.exe"));
+                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), @"chocolatey\bin\ffmpeg.exe"));
+            }
+            catch { }
+            return cands;
+        }
+
+        static bool HasFfmpegExe(string dir)
+        {
+            try { return File.Exists(Path.Combine(dir, "ffmpeg.exe")); } catch { return false; }
+        }
+
+        static string ScanDrivesForFfmpeg()
+        {
+            return PickUsableFfmpeg(ScanFixedDrives(HasFfmpegExe, FfmpegScanHints, "ffmpeg"));
+        }
+
+        // 给调试接口用（验证WPF-17）：限定范围同步扫一遍，返回候选个数好断言"排序看到了几个"。
+        public static string ScanForFfmpegUnder(string root, out int count)
+        {
+            List<string> hits = ScanUnder(root, HasFfmpegExe, FfmpegScanHints, "ffmpeg");
+            count = hits.Count;
+            return PickUsableFfmpeg(hits);
+        }
+
+        // 先按"像不像用户特意装的"排序，再逐个**实跑**验，第一个通过的胜出。
+        // 不能随便挑一个：audio-only 的、被裁剪过的、挂羊头卖狗肉的，都会让切分直接失败，
+        // 而那种"录完了但切不出来"的报错极难看懂。
+        static string PickUsableFfmpeg(List<string> dirs)
+        {
+            if (dirs == null || dirs.Count == 0) return null;
+            dirs.Sort(CompareFfmpegDirs);
+            int tried = 0;
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                if (tried >= 8)   // 起子进程不便宜，前几个都不行就别把整盘跑完
+                {
+                    Log.Write("自动找 ffmpeg：前 8 个候选都不能用，先不试了");
+                    break;
+                }
+                string exe = Path.Combine(dirs[i], "ffmpeg.exe");
+                tried++;
+                if (IsUsableFfmpeg(exe)) return exe;
+                Log.Write("自动找 ffmpeg：不能用，跳过 " + exe);
+            }
+            return null;
+        }
+
+        static int CompareFfmpegDirs(string a, string b)
+        {
+            int sa = ScoreFfmpegDir(a), sb = ScoreFfmpegDir(b);
+            if (sa != sb) return sb.CompareTo(sa);
+            int da = DepthOf(a), db = DepthOf(b);
+            if (da != db) return da.CompareTo(db);        // 层级越浅越像"用户自己装的"
+            try { return Directory.GetLastWriteTimeUtc(b).CompareTo(Directory.GetLastWriteTimeUtc(a)); }
+            catch { return 0; }
+        }
+
+        static int DepthOf(string path)
+        {
+            try { return path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Length; }
+            catch { return 99; }
+        }
+
+        // "这像不像用户特意装的一份 ffmpeg"——只看路径长相；能不能用另有一道实跑校验。
+        // dir 一般就是那个 bin 目录，所以看它的上一级叫什么。
+        static int ScoreFfmpegDir(string dir)
+        {
+            int s = 0;
+            try
+            {
+                string low = dir.ToLowerInvariant();
+                string gp = Path.GetFileName(Path.GetDirectoryName(dir));
+                gp = gp == null ? "" : gp.ToLowerInvariant();
+                if (gp == "ffmpeg") s += 100;                     // C:\ffmpeg\bin
+                else if (gp.IndexOf("ffmpeg") >= 0) s += 80;      // ffmpeg-7.1-full_build\bin
+                if (low.IndexOf(@"\scoop\") >= 0 || low.IndexOf(@"\chocolatey\") >= 0) s += 90;
+                // 一堆软件把 ffmpeg 捆在 resources\ 里 —— 开发机上 5 个里有 4 个是这种
+                if (low.IndexOf(@"\resources\") >= 0) s -= 100;
+                if (low.IndexOf(@"\app\") >= 0 || low.IndexOf(@"\plugins\") >= 0 || low.IndexOf(@"\modules\") >= 0) s -= 60;
+                if (low.IndexOf("audio") >= 0) s -= 100;          // 音频专用版，编不了视频
+            }
+            catch { }
+            return s;
+        }
+
+        // 实跑一次，确认"它真的是 ffmpeg，而且能编 H.264"。
+        // 程序后面用的是 -c:v h264_nvenc、没 N 卡退到 libx264 —— 所以 libx264 是硬门槛。
+        static bool IsUsableFfmpeg(string exe)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(exe, "-hide_banner -encoders");
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.CreateNoWindow = true;
+                using (Process p = Process.Start(psi))
+                {
+                    StringBuilder sb = new StringBuilder();
+                    // 必须异步读：编码器列表上百 KB，同步读会和子进程互相等死
+                    p.OutputDataReceived += delegate (object s, DataReceivedEventArgs e) { if (e.Data != null) lock (sb) sb.AppendLine(e.Data); };
+                    p.ErrorDataReceived += delegate (object s, DataReceivedEventArgs e) { if (e.Data != null) lock (sb) sb.AppendLine(e.Data); };
+                    p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
+                    // ⚠ 必须有超时：扫到的只是个"叫 ffmpeg.exe 的文件"，可能是 GUI 程序、
+                    //   也可能直接挂住 —— 不能让走盘线程被它拖死。
+                    if (!p.WaitForExit(10000))
+                    {
+                        try { p.Kill(); } catch { }
+                        return false;
+                    }
+                    p.WaitForExit();     // 等异步读取收尾，不然字符串可能还没拼完
+                    bool ok;
+                    lock (sb) ok = sb.ToString().IndexOf("libx264", StringComparison.OrdinalIgnoreCase) >= 0;
+                    return ok;
+                }
+            }
+            catch { return false; }
+        }
+
+        // 和游戏那边同一条路子：后台走盘的结果由界面每 2 秒的定时器取走（UI 线程），
+        // 取到就写进设置 —— 下一次启动第 0 步直接命中，不用再搜。
+        public static bool AdoptScannedFfmpeg(Settings s)
+        {
+            if (s == null) return false;
+            string f = fmScan.Cached;
+            if (string.IsNullOrEmpty(f)) return false;
+            if (!string.IsNullOrEmpty(s.FfmpegExe) && File.Exists(s.FfmpegExe)) return false;
+            try
+            {
+                Log.Write("自动找到 ffmpeg：" + f);
+                s.FfmpegExe = f;
+                s.Save();
+                lock (scanGate) fmLastVia = "scan";
+                return true;
+            }
+            catch (Exception ex) { Log.Write("回填 ffmpeg 失败：" + ex.Message); return false; }
+        }
+
+        // 给「检查环境」按钮用的：让用户能当场重新找一次。
+        // 扫描是每个进程只跑一轮的，不重启一下的话，用户刚装上游戏/ffmpeg 就得关掉程序
+        // 重开才找得到 —— 而「检查环境」正是他会去点的那个按钮。
+        public static void RestartSearchesIfNeeded(Settings s)
+        {
+            if (s == null) return;
+            if (string.IsNullOrEmpty(s.GameDir) || !File.Exists(Path.Combine(s.GameDir, "th123.exe")))
+            {
+                gameScan.Reset();
+                string via;
+                ResolveGameDir(out via);
+            }
+            if (string.IsNullOrEmpty(s.FfmpegExe) || !File.Exists(s.FfmpegExe))
+            {
+                fmScan.Reset();
+                FindFfmpeg();
+            }
         }
 
         public static string FindObsExe()
@@ -644,9 +1297,9 @@ namespace RepRecorder
             // 这里只负责【说清楚缺什么、去哪拿】。
             Add(r.Items, "ffmpeg", "ffmpeg", ffm != null,
                 ffm != null ? ffm : "未找到（并行录制需要，单个录制不需要）",
-                "自己下一份：www.gyan.dev/ffmpeg/builds 的 ffmpeg-release-essentials.zip，" +
-                "解压出 bin\\ffmpeg.exe 放到 RepRecorder.exe 旁边（分发包里本来就应该有这个文件，" +
-                "没有的话多半是没拷全或者被杀软删了）");
+                "程序已经把常见位置和整块硬盘都找过了。自己下一份（www.gyan.dev/ffmpeg/builds 的 " +
+                "ffmpeg-release-essentials.zip），解压出 bin\\ffmpeg.exe 放到 RepRecorder.exe 旁边；" +
+                "或者去「设置…」里把「ffmpeg 程序」直接指过去");
 
             // ---- ReplayDnD mod（新机器最容易漏的一步：漏了游戏会停在标题画面）----
             bool modOk = false;
@@ -1982,7 +2635,19 @@ namespace RepRecorder
             // 每 2 秒同步一次"系统声音是否静音"，让按钮颜色/文字始终反映真实状态
             soundTimer = new System.Windows.Forms.Timer();
             soundTimer.Interval = 2000;
-            soundTimer.Tick += delegate { RefreshSoundButtons(); };
+            // 后台找游戏的结果由这里每 2 秒取一次 —— 定时器本来就在 UI 线程上，
+            // 回填和刷状态栏都不需要跨线程调用（见 Settings.AdoptScannedGameDir）
+            soundTimer.Tick += delegate
+            {
+                RefreshSoundButtons();
+                try
+                {
+                    bool got = Settings.AdoptScannedGameDir(cfg);
+                    if (Settings.AdoptScannedFfmpeg(cfg)) got = true;
+                    if (got) RefreshEnvLabel();
+                }
+                catch { }
+            };
             soundTimer.Start();
 
             Shown += delegate
@@ -5987,6 +6652,7 @@ namespace RepRecorder
 
         void OnCheck(object sender, EventArgs e)
         {
+            Settings.RestartSearchesIfNeeded(cfg);   // 点「检查环境」= 当场重新找一次游戏和 ffmpeg
             cfg.FillDefaults();
             cfg.Save();
             RefreshEnvLabel();
@@ -6741,41 +7407,9 @@ namespace RepRecorder
             obs.Request("SetProfileParameter", r);
         }
 
-        static string FindFfmpeg()
-        {
-            List<string> cands = new List<string>();
-            try { cands.Add(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ffmpeg.exe")); } catch { }
-            try
-            {
-                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                       @"Microsoft\WinGet\Links\ffmpeg.exe"));
-            }
-            catch { }
-            try
-            {
-                string pkg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                          @"Microsoft\WinGet\Packages");
-                if (Directory.Exists(pkg))
-                    foreach (string d in Directory.GetDirectories(pkg, "Gyan.FFmpeg*"))
-                        foreach (string b in Directory.GetDirectories(d, "ffmpeg*"))
-                            cands.Add(Path.Combine(b, @"bin\ffmpeg.exe"));
-            }
-            catch { }
-            foreach (string c in cands) { try { if (File.Exists(c)) return c; } catch { } }
-            try
-            {
-                string path = Environment.GetEnvironmentVariable("PATH");
-                if (path != null)
-                    foreach (string d in path.Split(';'))
-                    {
-                        if (d.Trim().Length == 0) continue;
-                        string p = Path.Combine(d.Trim(), "ffmpeg.exe");
-                        if (File.Exists(p)) return p;
-                    }
-            }
-            catch { }
-            return null;
-        }
+        // 实现只有一份，在 Settings 里（那边还要做走盘 + 实跑校验）。这里转发。
+        // ⚠ 以前这是一整份逐字相同的副本，加一个位置要改两处。
+        static string FindFfmpeg() { return Settings.FindFfmpeg(); }
 
         // 用 ffmpeg 把合并视频里第 idx 格裁出来，并配上第 idx 条音轨。
         // maxSeconds > 0 时按它裁剪（这一格的对局什么时候结束就录到什么时候，
