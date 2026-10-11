@@ -7,10 +7,11 @@ rem
 rem  做的事：
 rem    1. 把 RepRecorderWPF.exe 复制成 RepRecorder.exe（名字不变，用户双击的还是它），
 rem       到 RepRecorder-给别人\
-rem    2. 覆盖之前先把目标位置的老 exe 备份到 <目标>\备份\RepRecorder-时间戳.exe，
-rem       并且立刻验证备份真的存在（交接文档第 1 节的铁律 2）
-rem    3. 重打 RepRecorder-发给别人.zip
-rem    4. 【绝对不动】RepRecorder-旧版WinForms\ —— 那是旧版快照，是退路
+rem    2. 重打 RepRecorder-发给别人.zip
+rem    3. 【绝对不动】RepRecorder-旧版WinForms\ —— 那是旧版快照，是退路
+rem
+rem  2026-10-11 用户要求：不再备份旧 exe（_exe备份\ 那一步整条去掉）。
+rem     要回退到旧版本，用 _发版\ 里的完整包，或 git 里的历史提交。
 rem
 rem  注意：旧版那个同步脚本已经停用（在 RepRecorder-旧版WinForms\ 里，
 rem        文件名带 [已停用-别用] 前缀）。它会把旧 WinForms 版的 exe 覆盖回来。
@@ -35,13 +36,6 @@ if not errorlevel 1 (
   pause
   exit /b 1
 )
-
-rem 时间戳交给 PowerShell 生成 —— 不用 %date%，中文系统的 %date% 带"周六"会把解析带崩
-set STAMP=unknown
-for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set STAMP=%%i
-
-call :backup "%T2%"
-if errorlevel 9 goto abort
 
 echo.
 echo 从 RepRecorder-WPF 同步到：
@@ -72,21 +66,3 @@ echo 同步完成。
 if not "%1"=="/nopause" pause
 exit /b 0
 
-:abort
-echo.
-echo 已中止：备份没建成功，一个文件都没覆盖。
-if not "%1"=="/nopause" pause
-exit /b 1
-
-:backup
-if not exist "%~1\RepRecorder.exe" exit /b 0
-if not exist "%ROOT%\_exe备份" mkdir "%ROOT%\_exe备份"
-set BK=%ROOT%\_exe备份\RepRecorder-%STAMP%.exe
-copy /Y "%~1\RepRecorder.exe" "%BK%" >nul
-if exist "%BK%" (
-  echo    [备份] %BK%
-  exit /b 0
-)
-echo.
-echo    [严重] 备份没建成功，已中止：%BK%
-exit /b 9
