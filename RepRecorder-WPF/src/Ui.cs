@@ -730,6 +730,19 @@ namespace RepRecorder
             return r;
         }
 
+        // 门面：「这些 rep 已经录过了，怎么办」的三选一。
+        // 返回 0=重录（覆盖） 1=再录一次（旧的保留，新的另存） 2=跳过；窗口被直接关掉返回 -1。
+        // ⚠ 必须在 UI 线程上跑（里面 ShowDialog）。
+        public static int ShowReRecordDialog(string info)
+        {
+            ShellWindow w = W;
+            if (w == null) return -1;
+            ReRecordDialog d = new ReRecordDialog("这些 rep 已经录制过了", info);
+            d.Owner = w;
+            d.ShowDialog();
+            return d.Choice;
+        }
+
         public static void SetButtonWidth(string id, double w)
         {
             Post(delegate

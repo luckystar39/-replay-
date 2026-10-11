@@ -11,8 +11,8 @@
 // /codepage:65001，所以 UTF-8 无 BOM 也读得对。
 using System.Reflection;
 
-[assembly: AssemblyVersion("1.1.1.0")]
-[assembly: AssemblyFileVersion("1.1.1.0")]
+[assembly: AssemblyVersion("1.1.2.0")]
+[assembly: AssemblyFileVersion("1.1.2.0")]
 [assembly: AssemblyProduct("RepRecorder")]
 [assembly: AssemblyTitle("Rep to MP4 Recorder (OBS)")]
 [assembly: AssemblyDescription("把非想天则 .rep 拖进来，自动用 OBS 依次录成 mp4")]

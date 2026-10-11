@@ -264,6 +264,8 @@ namespace RepRecorder
         {
             try { ApplyBgmSetting(true); } catch { }
             try { ApplyGameAudioSetting(); } catch { }
+            // 「音频提前」在设置窗里改完要立刻生效（不然要等下一次「准备 OBS」才轮到它）
+            try { ApplyAudioLead(); } catch { }
             try { RefreshSoundButtons(); } catch { }
             try { RefreshGameAudioButton(); } catch { }
             try { RefreshBgmButton(); } catch { }
@@ -452,6 +454,29 @@ namespace RepRecorder
         const string RecSceneName = "RepRecorder 录制场景";
         const string RecSourceName = "RepRecorder 游戏窗口";
         const string AudioSourceName = "RepRecorder 游戏声音";
+
+        // 成品的落点。平时就是「和 rep 同名」那一份；但用户在询问里选了
+        // 「再录一次（旧的保留，新的另存）」时，绝不能让新视频盖掉旧的那份，
+        // 于是改成 xxx (2).mp4、xxx (3).mp4 …… 一直往后找一个没人用的名字。
+        // ⚠ 找名字要【到真开录那一刻】再做（所以这里是每次调用现算，不是提前存进 job）：
+        //   一批里同一个 rep 被排了两次、或者上一条还没写完，都会让"提前定好的名字"撞车。
+        string OutputPathFor(Job job, string ext)
+        {
+            string plain = Path.ChangeExtension(job.Rep, ext);
+            if (job == null || !job.KeepOld) return plain;
+            try
+            {
+                string dir = Path.GetDirectoryName(job.Rep);
+                string name = Path.GetFileNameWithoutExtension(job.Rep);
+                for (int n = 2; n < 1000; n++)
+                {
+                    string cand = Path.Combine(dir, name + " (" + n + ")" + ext);
+                    if (!File.Exists(cand)) return cand;
+                }
+            }
+            catch { }
+            return plain;      // 兜底：真找不到空名字就还是老地方（宁可覆盖也别录不出来）
+        }
 
         // ---- moved from MainForm ----
         string FindExistingOutput(Job job)
@@ -709,6 +734,53 @@ namespace RepRecorder
             }
             catch { }
         }
+
+        // 设置项「音频提前」的当前值，夹在 ±2000ms 防呆。
+        int AudioLeadValue()
+        {
+            int lead = cfg == null ? 0 : cfg.AudioLeadMs;
+            if (lead > 2000) lead = 2000;
+            if (lead < -2000) lead = -2000;
+            return lead;
+        }
+
+        // 给一个音源设「音频提前」。⚠ OBS 那边的语义和设置项是【反的】：
+        //   OBS 的 sync offset 正数 = 声音往后拖，而设置项 AudioLeadMs 正数 = 往前挪，
+        //   所以这里取负号。搞反了症状会翻倍，不是"没效果"。
+        bool audioLeadWarned = false;    // 只在第一次失败时吭一声，免得每格都刷屏
+        void SetAudioLeadRaw(string inputName, int leadMs)
+        {
+            try
+            {
+                Dictionary<string, object> r = new Dictionary<string, object>();
+                r["inputName"] = inputName;
+                r["inputAudioSyncOffset"] = -leadMs;      // 毫秒；负数 = 声音提前
+                obs.Request("SetInputAudioSyncOffset", r);
+            }
+            catch (Exception ex)
+            {
+                // ⚠ 别静默吞掉：这句失败 = 补偿完全没生效，而界面上照样写着"80"。
+                //   老 OBS 没有这条请求的话，用户至少能在日志里看到原因。
+                if (!audioLeadWarned)
+                {
+                    audioLeadWarned = true;
+                    Log.Write("⚠ 设置「音频提前」失败（" + inputName + "）：" + ex.Message +
+                              " —— 这个 OBS 可能不支持 SetInputAudioSyncOffset，声音不会做补偿");
+                }
+            }
+        }
+
+        // 把「音频提前」应用到所有【我们自己建的游戏音源】：
+        // 单录的「RepRecorder 游戏声音」+ 并行的「RepRecorder P1~P6 声音」。
+        // ⚠ 故意不碰 OBS 的「桌面音频」：那是另一条采集路径（wasapi_output_capture），
+        //   延迟特性和进程回环（wasapi_process_output_capture）不是一回事，拿这个数字去调它
+        //   没有依据；而且默认「只录游戏声音」时它本来就是静音的，调了也听不出来。
+        void ApplyAudioLead()
+        {
+            int lead = AudioLeadValue();
+            SetAudioLeadRaw(AudioSourceName, lead);
+            for (int i = 1; i <= 6; i++) SetAudioLeadRaw("RepRecorder P" + i + " 声音", lead);
+        }
         // ---- moved from MainForm ----
         void SetProfileParamRaw(string cat, string name, string val)
         {
@@ -731,7 +803,8 @@ namespace RepRecorder
             err = "";
             string ff = FindFfmpeg();
             if (ff == null) { err = "找不到 ffmpeg"; return false; }
-            string target = Path.ChangeExtension(job.Rep, ".mp4");
+            // 「再录一次（旧的保留）」时这个名字不是 xxx.mp4 而是 xxx (2).mp4 —— 见 OutputPathFor。
+            string target = OutputPathFor(job, ".mp4");
             string enc = string.IsNullOrEmpty(cfg.ParallelSplitEncoder) ? "h264_nvenc" : cfg.ParallelSplitEncoder;
             // 编码器 + 各自合适的参数，并准备好"换编码器重试"的梯子：
             // 别人的电脑不一定有 NVIDIA 显卡（h264_nvenc 用不了）→ 自动退到 libx264 软件编码，保证一定成功。
@@ -815,6 +888,7 @@ namespace RepRecorder
                         if (attemptNo > 1)
                             Log.Write("并行切分：第 " + attemptNo + " 种参数才成功（"
                                       + (attemptNo > 2 ? "多半没 NVIDIA 显卡，已换 libx264 软编" : "退化成不带音频") + "）");
+                        job.Output = target;    // 实际落点由这里说了算（见上面 OutputPathFor 那行）
                         return true;
                     }
                     err = "ffmpeg 退出码 " + p.ExitCode;
@@ -1355,6 +1429,7 @@ namespace RepRecorder
                                             (i % cols) * CW, (i / cols) * CH, CW, CH, i + 1);
                         if (batch.Count <= 6) SetAudioTracksRaw(aNames[i], i + 1);
                         SetInputMuteRaw(aNames[i], !cellAudio);
+                        SetAudioLeadRaw(aNames[i], AudioLeadValue());   // 「音频提前」逐格设一遍（源是每批新建的）
                         Log.Write("并行：第 " + (i + 1) + " 格绑定窗口串 = " + (ws == null ? "<窗口没出现>" : ws));
                     }
                     catch (Exception ex) { Log.Write("并行：第 " + (i + 1) + " 格绑定失败 " + ex.Message); }
@@ -1387,8 +1462,19 @@ namespace RepRecorder
                             }
                         }
                         catch { }
+                        // 「音频提前」也读回来：万一这个 OBS 不认 SetInputAudioSyncOffset，
+                        // 那一句是【静默】失败的，不读回来就完全看不出补偿到底生效没有。
+                        string lead = "?";
+                        try
+                        {
+                            Dictionary<string, object> lr = obs.Request("GetInputAudioSyncOffset", q2);
+                            if (lr.ContainsKey("inputAudioSyncOffset"))
+                                lead = Convert.ToDouble(lr["inputAudioSyncOffset"]).ToString("0") + "ms";
+                        }
+                        catch { }
                         Log.Write("并行：第 " + (i + 1) + " 格音源状态 —— 静音=" + (mm ? "是" : "否") +
-                                  "  音轨=" + (tr == "" ? "?" : tr) + "（应只有第 " + (i + 1) + " 位是 1）");
+                                  "  音轨=" + (tr == "" ? "?" : tr) + "（应只有第 " + (i + 1) + " 位是 1）" +
+                                  "  同步偏移=" + lead + "（应 = -" + AudioLeadValue() + "ms）");
                     }
                     catch { }
                 }
@@ -1711,7 +1797,11 @@ namespace RepRecorder
                             if (SplitOne(gridFile, batch[i], i, CW, CH, (i % cols) * CW, (i / cols) * CH,
                                          heads[i], ends[i], out err))
                             {
-                                batch[i].Output = Path.ChangeExtension(batch[i].Rep, ".mp4");
+                                // 落点由 SplitOne 按实际写出去的那个名字填好了。⚠ 这里【不能】再算一遍：
+                                // 「再录一次」时第一次算出来是 xxx (2).mp4、而文件此刻已经存在，
+                                // 再算一次会得到 xxx (3).mp4 —— 于是列表指着一个不存在的文件。
+                                if (string.IsNullOrEmpty(batch[i].Output))
+                                    batch[i].Output = OutputPathFor(batch[i], ".mp4");
                                 long outBytes = 0;
                                 try { outBytes = new FileInfo(batch[i].Output).Length; } catch { }
                                 batch[i].Size = outBytes;
@@ -2199,6 +2289,9 @@ namespace RepRecorder
                     // 清理历史遗留的重复元素（同名音频源多个 scene item）
                     CleanupDuplicateItems(RecSceneName, AudioSourceName);
                     ApplyGameAudioSetting();   // 按「录打击音效」开关决定这个源要不要静音
+                    // 单录这条路也要设「音频提前」：这个源是【常驻】的（建过一次就一直留着），
+                    // 所以每次都按当前设置刷一遍，改过设置、或换了设置文件都能跟上。
+                    SetAudioLeadRaw(AudioSourceName, AudioLeadValue());
                 }
 
                 captureSource = RecSourceName;
@@ -2875,7 +2968,7 @@ namespace RepRecorder
                     return;
                 }
 
-                string target = Path.ChangeExtension(job.Rep, Path.GetExtension(recPath));
+                string target = OutputPathFor(job, Path.GetExtension(recPath));
                 if (!string.Equals(Path.GetFullPath(recPath), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
                 {
                     for (int i = 0; i < 10; i++)
@@ -3276,25 +3369,35 @@ namespace RepRecorder
                     : (Path.GetFileName(already[0].Rep) + " 等 " + already.Count + " 个");
                 string msg = "检测到 " + already.Count + " 个 rep 已经录制过了（旁边/上次的文件夹里已有同名视频）：\r\n\r\n" +
                              sample + "\r\n\r\n" +
-                             "要重新录制吗？\r\n" +
-                             "  是 = 这些文件重录（会覆盖原来的视频）\r\n" +
-                             "  否 = 跳过它们，只录没有录过的";
-                Log.Write("检测到 " + already.Count + " 个 rep 已经录制过，正在询问是否重录……");
-                System.Windows.MessageBoxResult dr = System.Windows.MessageBox.Show(msg, "这些 rep 已经录制过了", System.Windows.MessageBoxButton.YesNo,
-                                                  System.Windows.MessageBoxImage.Question, System.Windows.MessageBoxResult.No);
-                if (dr == System.Windows.MessageBoxResult.Yes)
+                             "怎么办？";
+                Log.Write("检测到 " + already.Count + " 个 rep 已经录制过，正在询问怎么处理……");
+                int pick = Ui.ShowReRecordDialog(msg);
+                if (pick == 0)
                 {
                     foreach (Job j in already)
                     {
                         j.Force = true;
+                        j.KeepOld = false;
                         Ui.SetJob(j, "等待", "你选了重录（会覆盖原视频）");
                     }
                     Log.Write("你选择重录：" + already.Count + " 个（状态已改成「等待」，会覆盖原来的视频）");
                 }
+                else if (pick == 1)
+                {
+                    foreach (Job j in already)
+                    {
+                        j.Force = true;        // 已有录像也要录
+                        j.KeepOld = true;      // 但录出来不许盖掉原来那份
+                        Ui.SetJob(j, "等待", "你选了再录一次（旧的保留，新的另存）");
+                    }
+                    Log.Write("你选择再录一次：" + already.Count + " 个（旧的保留，新的会另存成「原名 (2)」）");
+                }
                 else
                 {
+                    // pick == 2 是「跳过」；pick == -1（直接把窗口关掉）也走这里 ——
+                    // 关窗口等于"什么都没选"，最保守的处理就是不录，绝不能把原来的视频盖掉。
                     foreach (Job j in already) Ui.SetJob(j, "已录制", "已有视频（你选择跳过）");
-                    Log.Write("你选择跳过：" + already.Count + " 个已录制过的 rep");
+                    Log.Write("你选择跳过" + (pick < 0 ? "（窗口被直接关掉）" : "") + "：" + already.Count + " 个已录制过的 rep");
                 }
             }
             catch (Exception ex) { Log.Write("询问重录失败：" + ex.Message); }

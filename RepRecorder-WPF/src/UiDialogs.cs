@@ -460,6 +460,63 @@ namespace RepRecorder
         }
     }
 
+    // ================================================================ 已经录过了，怎么办
+    //  2026-10-11 用户报的："重录会覆盖原视频"这条路上没有"保留原来那份"的选项。
+    //  以前是系统 MessageBox 的是/否两键，塞不进第三个选择（也不能自定义按钮文字），
+    //  所以照 AskDialog 的样子做成程序自己的小窗：三行各占一行、点哪行就是哪个。
+    //  Choice：0 = 重录（覆盖）   1 = 再录一次（旧的保留，新的另存）   2 = 跳过
+    //  ⚠ 关闭窗口（右上角/Alt+F4）留 -1，调用方必须当成"什么都没选"处理。
+    class ReRecordDialog : Window
+    {
+        public int Choice = -1;
+
+        public ReRecordDialog(string title, string info)
+        {
+            Title = title;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            SizeToContent = SizeToContent.Height;
+            Width = 470;
+            WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            Background = Ui.Br(MainForm.HudBg);
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            Ui.Id(this, "reRecordDialog");
+            Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
+
+            StackPanel col = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
+            TextBlock tb = Ui.Txt(info, 12.5, MainForm.HudText, false);
+            // ⚠ 必须 Wrap（同 EnvBox/InfoBox 里那两处）：StackPanel 取最宽子元素的宽度，
+            //   一句不换行的长文件名会把整个窗撑得比屏幕还宽、右边被裁掉。
+            tb.TextWrapping = TextWrapping.Wrap;
+            tb.MaxWidth = 430;
+            col.Children.Add(tb);
+
+            string[] labels = new string[]
+            {
+                "这些文件重录（会覆盖原来的视频）",
+                "再录一次（旧的保留，新的另存一份）",
+                "跳过它们，只录没有录过的",
+            };
+            string[] ids = new string[] { "rrOverwrite", "rrAgain", "rrSkip" };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                int idx = i;
+                col.Children.Add(DlgButton(labels[i], ids[i], delegate { Choice = idx; Close(); }));
+            }
+            Content = col;
+        }
+
+        Button DlgButton(string text, string id, Action onClick)
+        {
+            Button b = Ui.FlatButton(text, id);
+            b.Height = 28;
+            b.HorizontalAlignment = HorizontalAlignment.Stretch;
+            b.Margin = new Thickness(0, 6, 0, 0);
+            b.Click += delegate { onClick(); };
+            return b;
+        }
+    }
+
     // ================================================================ 设置窗
     //  旧版是个 PropertyGrid，WPF 版一开始是"反射列出所有公开属性 + 一个文本框"。
     //  2026-10-05 用户要求重做，现在：
@@ -730,6 +787,7 @@ namespace RepRecorder
             ToggleRow(col, "录 BGM（背景音乐）", "RecordBgm", "只在「录打击音效」开着时可用");
             ToggleRow(col, "录制时静音系统里其他声音", "GameAudioOnly", "");
             NumberRow(col, "录像音量", "RecordVolume", "（1.0 = 原样）");
+            NumberRow(col, "音频提前（毫秒）", "AudioLeadMs", "（声音比画面慢就调大；80 是实测值；0 = 不调）");
             NumberRow(col, "单个 rep 最长录制（分钟）", "MaxMinutes", "");
             NumberRow(col, "开录前等待（秒）", "PreRollSeconds", "");
             NumberRow(col, "录完再多录（秒）", "PostRollSeconds", "");

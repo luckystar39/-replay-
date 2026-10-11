@@ -1,21 +1,23 @@
-# verify-WPF-11: opening a rep that already has a video next to it must ask
-#   "record it again?" and, on No, mark the row as already-recorded and skip it.
-
-#   works, because WPF's MessageBox IS a native #32770 dialog; only the window lookup changed).
-# Buttons are answered with WM_COMMAND/IDNO (7) rather than by button text, so the test does
-#   not depend on the OS display language.
+# 验证WPF-11: opening a rep that already has a video next to it must ASK first, and each of the
+#   three answers must do the right thing to the queue row.
 #
-# NOTE: the debug port is unusable while the prompt is up. Read commands go through
-#   Dispatcher.Invoke (Ui.OnUi) and a modal MessageBox owns the UI thread, so a query just
-#   hangs until the box is answered. The dialog is therefore waited for with plain Win32.
+#   0 覆写：这些文件重录（会覆盖原来的视频）  -> 等待
+#   1 再录：再录一次（旧的保留，新的另存一份）-> 等待
+#   2 跳过：跳过它们，只录没有录过的          -> 已录制
+#
+# ⚠ 2026-10-11 改的：这个框以前是系统 MessageBox（是/否两键），用户要求加第三个选择，
+#   于是换成了程序自己的 WPF 小窗（ReRecordDialog），按钮 id 是 rrOverwrite / rrAgain / rrSkip。
+#   两个后果，正是这份脚本改掉的地方：
+#     1) 窗口不再是原生 #32770，靠 Win32 找窗口 + WM_COMMAND 应答那一套用不了了；
+#     2) 换成 WPF 模态窗之后【调试端口仍然答话】（WPF 的 ShowDialog 会继续泵消息循环，
+#        而原生 MessageBox 会把 UI 线程整条占死）—— 所以现在直接 press:rrXxx 就行，比原来简单。
 # ASCII only. Run with: powershell -File <this>   (never pipe its stdout)
 $here = $PSScriptRoot                  # this script lives in the tests folder
-$dir  = Split-Path $here -Parent       # the app folder: the exe and its log/settings live there
-$src  = Join-Path $dir 'src'   # source code folder
-$exe = Join-Path $dir 'RepRecorderWPF.exe'
-$log = Join-Path $dir 'RepRecorder.log'
-$cfg = Join-Path $dir 'RepRecorder.settings.json'
-$bak = Join-Path $here '_settings-backup11.json'
+$dir  = Split-Path $here -Parent       # the app folder: the exe and its log/settings live here
+$exe  = Join-Path $dir 'RepRecorderWPF.exe'
+$log  = Join-Path $dir 'RepRecorder.log'
+$cfg  = Join-Path $dir 'RepRecorder.settings.json'
+$bak  = Join-Path $here '_settings-backup11.json'
 $runLog = Join-Path $here '_run11.log'
 $port = 7811
 $fail = 0
@@ -26,34 +28,9 @@ $repDir = Join-Path $env:TEMP 'rr-ask-wpf'
 if (Test-Path $repDir) { Remove-Item $repDir -Recurse -Force }
 New-Item -ItemType Directory -Path $repDir | Out-Null
 $repFile = Join-Path $repDir 'ask1.rep'
+$oldMp4  = Join-Path $repDir 'ask1.mp4'
 [System.IO.File]::WriteAllBytes($repFile, (New-Object byte[] 4096))
-[System.IO.File]::WriteAllBytes((Join-Path $repDir 'ask1.mp4'), (New-Object byte[] 4096))
-
-Add-Type @"
-using System;
-using System.Text;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-public class W11 {
-  public delegate bool EnumProc(IntPtr h, IntPtr l);
-  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
-  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
-  [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
-  public static List<IntPtr> Dialogs(uint want) {
-    List<IntPtr> found = new List<IntPtr>();
-    EnumWindows(delegate(IntPtr h, IntPtr l) {
-      uint pid; GetWindowThreadProcessId(h, out pid);
-      if (pid != want) return true;
-      StringBuilder sb = new StringBuilder(64); GetClassName(h, sb, 64);
-      if (sb.ToString() == "#32770" && IsWindowVisible(h)) found.Add(h);
-      return true;
-    }, IntPtr.Zero);
-    return found;
-  }
-}
-"@
+[System.IO.File]::WriteAllBytes($oldMp4, (New-Object byte[] 4096))
 
 function Dbg([string]$cmd) {
   try {
@@ -71,65 +48,72 @@ function Check([string]$what, [bool]$ok, [string]$detail) {
   if (-not $ok) { $script:fail = 1 }
 }
 function LogTxt { if (Test-Path $log) { return (Get-Content $log -Raw -Encoding UTF8) } return '' }
+function StopApp { Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }; Start-Sleep -Milliseconds 700 }
+
 # Chinese literals spelled as code points so this file stays pure ASCII
-$MSG_ASKED = [string]([char]0x6B63 + [char]0x5728 + [char]0x8BE2 + [char]0x95EE)
-$MSG_SKIP  = [string]([char]0x4F60 + [char]0x9009 + [char]0x62E9 + [char]0x8DF3 + [char]0x8FC7)
-$ST_DONE   = [string]([char]0x5DF2 + [char]0x5F55 + [char]0x5236)
+$MSG_ASKED = [string]([char]0x6B63 + [char]0x5728 + [char]0x8BE2 + [char]0x95EE)                       # 正在询问
+$MSG_AGAIN = [string]([char]0x4F60 + [char]0x9009 + [char]0x62E9 + [char]0x518D + [char]0x5F55 + [char]0x4E00 + [char]0x6B21)   # 你选择再录一次
+$MSG_SKIP  = [string]([char]0x4F60 + [char]0x9009 + [char]0x62E9 + [char]0x8DF3 + [char]0x8FC7)         # 你选择跳过
+$MSG_OVER  = [string]([char]0x4F60 + [char]0x9009 + [char]0x62E9 + [char]0x91CD + [char]0x5F55)         # 你选择重录
+$ST_WAIT   = [string]([char]0x7B49 + [char]0x5F85)                                                     # 等待
+$ST_DONE   = [string]([char]0x5DF2 + [char]0x5F55 + [char]0x5236)                                     # 已录制
+# row detail needles: 再录一次（旧的保留 -> 再录一次 / 重录（会覆盖 -> 重录
+$DET_AGAIN = [string]([char]0x518D + [char]0x5F55 + [char]0x4E00 + [char]0x6B21)                       # 再录一次
+$DET_OVER  = [string]([char]0x91CD + [char]0x5F55)                                                     # 重录
+$DET_SKIP  = [string]([char]0x8DF3 + [char]0x8FC7)                                                     # 跳过
+
+# One run of the app, one answer to the prompt.
+function RunPass([string]$tag, [string]$button, [string]$expectStatus, [string]$expectDetailNeedle, [string]$expectLogNeedle) {
+  StopApp
+  Remove-Item $log -ErrorAction SilentlyContinue
+  # put the old video back in case a previous pass touched it
+  [System.IO.File]::WriteAllBytes($oldMp4, (New-Object byte[] 4096))
+  $p = Start-Process -FilePath $exe -ArgumentList @("--debug-port=$port", $repFile) -PassThru
+
+  $shown = $false
+  for ($i = 0; $i -lt 40; $i++) {
+    Start-Sleep -Milliseconds 500
+    if ($p.HasExited) { break }
+    $q = Dbg 'find:reRecordDialog'
+    if ($null -ne $q -and $q -match '"found":true') { $shown = $true; break }
+  }
+  Check ($tag + ': app alive') (-not $p.HasExited) ('pid=' + $p.Id)
+  Check ($tag + ': the three-way dialog opened') $shown ''
+  Check ($tag + ': the prompt is in the log') ((LogTxt).Contains($MSG_ASKED)) ''
+  if (-not $shown) { StopApp; return }
+
+  Dbg ('press:' + $button) | Out-Null
+  Start-Sleep -Milliseconds 1500
+
+  $q = Dbg 'find:reRecordDialog'
+  Check ($tag + ': the dialog closed after the answer') ($null -ne $q -and $q -match '"found":false') ('q=' + $q)
+
+  $r = Dbg 'rows' | ConvertFrom-Json
+  Check ($tag + ': the row stayed in the queue') ($r.count -eq 1) ('count=' + $r.count)
+  if ($r.count -ge 1) {
+    Check ($tag + ': the row status is the expected one') ($r.rows[0].status -eq $expectStatus) ('status=' + $r.rows[0].status)
+    Check ($tag + ': the row says what was chosen') ($r.rows[0].detail.Contains($expectDetailNeedle)) ('detail=' + $r.rows[0].detail)
+  }
+  Check ($tag + ': the choice is logged') ((LogTxt).Contains($expectLogNeedle)) ''
+  # the whole point of the middle option: the recording that is already there must survive
+  Check ($tag + ': the existing video is still on disk') (Test-Path $oldMp4) ''
+  Check ($tag + ': no exception in log') ((LogTxt) -notmatch 'Exception') ''
+  StopApp
+}
 
 Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
 Start-Sleep -Milliseconds 700
 Copy-Item $cfg $bak -Force
-if (Test-Path $log) { Remove-Item $log -Force }
 
-Start-Sleep -Seconds 3
-$p = Start-Process -FilePath $exe -ArgumentList @("--debug-port=$port", $repFile) -PassThru
-
-Add-Content -LiteralPath $runLog -Value 'step: waiting for the #32770 prompt' -Encoding UTF8
-$dlg = @()
-for ($i = 0; $i -lt 40; $i++) {
-  $p.Refresh(); if ($p.HasExited) { break }
-  $dlg = [W11]::Dialogs([uint32]$p.Id)
-  if ($dlg.Count -gt 0) { break }
-  Start-Sleep -Milliseconds 750
+try {
+  RunPass 'again' 'rrAgain' $ST_WAIT $DET_AGAIN $MSG_AGAIN
+  RunPass 'overwrite' 'rrOverwrite' $ST_WAIT $DET_OVER $MSG_OVER
+  RunPass 'skip' 'rrSkip' $ST_DONE $DET_SKIP $MSG_SKIP
 }
-Check 'app alive' (-not $p.HasExited) ('pid=' + $p.Id)
-Check 'the "record again?" dialog opened' ($dlg.Count -gt 0) ('dialogs=' + $dlg.Count + ' waited=' + $i)
-Check 'the prompt is in the log' ((LogTxt).Contains($MSG_ASKED)) ''
-if ($dlg.Count -eq 0) {
-  try { Stop-Process -Id $p.Id -Force } catch { }
-  Copy-Item $bak $cfg -Force; Remove-Item $bak -Force
+finally {
+  StopApp
+  if (Test-Path $bak) { Copy-Item $bak $cfg -Force; Remove-Item $bak -Force }
   Remove-Item $repDir -Recurse -Force -ErrorAction SilentlyContinue
-  Write-Host 'FAILED'; exit 1
+  Write-Host 'settings restored'
 }
-
-Add-Content -LiteralPath $runLog -Value 'step: answering No (IDNO)' -Encoding UTF8
-[W11]::SendMessage($dlg[0], 0x0111, [IntPtr]7, [IntPtr]::Zero) | Out-Null
-Start-Sleep -Milliseconds 1500
-
-# the UI thread is free again -- the debug port answers from here on
-$up = $false
-for ($i = 0; $i -lt 20; $i++) {
-  if ((Dbg 'status') -ne $null) { $up = $true; break }
-  Start-Sleep -Milliseconds 500
-}
-Check 'the debug port answers again after the prompt' ($up) ('waited=' + $i)
-
-$dlg2 = [W11]::Dialogs([uint32]$p.Id)
-Check 'the dialog closed after No' ($dlg2.Count -eq 0) ('dialogs=' + $dlg2.Count)
-Check 'the skip is logged' ((LogTxt).Contains($MSG_SKIP)) ''
-
-$r = Dbg 'rows' | ConvertFrom-Json
-Check 'the row stayed in the queue' ($r.count -eq 1) ('count=' + $r.count)
-if ($r.count -ge 1) {
-  Check 'the row is now marked as already-recorded' ($r.rows[0].status -eq $ST_DONE) ('status=' + $r.rows[0].status)
-}
-Check 'the app is alive after answering' (-not $p.HasExited) ('pid=' + $p.Id)
-Check 'no exception in log' ((LogTxt) -notmatch 'Exception') ''
-
-try { Stop-Process -Id $p.Id -Force } catch { }
-Start-Sleep -Milliseconds 500
-Remove-Item $repDir -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item $bak $cfg -Force
-Remove-Item $bak -Force
-Write-Host 'settings restored'
 if ($fail -eq 0) { Write-Host 'PASS' } else { Write-Host 'FAILED'; exit 1 }

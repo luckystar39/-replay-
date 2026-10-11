@@ -29,7 +29,7 @@ namespace RepRecorder
     //   ⚠ 编译.bat 里【没有】/version: 开关 —— 那两句版本号属性全在 AssemblyInfo.cs 里。
     public static class AppInfo
     {
-        public const string Version = "1.1.1";
+        public const string Version = "1.1.2";
     }
 
     // ============================================================ 设置
@@ -134,6 +134,17 @@ namespace RepRecorder
             "成品最外一圈就会出现一条亮线/暗线（用户实测：右边缘最外 2~3 像素亮度从 43 跳到 77）。\r\n" +
             "往里裁一圈就干净了；6 像素 ≈ 0.4%，肉眼看不出来。设成 0 = 不裁（最外圈可能带线）。")]
         public int ParallelEdgeInset { get; set; }
+        [Category("录音"), Description("音频比画面【提前】多少毫秒（默认 80）。正数 = 把声音往前挪。\r\n" +
+            "为什么默认 80：2026-10-11 用户报「切分出来的音频和游戏原声对不上」。\r\n" +
+            "实测（画面运动量 vs 声音能量 做互相关，三个成品一致）：音频比画面慢 77~87 毫秒。\r\n" +
+            "排查结论：ffmpeg 切分不引入偏移（-ss 在 -i 前是输入级 seek，音视频同一刀），\r\n" +
+            "并行路径也不是（单文件模式录的同一批 rep 一样慢），源头在采集那一步 ——\r\n" +
+            "OBS 那边默认的音频同步偏移就是 0，而游戏音频经 wasapi_process_output_capture\r\n" +
+            "（应用程序音频采集）进来时会带上游戏自己的输出缓冲延迟。\r\n" +
+            "⚠ 这一项补偿的是「录进去的声音比画面慢」，代价是成品不再完全等于玩家当时听到的。\r\n" +
+            "⚠ 这个延迟和机器的音频设备缓冲有关，别人机器上未必也是 80，所以做成可调。\r\n" +
+            "设成 0 = 不补偿；负数 = 反过来把声音往后推。")]
+        public int AudioLeadMs { get; set; }
         [Category("行为"), Description("已经有同名 mp4 的 rep 直接跳过（批量重拖时省时间）。")]
         public bool SkipExisting { get; set; }
         [Category("行为"), Description("每录完一个视频就弹窗问你：要放在哪里。")]
@@ -210,6 +221,7 @@ namespace RepRecorder
             ParallelEdgeInset = 6;    // 并行切分时每格往里裁 6 个成品像素，避免边缘那条亮线/暗线
             SingleEdgeInset = 4;      // 单录时把源最外圈裁 4 像素，去掉 WGC 带来的亮边
             RecordVolume = 1.0;       // 录像音量：1.0 = 原样（任务栏音量不影响录像，这里才是"提前设录像音量"的地方）
+            AudioLeadMs = 80;         // 把声音往前挪 80ms：实测成品里音频比画面慢 77~87ms（详见属性上的说明）
             SettingsVersion = 4;
             KeepGameCapturable = true;
             ParallelCount = 3;
@@ -313,6 +325,13 @@ namespace RepRecorder
                 // 两者渲染本来就一样，只差在"没余量的那根轴能不能动"，而"覆盖"的定义
                 // 就是永不露底）。free → fill 的归一放在下面【版本号之外】，见那里的说明。
                 s.SettingsVersion = 10;
+            }
+            if (s.SettingsVersion < 11)
+            {
+                // 老设置文件里没有"音频提前"这一项 → 补上默认 80ms（实测音频比画面慢 77~87ms）。
+                // 只在升级时补一次：之后用户主动填 0（不补偿）会被正常保留。
+                if (s.AudioLeadMs == 0) s.AudioLeadMs = 80;
+                s.SettingsVersion = 11;
             }
             // 对齐方式的合法值就这 5 个。归一成 fill 的这一步**故意不放进版本号判断**：
             // ComputePanRange 和 LayoutIndex 现在都假设"至少是这 5 个之一"（遇到 free
@@ -1396,6 +1415,11 @@ namespace RepRecorder
         public DateTime Ended;
         public double VideoSeconds;   // 成品视频真实时长（从 mp4 的 mvhd 读出来；列表「用时」显示它）
         public bool Force;            // 用户在"已经录过了，要重录吗"的询问里选了「要重录」
+        // 2026-10-11：询问框多了一个「再录一次（旧的保留，新的另存）」。
+        // 和 Force 的区别：Force 只管"即使已有录像也要录"，而这一位管"录出来【不许盖掉】原来那份"，
+        // 成品会落到 xxx (2).mp4 / xxx (3).mp4 …（见 Recorder.OutputPathFor）。
+        // ⚠ 旧界面（Core.cs 的 MainForm）没有这个选项，它那边这一位永远是 false —— 行为不变。
+        public bool KeepOld;
         public ListViewItem Item;
 
         public Job(string rep)
