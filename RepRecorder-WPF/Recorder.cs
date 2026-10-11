@@ -4112,7 +4112,9 @@ namespace RepRecorder
         {
             string ff = FindFfmpeg();
             if (ff == null) return 0;
-            string tmpDir = Path.Combine(Path.GetTempPath(), "RepRecorder_scan_" + Guid.NewGuid().ToString("N"));
+            // ⚠ 和更新包同一个坑：低完整性进程写不进 %TEMP%（2026-10-10 用户实测）。
+            //   这里失败是"静默的"——异常被外层 catch 吞掉、返回 0，等于黑格自检悄悄失效。
+            string tmpDir = Path.Combine(UpdateCheck.PickWorkDir(), "RepRecorder_scan_" + Guid.NewGuid().ToString("N"));
             try
             {
                 Directory.CreateDirectory(tmpDir);

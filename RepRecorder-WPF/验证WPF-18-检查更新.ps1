@@ -423,6 +423,79 @@ Dbg 'press:infoClose' | Out-Null
 Start-Sleep -Milliseconds 600
 StopApp
 
+# ============ 8) the update must work from a LOW-INTEGRITY copy ==========================
+# 2026-10-10, from a real report: "更新失败：对路径 ...\Temp\repupdate-1.1.zip 的访问被拒绝".
+# Root cause, proven by A/B (same exe, same manifest, only the label differs):
+#   * a copy of the exe that lives inside the pack tree inherits Mandatory Label\Low Mandatory
+#     Level, so the PROCESS runs at low integrity;
+#   * this machine's %TEMP% carries a medium, no-write-up label, so a low-integrity process
+#     cannot create a new file in it -> File.Create on the download's temp zip is denied;
+#   * the same exe at medium integrity installs 1.1 in 2 seconds.
+# The updater must not assume %TEMP% is writable.  This section is that regression test: it
+# labels the exe Low for real (and asserts the label stuck -- otherwise the test would be
+# vacuous) and then requires the whole download+swap to succeed anyway.
+$lowRoot = Join-Path ([IO.Path]::GetTempPath()) 'reptest18-low'
+$lowApp  = Join-Path $lowRoot 'app'
+$lowExe  = Join-Path $lowApp 'RepRecorderWPF.exe'
+$lowPort = 7809
+Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
+Start-Sleep -Milliseconds 700
+Remove-Item -LiteralPath $lowRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $lowApp | Out-Null
+Copy-Item (Join-Path $PSScriptRoot 'RepRecorderWPF.exe') $lowExe -Force
+# %TEMP% is where the account has Full control, which is what setting a label needs.
+$null = icacls $lowExe /setintegritylevel Low 2>&1
+$lowLab = (icacls $lowExe 2>&1 | Where-Object { $_ -match 'Mandatory Label' }) -join ' '
+Check 'the exe really is labelled low (else this section proves nothing)' ($lowLab -match 'Low') $lowLab
+[pscustomobject]@{ GameDir = ''; ObsExe = ''; FfmpegExe = ''; EnvChecked = $true; LastUpdateCheckUtc = ''; SkippedUpdateVersion = '' } |
+  ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $lowApp 'RepRecorder.settings.json') -Encoding UTF8
+
+$lowBody = '{"Version":"9.9","Notes":"x","Sha256":"' + $shaOk + '","DownloadLinks":[{"Type":"Gitee","Url":"file:///D:/_reptest18/ok.zip"}]}'
+$lowMan = Manifest 'low.json' $lowBody
+
+$lp = Start-Process -FilePath $lowExe -WorkingDirectory $lowApp -ArgumentList @('--wpf', "--debug-port=$lowPort", ('--update-url=' + $lowMan)) -PassThru
+$lowUp = $false
+for ($i = 0; $i -lt 50; $i++) {
+  Start-Sleep -Milliseconds 400
+  try {
+    $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $lowPort)
+    $w = New-Object System.IO.StreamWriter($c.GetStream()); $w.AutoFlush = $true; $w.WriteLine('status')
+    $r = New-Object System.IO.StreamReader($c.GetStream()); $null = $r.ReadLine(); $c.Close(); $lowUp = $true; break
+  } catch { }
+}
+Check 'the low-integrity copy starts' $lowUp ''
+
+function LowDbg([string]$cmd) {
+  try {
+    $c = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $lowPort)
+    $c.ReceiveTimeout = 30000
+    $w = New-Object System.IO.StreamWriter($c.GetStream()); $w.AutoFlush = $true; $w.WriteLine($cmd)
+    $r = New-Object System.IO.StreamReader($c.GetStream()); $out = $r.ReadLine(); $c.Close()
+    return $out
+  } catch { return $null }
+}
+$lowShown = $false
+for ($i = 0; $i -lt 60; $i++) {
+  Start-Sleep -Milliseconds 400
+  if ((LowDbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { $lowShown = $true; break }
+}
+Check 'it sees the newer version too' $lowShown ''
+Fire 'press:updateGo'
+$lowStatus = ''
+for ($i = 0; $i -lt 240; $i++) {
+  Start-Sleep -Milliseconds 500
+  $en = (LowDbg 'find:updateGo' | ConvertFrom-Json).enabled
+  $lowStatus = [string](LowDbg 'text:updateStatus' | ConvertFrom-Json).text
+  if (($en -eq $true) -and ($lowStatus -ne '')) { break }
+}
+$cnDenied = CN 0x62D2, 0x7EDD, 0x8BBF, 0x95EE      # "access denied"
+Check 'and the download is NOT refused with an access-denied error' ($lowStatus -notmatch $cnDenied) ('status len=' + $lowStatus.Length)
+Check 'the low-integrity copy updates itself successfully' ($lowStatus -match $cnOkt) ''
+$lowHash = (Get-FileHash $lowExe -Algorithm SHA256).Hash.ToLower()
+Check 'and its exe was really replaced' ($lowHash -eq (Get-FileHash (Join-Path $srcDir 'RepRecorder.exe') -Algorithm SHA256).Hash.ToLower()) ('sha=' + $lowHash.Substring(0, 12))
+Get-Process RepRecorderWPF -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Kill() } catch { } }
+StopApp
+
 # ---------------------------------------------------------------- teardown
 StopApp
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

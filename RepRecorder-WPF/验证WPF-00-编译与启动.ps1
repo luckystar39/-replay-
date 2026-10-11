@@ -53,5 +53,47 @@ if ($appver -ne '' -and $txt -match ('v' + [regex]::Escape($appver))) {
   Write-Host ('FAIL: log does not state version ' + $appver); $fail = 1
 }
 
+# ---------------------------------------------------------------- no Low-integrity exe
+# 2026-10-11, user rule: "every exe must be Medium, never Low".  A Low exe runs as a low-integrity
+# process, and such a process cannot create files in a %TEMP% that carries a no-write-up label --
+# that is exactly how the one-click update failed on 2026-10-10 (the A/B proof is in 验证WPF-18
+# section 8: same exe, same manifest, only the label differs -> Low fails, Medium installs).
+# NOTE: a Low file CANNOT be fixed from here -- changing a label needs WRITE_OWNER, which this
+# account does not have in the Low part of the pack tree -- so the gate refuses and prints the
+# one-time elevated command instead of trying.
+function IntLabel($path) {
+  $l = (icacls $path 2>&1 | Where-Object { $_ -match 'Mandatory Label' }) -join ''
+  if ($l -match 'Low') { return 'LOW' }
+  if ($l -match 'Medium') { return 'Medium' }
+  if ($l -eq '') { return 'no label (unrestricted)' }
+  return 'other'
+}
+$elevHint = '      fix once from an elevated prompt:  icacls "<pack root>" /setintegritylevel (OI)(CI)Medium /T /C'
+$devExe = Join-Path $PSScriptRoot 'RepRecorderWPF.exe'
+$devLab = IntLabel $devExe
+if ($devLab -eq 'LOW') {
+  Write-Host 'FAIL: the exe just built is LOW integrity -- anyone running it cannot self-update'
+  Write-Host $elevHint
+  $fail = 1
+} else {
+  Write-Host ('OK  the built exe is not low integrity ({0})' -f $devLab)
+}
+# The copy that actually reaches users (a folder holding exactly RepRecorder.exe), if there is one.
+$distDir = Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Parent) -Directory -ErrorAction SilentlyContinue |
+           Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'RepRecorder.exe') } | Select-Object -First 1
+if ($distDir -ne $null) {
+  $distExe = Join-Path $distDir.FullName 'RepRecorder.exe'
+  $distLab = IntLabel $distExe
+  if ($distLab -eq 'LOW') {
+    Write-Host ('FAIL: the file that is handed to users is LOW integrity: ' + $distExe)
+    Write-Host $elevHint
+    $fail = 1
+  } else {
+    Write-Host ('OK  the distributed exe is not low integrity ({0})' -f $distLab)
+  }
+} else {
+  Write-Host 'OK  no distributed copy in this tree to check'
+}
+
 try { Stop-Process -Id $p.Id -Force } catch { }
 if ($fail -eq 0) { Write-Host 'PASS' } else { Write-Host 'FAILED'; exit 1 }

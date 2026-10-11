@@ -275,6 +275,45 @@ namespace RepRecorder
             catch { return null; }
         }
 
+        // 找一处【这个进程真的写得进去】的临时目录。
+        // ⚠ 不能想当然地用 %TEMP%：2026-10-10 用户实测报"更新失败：对路径 …\Temp\repupdate-1.1.zip
+        //   的访问被拒绝"。根因（A/B 实测，同一份 exe、同一个清单，只改一个属性）：
+        //   exe 落在低完整性目录里（整合包根目录就是 Low Mandatory Level）→ 进程以低完整性运行；
+        //   而这台机器的 %TEMP% 带"Medium + 不向上写"的标签 → 低完整性进程**新建文件就被拒**，
+        //   同一个 exe 标成 Medium 则 2 秒装好。所以顺序探：%TEMP% → 程序自己那个目录
+        //   （日志本来就写在那儿，一定写得进去）→ %LOCALAPPDATA%\RepRecorder。
+        //   探法就是真建一个小文件再删掉 —— 猜权限不如试一下。
+        internal static string PickWorkDir()
+        {
+            List<string> cands = new List<string>();
+            try { cands.Add(Path.GetTempPath()); } catch { }
+            try { cands.Add(InstallDir); } catch { }
+            try
+            {
+                cands.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                       "RepRecorder"));
+            }
+            catch { }
+            string fallback = "";
+            foreach (string d in cands)
+            {
+                if (string.IsNullOrEmpty(d)) continue;
+                if (fallback.Length == 0) fallback = d;
+                try
+                {
+                    Directory.CreateDirectory(d);
+                    string probe = Path.Combine(d, "repupdate-writeprobe.tmp");   // 探针文件，立刻删
+                    using (FileStream fs = File.Create(probe)) fs.WriteByte(0);
+                    File.Delete(probe);
+                    if (!string.Equals(d, cands[0], StringComparison.OrdinalIgnoreCase))
+                        Log.Write("更新：%TEMP% 写不进去（低完整性？），改用 " + d);
+                    return d;
+                }
+                catch { }
+            }
+            return fallback;     // 都探不通就还用第一个，让原来的错误照原样冒出来
+        }
+
         // 多个地址依次试（Gitee 拿不到就换 GitHub）。
         public static bool TryDownloadFirst(List<string> urls, string dest, out string err)
         {
@@ -312,8 +351,10 @@ namespace RepRecorder
         {
             err = "";
             string want = string.IsNullOrEmpty(expectSha) ? info.Sha256 : expectSha;
-            string tmpZip = Path.Combine(Path.GetTempPath(), "repupdate-" + info.Version + ".zip");
-            string tmpDir = Path.Combine(Path.GetTempPath(), "repupdate-" + info.Version);
+            // ⚠ 用"探得出来写得进去的那个目录"，不是想当然的 %TEMP%（见 PickWorkDir）
+            string work = PickWorkDir();
+            string tmpZip = Path.Combine(work, "repupdate-" + info.Version + ".zip");
+            string tmpDir = Path.Combine(work, "repupdate-" + info.Version);
             // ⚠ 声明在 try 外面，好在 finally 里清掉。半路失败会在用户程序旁边留一个
             //   <exe>.new —— 无害（下次会被覆盖），但没人喜欢自己文件夹里多出个莫名其妙的
             //   东西。成功时它已经被改名走了，所以 finally 里那句是空操作。
