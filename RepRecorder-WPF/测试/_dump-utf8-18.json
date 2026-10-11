@@ -87,7 +87,7 @@
     {
         "what":  "it names the new version and the current one",
         "ok":  true,
-        "detail":  "text=发现新版本 v9.9（你现在是 v1.1）"
+        "detail":  "text=发现新版本 v9.9（你现在是 v1.1.1）"
     },
     {
         "what":  "the dialog closes",
@@ -137,7 +137,7 @@
     {
         "what":  "a hash mismatch is refused",
         "ok":  true,
-        "detail":  "result=fail err=下载到的文件校验值不对（可能没下全）。期望 886b59208b06da99757e886459dbb5f8c3fea3b8bb251dc4d4cc007f8de7007b，实际 6fb19dff4945308fe797075fe999f2b529c7fbe9dbe889bf1993ccbf9be5068a"
+        "detail":  "result=fail err=下载到的文件校验值不对（可能没下全）。期望 bb121946e6e9d91c9df7cf5e946c1cdbcb2430098e1a05d3b8dbcbfcf6a1285e，实际 911ce5caa9df1be346d3c1d8960e70a6c49181abd076bc42253e450d16c2b967"
     },
     {
         "what":  "and the target was not touched",
@@ -247,7 +247,7 @@
     {
         "what":  "the manifest carries a sha256",
         "ok":  true,
-        "detail":  "sha=51e6b5644558f1211ca6756ac1050dd03e095308d8a210c79c843ab9f353ee94"
+        "detail":  "sha=1a160f96e1555358687583a4e3aa67143323104c886c756a36cac118eb6c3dd0"
     },
     {
         "what":  "the sha256 matches the package it just built",
@@ -277,7 +277,7 @@
     {
         "what":  "the update package stays small (it must not carry ffmpeg)",
         "ok":  true,
-        "detail":  "bytes=192824"
+        "detail":  "bytes=192854"
     },
     {
         "what":  "the package has RepRecorder.exe at its root",
@@ -302,7 +302,7 @@
     {
         "what":  "and the manual check re-stamped the time",
         "ok":  true,
-        "detail":  "was=06:09:51 now=06:09:51"
+        "detail":  "was=07:00:07 now=07:00:07"
     },
     {
         "what":  "the button is usable again after the dialog",
@@ -317,7 +317,7 @@
     {
         "what":  "and it says there is nothing to update",
         "ok":  true,
-        "detail":  "len=18"
+        "detail":  "len=20"
     },
     {
         "what":  "the info dialog closes",

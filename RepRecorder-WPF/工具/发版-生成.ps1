@@ -81,7 +81,10 @@ if (-not $check) {
   Write-Host '跑 验证WPF-00（它会核对版本号三处一致）…'
   # ⚠ 就地调用（不要经 powershell.exe -File 子进程）：中文路径过进程边界会被
   #   编码搞坏，脚本根本跑不起来，而那时又容易被误判成"通过"。
-  $v00 = (& (Join-Path $dir '验证WPF-00-编译与启动.ps1') *>&1 | Out-String)
+  # ⚠ 验证脚本在 $wpf\测试\ 里，不在 $dir（工具\）里。2026-10-11 13:36 那次提交
+  #   把它们从 RepRecorder-WPF\ 挪进了 测试\，本文件当时没跟着改，于是这一行永远
+  #   找不到文件 → 脚本每次都在这里 exit 4，编译和同步都到不了。
+  $v00 = (& (Join-Path (Join-Path $wpf '测试') '验证WPF-00-编译与启动.ps1') *>&1 | Out-String)
   if ([string]::IsNullOrEmpty($v00) -or ($v00 -notmatch '(?m)^PASS'))
   { Write-Host '验证WPF-00 没过，停在这儿。输出：'; Write-Host $v00; exit 4 }
   Write-Host '同步到分发目录…'
@@ -89,7 +92,9 @@ if (-not $check) {
   # ⚠ 后置校验：确认同步真的把新 exe 送过去了。
   #   不加这一条，就会出现"编译成功、同步失败、更新包里装的还是旧 exe"这种
   #   半对的结果 —— 实测发生过一次。
-  $hDev = (Get-FileHash (Join-Path $dir 'RepRecorderWPF.exe') -Algorithm SHA256).Hash
+  # ⚠ 刚编译的 exe 在 $wpf（RepRecorder-WPF\），编译.bat 的输出路径就是 ..\RepRecorderWPF.exe；
+  #   $dir（工具\）里从来没有 exe，写成 $dir 会让这一步必然抛错（同上面 验证WPF-00 那条）。
+  $hDev = (Get-FileHash (Join-Path $wpf 'RepRecorderWPF.exe') -Algorithm SHA256).Hash
   $dstExe = Join-Path $src 'RepRecorder.exe'
   $hDst = if (Test-Path $dstExe) { (Get-FileHash $dstExe -Algorithm SHA256).Hash } else { '' }
   if ($hDev -ne $hDst)

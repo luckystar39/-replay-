@@ -333,6 +333,49 @@ namespace RepRecorder
             catch (Exception ex) { Log.Write("首次自检弹窗失败（不影响使用）：" + ex.Message); }
         }
 
+        // 删掉上一次更新留下的 <自己>.old。
+        //
+        // ⚠ 必须重试，不能只删一次（2026-10-11 用户报的"老版没有自动删除"）。
+        //   更新完成之后是【当场自动重启】的，新进程起来的那一刻旧进程通常还没退干净；
+        //   而 .old 正是旧进程的镜像文件 —— 只要它还在跑，Windows 就不让删（共享冲突）。
+        //   实测复现：起 A → 把 A 的镜像改名成 .old → 起 B，B 删不掉；
+        //             杀掉 A 之后再起 C，删得掉。
+        //   一次就放弃的话，用户每次更新完都会看到一个赖着不走的 RepRecorder.exe.old，
+        //   要等他自己【再手动开一次】才会消失 —— 那正是用户看到的"没自动删"。
+        //   这里丢到后台每 0.5 秒试一次（旧进程一般一两秒内就退了），试满 15 秒还不行就算了，
+        //   免得白占着线程：那种情况下次启动还会再来一遍。
+        void CleanupOldExe()
+        {
+            string self = UpdateCheck.RunningExePath;
+            if (string.IsNullOrEmpty(self)) return;
+            string oldSelf = self + ".old";
+            if (!File.Exists(oldSelf)) return;              // 绝大多数启动走这条，不建线程
+            Thread t = new Thread(delegate()
+            {
+                try
+                {
+                    for (int i = 0; i < 30; i++)
+                    {
+                        if (!File.Exists(oldSelf)) return;
+                        try
+                        {
+                            File.Delete(oldSelf);
+                            if (i > 0) Log.Write("清掉了上次更新留下的旧程序：" + Path.GetFileName(oldSelf)
+                                                 + "（等了 " + (i * 0.5) + " 秒，旧进程退干净才删得掉）");
+                            return;
+                        }
+                        catch { }
+                        Thread.Sleep(500);
+                    }
+                    Log.Write("旧程序 " + Path.GetFileName(oldSelf) + " 还被占着，这次没删掉，下次启动再试。");
+                }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Name = "清理旧exe";
+            t.Start();
+        }
+
         // 启动那一段（旧版写在 MainForm 的 Shown 里，顺序照搬）
         public void UiOnShown(string[] args)
         {
@@ -349,17 +392,8 @@ namespace RepRecorder
                 // 查更新。⚠ 必须在日志轮转【之后】起 —— 它那几行日志才留得住。
                 // 后台线程、失败静默；6 小时内查过就直接跳过。
                 UpdateCheck.StartBackgroundCheck(cfg);
-                // 上一次更新留下的旧 exe，顺手清掉。删不掉（还被占着）就算了，下次再说。
-                try
-                {
-                    string self = UpdateCheck.RunningExePath;
-                    if (!string.IsNullOrEmpty(self))
-                    {
-                        string oldSelf = self + ".old";
-                        if (File.Exists(oldSelf)) File.Delete(oldSelf);
-                    }
-                }
-                catch { }
+                // 上一次更新留下的旧 exe，顺手清掉（细节见 CleanupOldExe）。
+                CleanupOldExe();
                 Log.Write("==== Rep → MP4 录制器 v" + AppInfo.Version + " 启动 ====");
                 Log.Write("界面：WPF 版（旧界面仍可用：加 --old 启动）");   // 日志轮转之后写，这一行才留得住
                 Log.Write("游戏目录：" + (string.IsNullOrEmpty(cfg.GameDir) ? "<未找到>" : cfg.GameDir));

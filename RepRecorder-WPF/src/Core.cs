@@ -29,7 +29,7 @@ namespace RepRecorder
     //   ⚠ 编译.bat 里【没有】/version: 开关 —— 那两句版本号属性全在 AssemblyInfo.cs 里。
     public static class AppInfo
     {
-        public const string Version = "1.1";
+        public const string Version = "1.1.1";
     }
 
     // ============================================================ 设置
