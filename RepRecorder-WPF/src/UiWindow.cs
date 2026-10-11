@@ -585,16 +585,20 @@ namespace RepRecorder
 
             // ⑤ 环境
             StackPanel env = new StackPanel();
-            btnPrepare = Ui.FlatButton("准备 OBS", "btnPrepare");
+            // ⚠ 是「准备OBS」不是「准备 OBS」：五颗并排后每颗只剩 ~49 DIP，而微软雅黑 12px
+            //   下「准备 OBS」要 51.8 DIP（那个空格自己占 4.4），实测末字的 S 会被切掉
+            //   （2026-10-11 截图确认）。去掉空格是 48.2，和「检查环境」一样宽，正好放下。
+            btnPrepare = Ui.FlatButton("准备OBS", "btnPrepare");
             btnCheck = Ui.FlatButton("检查环境", "btnCheck");
             btnSet = Ui.FlatButton("设置…", "btnSet");
             btnOpenLog = Ui.FlatButton("日志", "btnOpenLog");
-            env.Children.Add(EvenRow(btnPrepare, btnCheck, btnSet, btnOpenLog));
-            // 「检查更新」单独一行（2026-10-10 用户要求）：那四颗并排已经占满左栏默认的
-            // 322 DIP，再塞第五颗每颗只剩 ~55 DIP，「准备 OBS」会被截字。
+            // 「检查更新」和那四颗并排一行（2026-10-11 用户要求）：它以前单独占一整行
+            // （2026-10-10 加的，当时的理由是五颗并排会截字），左栏总高因此多一行 ——
+            // 底下那行环境状态（"OBS：已就绪  游戏：已就绪"）在默认窗口高度下要拖滚动条才看得见。
+            // 并进去省掉那一行。截字的问题按上面那条注释的办法解决：去掉一个空格 + 把
+            // 间距从默认的 3 收到 2（多让出 8 DIP 给五颗分）。
             btnCheckUpdate = Ui.FlatButton("检查更新", "btnCheckUpdate");
-            btnCheckUpdate.Margin = new Thickness(0, 6, 0, 0);
-            env.Children.Add(btnCheckUpdate);
+            env.Children.Add(EvenRow(2, btnPrepare, btnCheck, btnSet, btnOpenLog, btnCheckUpdate));
             // 「拖入后自动开始」2026-10-05 用户要求整条删掉：拖进来只入队，
             // 一定要用户自己点「开始录制」。设置项 AutoStartOnDrop 保留（老设置文件里可能有），
             // 但程序里再也不读它了。
@@ -638,7 +642,12 @@ namespace RepRecorder
             return sv;
         }
 
-        Grid EvenRow(params UIElement[] items)
+        Grid EvenRow(params UIElement[] items) { return EvenRow(3, items); }
+
+        // gap = 两颗之间留的空（第一颗左边、最后一颗右边不留）。
+        // 需要它是因为「环 境」那张卡塞了五颗：五等分之后每颗只剩 ~49 DIP，
+        // 而默认的 3 DIP 间距光缝就吃掉 24 DIP，「检查环境」/「检查更新」（各 48 DIP）就会被截字。
+        Grid EvenRow(double gap, params UIElement[] items)
         {
             Grid g = new Grid();
             for (int i = 0; i < items.Length; i++)
@@ -648,7 +657,7 @@ namespace RepRecorder
                 if (fe != null)
                 {
                     fe.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    fe.Margin = new Thickness(i == 0 ? 0 : 3, 0, i == items.Length - 1 ? 0 : 3, 0);
+                    fe.Margin = new Thickness(i == 0 ? 0 : gap, 0, i == items.Length - 1 ? 0 : gap, 0);
                     Grid.SetColumn(fe, i);
                 }
                 g.Children.Add(items[i]);
