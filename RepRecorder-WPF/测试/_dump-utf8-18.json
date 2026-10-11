@@ -1,0 +1,337 @@
+[
+    {
+        "what":  "1.10 is newer than 1.9 (not a string compare)",
+        "ok":  true,
+        "detail":  "r=1"
+    },
+    {
+        "what":  "1.1 equals 1.1.0.0",
+        "ok":  true,
+        "detail":  "r=0"
+    },
+    {
+        "what":  "2.0 beats 1.9.9.9",
+        "ok":  true,
+        "detail":  "r=1"
+    },
+    {
+        "what":  "1.0 is older than 1.1",
+        "ok":  true,
+        "detail":  "r=-1"
+    },
+    {
+        "what":  "a stray leading v is tolerated",
+        "ok":  true,
+        "detail":  "r=0"
+    },
+    {
+        "what":  "a version with no digits is reported invalid",
+        "ok":  true,
+        "detail":  "r=-2147483648"
+    },
+    {
+        "what":  "1.2.3 beats 1.2",
+        "ok":  true,
+        "detail":  "r=1"
+    },
+    {
+        "what":  "a newer manifest is detected",
+        "ok":  true,
+        "detail":  "newer"
+    },
+    {
+        "what":  "the same version is not \"newer\"",
+        "ok":  true,
+        "detail":  "same"
+    },
+    {
+        "what":  "a lower version is never offered",
+        "ok":  true,
+        "detail":  "older"
+    },
+    {
+        "what":  "an HTML login page is not a manifest",
+        "ok":  true,
+        "detail":  "invalid"
+    },
+    {
+        "what":  "a manifest without Version is invalid",
+        "ok":  true,
+        "detail":  "invalid"
+    },
+    {
+        "what":  "a manifest without any URL is invalid",
+        "ok":  true,
+        "detail":  "invalid"
+    },
+    {
+        "what":  "a trailing comma is rejected, not crashed on",
+        "ok":  true,
+        "detail":  "invalid"
+    },
+    {
+        "what":  "a missing file reports an error, it does not crash",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "an empty url means \"do not check\"",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the update dialog shows up when there is a newer version",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it names the new version and the current one",
+        "ok":  true,
+        "detail":  "text=发现新版本 v9.9（你现在是 v1.1）"
+    },
+    {
+        "what":  "the dialog closes",
+        "ok":  true,
+        "detail":  "wasOpen=True"
+    },
+    {
+        "what":  "the skipped version is remembered",
+        "ok":  true,
+        "detail":  "v=9.9"
+    },
+    {
+        "what":  "and the skip is what suppressed it (a fresh check really ran)",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the same version is not offered twice",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a good update applies",
+        "ok":  true,
+        "detail":  "result=ok"
+    },
+    {
+        "what":  "the target file now holds the new content",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the old file was kept as .old",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the doc file was updated too",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "no stray .new file was left behind",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a hash mismatch is refused",
+        "ok":  true,
+        "detail":  "result=fail err=下载到的文件校验值不对（可能没下全）。期望 5c2b5f513efefd92ef67aec3c0f8ec86681aa8434c3cb122b0df814dc83c0ff3，实际 58b633938932de35c6789165969212d14491e40aa1ed68dfee8bf83d4bb65948"
+    },
+    {
+        "what":  "and the target was not touched",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "and no .old was left behind",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a missing hash refuses auto-apply",
+        "ok":  true,
+        "detail":  "result=fail err=清单里没有 Sha256，拒绝自动替换（请点「打开下载页」手动下）"
+    },
+    {
+        "what":  "and the target is still untouched",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a target in a missing directory fails cleanly",
+        "ok":  true,
+        "detail":  "result=fail err=未能找到路径“D:\\_reptest18\\nosuchdir\\x.exe.new”的一部分。"
+    },
+    {
+        "what":  "spaces and Chinese in the path are fine",
+        "ok":  true,
+        "detail":  "result=ok"
+    },
+    {
+        "what":  "and it really landed there",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a package whose payload is not a real program is refused",
+        "ok":  true,
+        "detail":  "result=fail err=更新包里的 RepRecorder.exe 不是个有效的程序（发布时可能打错包了）"
+    },
+    {
+        "what":  "and the target is still untouched",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the dialog still appears when the download url is broken",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the app is still alive after a failed download",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it says something human about the failure",
+        "ok":  true,
+        "detail":  "text=更新失败：未能找到文件“D:\\_reptest18\\nosuch.zip”。（file:///D:/_reptest18/nosuch.zip）。可以点「打开下载页」自己下下来替换。"
+    },
+    {
+        "what":  "the button is usable again",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "a non-http download page is refused, and says so",
+        "ok":  true,
+        "detail":  "text=清单里的下载地址不是网页地址，已忽略：file:///D:/_reptest18/nosuch.zip"
+    },
+    {
+        "what":  "check mode does not touch Core.cs",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "check mode does not touch AssemblyInfo.cs",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it reports what it would change",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it produced the update package",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it produced a version.json",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "it produced the checklist",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the manifest declares the new version",
+        "ok":  true,
+        "detail":  "v=1.1"
+    },
+    {
+        "what":  "the manifest carries a sha256",
+        "ok":  true,
+        "detail":  "sha=72a9b4714a7da4575a49b3ee286f36c20f2e25f7bcaedc5a39a7c55dfda27e71"
+    },
+    {
+        "what":  "the sha256 matches the package it just built",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the github link is present",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the manifest carries a gitee link now that the repo exists",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "every url in the manifest is ascii-only",
+        "ok":  true,
+        "detail":  "urls=3 non-ascii=0"
+    },
+    {
+        "what":  "it names the full package too (ascii)",
+        "ok":  true,
+        "detail":  "full=https://github.com/luckystar39/soku-RepRecorder/releases/download/v1.1/RepRecorder-1.1-full.zip"
+    },
+    {
+        "what":  "the update package stays small (it must not carry ffmpeg)",
+        "ok":  true,
+        "detail":  "bytes=193127"
+    },
+    {
+        "what":  "the package has RepRecorder.exe at its root",
+        "ok":  true,
+        "detail":  "entries=RepRecorder.exe,说明-给使用者（简短版）.md,说明-给使用者（详细版）.md"
+    },
+    {
+        "what":  "and it carries the docs but nothing bulky",
+        "ok":  true,
+        "detail":  "n=3"
+    },
+    {
+        "what":  "the check button is on the environment card",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the button finds a newer version (throttle and skip ignored)",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "and the manual check re-stamped the time",
+        "ok":  true,
+        "detail":  "was=05:28:58 now=05:28:58"
+    },
+    {
+        "what":  "the button is usable again after the dialog",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "being up to date opens the info dialog",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "and it says there is nothing to update",
+        "ok":  true,
+        "detail":  "len=18"
+    },
+    {
+        "what":  "the info dialog closes",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "an unreachable manifest opens the info dialog too",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "and it reports the failure instead of going quiet",
+        "ok":  true,
+        "detail":  "len=57"
+    }
+]

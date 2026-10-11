@@ -1,0 +1,1745 @@
+﻿OK  app alive  pid=3472
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=321
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=321
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=19020
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=321
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=321
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=14952
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=321
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=321
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=18656
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=321
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=321
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=35076
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=321
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=321
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=36756
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=283
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=283
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=12320
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=283
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=283
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=10956
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=283
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=283
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=23980
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=283
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=283
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=11044
+FAILall left-panel controls present  missing=panelLeft,splitterV,btnPanel,btnBg,cardRecord,cardParallel,cardQueue,cardSound,cardEnv,btnStart,btnStop,btnClear,btnRemove,btnMark,btnRefresh,btnPrepare,btnCheck,btnSet,btnOpenLog,btnSound,btnGameAudio,btnBgm,cbParallel,cbMic,chkAuto,chkPrepare,chkCloseObs,chkRound,lblMemHint,lblParHint,hint,activityBar,btnExpand
+FAILmem hint looks like "<n.n> GB"  raw=
+FAILcbParallel shows the saved value  raw= expect=1
+FAILcbMic has a selection  raw=
+FAILset cbParallel=2  ok=
+FAILsettings ParallelCount==3  file=1
+FAILmem hint follows (1.6 GB)  raw=
+FAILpanel width > 120  panel=
+FAILnot collapsed  collapsed=
+FAILcollapsed after press  collapsed=
+FAILpanel width 0 when collapsed  panel=
+FAILsettings PanelCollapsed==true  file=False
+FAILexpanded again  collapsed=
+FAILpanel width restored  panel=
+FAILno crash in log  
+OK  app alive  pid=1308
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=282
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=282
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=18312
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=282
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=282
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=34884
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=282
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=282
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=26052
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=282
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=282
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=32288
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=35600
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=27856
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=8400
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=游戏 + 麦克风
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=31012
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶  开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=游戏 + 麦克风
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=35096
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=556
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=25148
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=27716
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=34680
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=277
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=277
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=14724
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=331
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=331
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=13712
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=331
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=331
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=18444
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=游戏 + 麦克风
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=331
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=331
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=35612
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=游戏 + 麦克风
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=331
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=331
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=22984
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.6 GB
+OK  cbParallel shows the saved value  raw=3 expect=3
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=326
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=326
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=36248
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=326
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=326
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=14944
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=326
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=326
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=23344
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=326
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=326
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=15668
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=254
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=254
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=36500
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=254
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=254
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=17656
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=254
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=254
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=31728
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=254
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=254
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=4876
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=254
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=254
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=28132
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=18840
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=28704
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=36208
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=23272
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=1424
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  no crash in log  
+OK  app alive  pid=12416
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+FAILpanel width > 120  panel=0
+FAILnot collapsed  collapsed=True
+FAILcollapsed after press  collapsed=False
+FAILpanel width 0 when collapsed  panel=298
+FAILsettings PanelCollapsed==true  file=False
+FAILtop button shows the expand arrow (U+25B6)  raw=◀  收起面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  no crash in log  
+OK  app alive  pid=35264
+OK  panel starts expanded  normalised
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  no crash in log  
+OK  app alive  pid=30404
+OK  panel starts expanded  normalised
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  no crash in log  
+OK  app alive  pid=17932
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-86,1180x885  rendered=1180x885  layer=1180x648
+OK  no crash in log  
+OK  app alive  pid=6132
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  app alive  pid=33580
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x618
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  app alive  pid=7836
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,0,876x657  rendered=876x657  layer=876x611
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  app alive  pid=5340
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 2.1 GB
+OK  cbParallel shows the saved value  raw=4 expect=4
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=298
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=298
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  app alive  pid=24764
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=30568
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=10048
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=24168
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=24624
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=1556
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 1.1 GB
+OK  cbParallel shows the saved value  raw=2 expect=2
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=24344
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=20280
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=12412
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=18308
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=11912
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=29292
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=25164
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=25176
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+FAILbackground viewport matches the rendered size after panel toggling  no image configured: viewport=[] rendered=[1180x648]
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=2416
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=22600
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=19280
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=17976
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=16448
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=3472
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=6492
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=4264
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=3648
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=19772
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=29288
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=7608
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=7692
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455
+OK  app alive  pid=16040
+OK  panel starts expanded  already expanded
+OK  all left-panel controls present  missing=
+OK  btnStart has a playlist glyph + CJK  raw=▶ 开始录制
+OK  mem hint looks like "<n.n> GB"  raw=约 0.5 GB
+OK  cbParallel shows the saved value  raw=1 expect=1
+OK  cbMic has a selection  raw=只录游戏声音
+OK  set cbParallel=2  ok=True
+OK  settings ParallelCount==3  file=3
+OK  mem hint follows (1.6 GB)  raw=约 1.6 GB
+OK  panel width > 120  panel=794
+OK  not collapsed  collapsed=False
+OK  collapsed after press  collapsed=True
+OK  panel width 0 when collapsed  panel=0
+OK  settings PanelCollapsed==true  file=True
+OK  top button shows the expand arrow (U+25B6)  raw=▶  展开面板
+OK  expanded again  collapsed=False
+OK  panel width restored  panel=794
+OK  top button back to the collapse arrow (U+25C0)  raw=◀  收起面板
+OK  background viewport matches the rendered size after panel toggling  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK  no wrong-sized background frame while expanding (round 0)  0 bad frames out of 12 samples
+OK  no wrong-sized background frame while expanding (round 1)  0 bad frames out of 12 samples
+OK  no crash in log  
+OK  a stored 3000px panel width is clamped (right side survives)  win=1180x648  panel=794  right=380
+OK  settings dialog opened  
+OK  the port box was actually typed over (guard is meaningful)  typed=9999
+OK  re-detect refreshes the port box (not silently discarded)  was=4455  typed=9999  after=4455  cfg=4455

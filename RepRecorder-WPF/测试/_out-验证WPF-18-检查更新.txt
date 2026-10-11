@@ -1,0 +1,406 @@
+Join-Path : 无法将参数绑定到参数“Path”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:61 字符: 22
++ Copy-Item (Join-Path $dir 'RepRecorderWPF.exe') $exe -Force
++                      ~~~~
+    + CategoryInfo          : InvalidData: (:) [Join-Path]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.JoinPathCom 
+   mand
+ 
+Start-Process : 由于出现以下错误，无法运行此命令: 系统找不到指定的文件。。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:50 字符: 8
++   $p = Start-Process -FilePath $exe -WorkingDirectory $app -ArgumentL ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Start-Process]，InvalidOperationException
+    + FullyQualifiedErrorId : InvalidOperationException,Microsoft.PowerShell.Commands.StartProcessCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:69 字符: 31
++ $r = (Dbg 'cmpver:1.10|1.9' | ConvertFrom-Json).result
++                               ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL 1.10 is newer than 1.9 (not a string compare)  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:71 字符: 34
++ $r = (Dbg 'cmpver:1.1|1.1.0.0' | ConvertFrom-Json).result
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL 1.1 equals 1.1.0.0  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:73 字符: 34
++ $r = (Dbg 'cmpver:2.0|1.9.9.9' | ConvertFrom-Json).result
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL 2.0 beats 1.9.9.9  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:75 字符: 30
++ $r = (Dbg 'cmpver:1.0|1.1' | ConvertFrom-Json).result
++                              ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL 1.0 is older than 1.1  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:77 字符: 31
++ $r = (Dbg 'cmpver:v1.1|1.1' | ConvertFrom-Json).result
++                               ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a stray leading v is tolerated  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:79 字符: 30
++ $r = (Dbg 'cmpver:abc|1.0' | ConvertFrom-Json).result
++                              ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a version with no digits is reported invalid  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:81 字符: 32
++ $r = (Dbg 'cmpver:1.2.3|1.2' | ConvertFrom-Json).result
++                                ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL 1.2.3 beats 1.2  r=
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:103 字符: 71
++ ... s detected' ((Dbg ('updatecheck:' + $good) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:103 字符: 142
++ ... eq 'newer') ((Dbg ('updatecheck:' + $good) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a newer manifest is detected  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:104 字符: 74
++ ... ot "newer"' ((Dbg ('updatecheck:' + $same) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:104 字符: 144
++ ... -eq 'same') ((Dbg ('updatecheck:' + $same) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL the same version is not "newer"  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:105 字符: 74
++ ... ver offered' ((Dbg ('updatecheck:' + $old) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:105 字符: 144
++ ... -eq 'older') ((Dbg ('updatecheck:' + $old) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a lower version is never offered  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:106 字符: 79
++ ... a manifest' ((Dbg ('updatecheck:' + $html) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:106 字符: 152
++ ...  'invalid') ((Dbg ('updatecheck:' + $html) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL an HTML login page is not a manifest  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:107 字符: 79
++ ...  is invalid' ((Dbg ('updatecheck:' + $nov) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:107 字符: 151
++ ... q 'invalid') ((Dbg ('updatecheck:' + $nov) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a manifest without Version is invalid  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:108 字符: 81
++ ... s invalid' ((Dbg ('updatecheck:' + $nourl) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:108 字符: 155
++ ... 'invalid') ((Dbg ('updatecheck:' + $nourl) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a manifest without any URL is invalid  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:113 字符: 88
++ ... rashed on' ((Dbg ('updatecheck:' + $trail) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:113 字符: 162
++ ... 'invalid') ((Dbg ('updatecheck:' + $trail) | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a trailing comma is rejected, not crashed on  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:114 字符: 115
++ ... datecheck:file:///D:/_reptest18/nope.json' | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL a missing file reports an error, it does not crash  
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:115 字符: 66
++ ... means "do not check"' ((Dbg 'updatecheck:' | ConvertFrom-Json).result ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+FAIL an empty url means "do not check"  
+Start-Process : 由于出现以下错误，无法运行此命令: 系统找不到指定的文件。。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:50 字符: 8
++   $p = Start-Process -FilePath $exe -WorkingDirectory $app -ArgumentL ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Start-Process]，InvalidOperationException
+    + FullyQualifiedErrorId : InvalidOperationException,Microsoft.PowerShell.Commands.StartProcessCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 
+ConvertFrom-Json : 无法将参数绑定到参数“InputObject”，因为该参数是空值。
+所在位置 D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\验证WPF-18-检查更新.ps1:127 字符: 34
++   if ((Dbg 'find:updateDialog' | ConvertFrom-Json).found -eq $true) { ...
++                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [ConvertFrom-Json]，ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.ConvertFrom 
+   JsonCommand
+ 

@@ -1,0 +1,12 @@
+OK  exe exists: 464384 bytes
+OK  source version = 1.1
+OK  exe metadata version = 1.1.0.0
+OK  exe has a description
+OK  main window appeared
+OK  log contains 'Rep'
+OK  log contains 'OBS'
+OK  log contains 'BGM'
+OK  the log states the version
+OK  the built exe is not low integrity (Medium)
+OK  the distributed exe is not low integrity (no label (unrestricted))
+PASS

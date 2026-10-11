@@ -1,0 +1,22 @@
+OK  process alive, pid=10092
+OK  window found by AutomationId=win, name="Rep → MP4 录制器（OBS） v1.1"
+OK  btnPanel -> ControlType.Button
+OK  btnBg -> ControlType.Button
+OK  capMin -> ControlType.Button
+OK  capMax -> ControlType.Button
+OK  capClose -> ControlType.Button
+OK  panelLeft -> ControlType.Pane
+OK  splitterV -> ControlType.Thumb
+OK  splitterH -> ControlType.Thumb
+OK  logBox -> ControlType.List
+     window 1770x972 px, window-dpi=144, monitor-dpi=144
+OK  DPI aware (window reports the real 144 dpi, not the virtualized 96)
+OK  asks DWM for rounded corners (pref=2)
+     corner patch: square=186  round=186  (informational, see the note in this script)
+     resize base 1770x972 px  (= 1180x648 DIP at 150%)
+     resize step: CPU 3.1 ms  wall 21.1 ms   (WinForms old: 47 ms wall)
+OK  resize is fast
+     screenshot -> D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\_shot-01-shell.png
+OK  maximised window does not overhang the work area  win=0,0 2560x1527  work=0,0 2560x1528  overhang=0  gap=1
+OK  maximised window covers the work area  win=0,0 2560x1527  work=0,0 2560x1528  overhang=0  gap=1
+PASS

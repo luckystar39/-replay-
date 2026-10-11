@@ -1,0 +1,18 @@
+OK   app alive  pid=26428
+OK   starts empty  count=0
+OK   list exists  type=ListBox
+OK   header cell colHead0  raw=#
+OK   header cell colHead1  raw=文件
+OK   header cell colHead2  raw=状态
+OK   header cell colHead3  raw=用时
+OK   header cell colHead4  raw=大小
+OK   header cell colHead5  raw=说明
+OK   addrows:60 ok  count=60
+OK   rows reports 60  count=60
+OK   row 1 index is 1  i=1
+OK   row 60 index is 60  i=60
+OK   several distinct statuses rendered  distinct=6
+OK   screenshot saved  D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\_shot-02-queue.png
+OK   clear ok  ok=True
+OK   empty after clear  count=0
+PASS

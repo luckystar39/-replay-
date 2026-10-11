@@ -1,0 +1,10 @@
+OK  the first-run dialog did appear  sawDialog=True
+OK  a background disk walk really ran  scanMs=2009
+OK  the dialog never claims the game is missing  marks=?
+OK  and it shows the game as found  marks=?
+OK  the game dir was adopted into settings  GameDir=D:\_reptest16\pkg\game\th123
+OK  the first-run check was remembered  EnvChecked=True
+OK  the card starts by reporting the game as missing  first=?
+OK  and it picks up the fresh search on its own  flipped=True
+OK  no exception in log  
+PASS

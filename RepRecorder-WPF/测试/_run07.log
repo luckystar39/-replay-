@@ -1,0 +1,79 @@
+﻿OK   app alive  pid=34796 waited=0s
+OK   bgstate answers  
+OK   background image loaded  pixels=640x480
+OK   a stored "free" layout migrates to "fill"  layout=fill (file said free)
+OK   layer opacity matches settings  layer=85 cfg=85
+OK   press:btnBg ok  ok=True
+OK   dialog is open  
+OK   control bgImage  type=TextBox
+OK   control bgBrowse  type=Button
+OK   control bgClear  type=Button
+OK   control bgOpacity  type=Slider
+OK   control panelScrim  type=Slider
+OK   control bgBlur  type=Slider
+OK   control bgOffX  type=Slider
+OK   control bgOffY  type=Slider
+OK   control bgOffXRow  type=StackPanel
+OK   control bgOffYRow  type=StackPanel
+OK   control bgLayout  type=ComboBox
+OK   control bgScope  type=ComboBox
+OK   control bgFlipH  type=CheckBox
+OK   control bgFlipV  type=CheckBox
+OK   control bgZoom  type=Slider
+OK   control bgOk  type=Button
+OK   control bgCancel  type=Button
+OK   transparency 60 lands on the layer as opacity 40  layer=40
+OK   scope switches to global  scope=global
+OK   viewport follows the scope change (global)  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
+OK   scope switches back to content  scope=content
+OK   viewport follows the scope change (content)  viewport=0,0,889x667  rendered=889x667  layer=889x611
+OK   layout switches to stretch  stretch=Fill
+OK   the layer brush really switched too  brush=Fill cfg=Fill
+OK   alignment index 0 is fill  layout=fill
+OK   slider locks when its axis has no slack (cover)  pan=0,18  enabled=False,True
+OK   position row never disappears (cover)  vis=Visible,Visible  (hiding it is what made the dialog jump)
+OK   alignment index 1 is fit  layout=fit
+OK   slider locks when its axis has no slack (contain)  pan=13,0  enabled=True,False
+OK   position row never disappears (contain)  vis=Visible,Visible  (hiding it is what made the dialog jump)
+OK   alignment index 2 is stretch  layout=stretch
+OK   slider locks when its axis has no slack (stretch)  pan=0,0  enabled=False,False
+OK   position row never disappears (stretch)  vis=Visible,Visible  (hiding it is what made the dialog jump)
+OK   alignment index 3 is center  layout=center
+OK   slider locks when its axis has no slack (center)  pan=22,12  enabled=True,True
+OK   position row never disappears (center)  vis=Visible,Visible  (hiding it is what made the dialog jump)
+OK   alignment index 4 is tile  layout=tile
+OK   slider locks when its axis has no slack (tile)  pan=-1,-1  enabled=True,True
+OK   position row never disappears (tile)  vis=Visible,Visible  (hiding it is what made the dialog jump)
+OK   stretch leaves no room to move at all  pan=0,0
+OK   tile is unlimited on both axes  pan=-1,-1
+OK   cover fits exactly one axis (so it can never show background)  pan=0,18
+OK   switching to stretch does NOT rewrite the stored offset  ox=99 oy=99 (kept, not clamped)
+OK   stretch still renders it clamped (no blank band)  bx=0 by=0
+OK   cover has a positive vertical range to park inside  pany=18
+OK   the offset parked at the limit took effect  oy=18 pany=18
+OK   growing the window does not rewrite the stored offset  oy=18 parked=18 pany now=14
+OK   the render is clamped into the new (smaller) range  by=0.15 pany=14
+OK   the range really did shrink (otherwise this test proves nothing)  pany=14 was 18
+OK   shrinking back restores the original position  oy=18 parked=18
+OK   and the rendered offset is the original one again  by=0.183
+OK   flip horizontal reaches the brush  brushScale=-1,1  zoom=100
+OK   flip horizontal reaches the setting  flipH=True
+OK   flip vertical reaches the brush  brushScale=-1,-1
+OK   zoom doubles the rendered size  rendered 640 -> 1280 (zoom=200)
+OK   Y=+max puts the image TOP edge at the frame top (crop revealed)  viewport y=0  rendered height=885  layer height=648
+OK   and it still covers the bottom edge (no blank band opened)  viewport bottom=885  layer height=648
+OK   the rendered image is taller than the frame (so there IS something cropped)  rendered=885  layer=648
+OK   Y=-max puts the image BOTTOM edge at the frame bottom  viewport bottom=648  layer height=648
+OK   and it still covers the top edge  viewport y=-237
+OK   panel scrim 0 reaches the setting  scrim=0
+OK   cancel restores opacity  layer=85 before=85
+OK   cancel restores scope  scope=global before=global
+OK   cancel restores layout  stretch=UniformToFill before=UniformToFill
+OK   cancel restores panel scrim  scrim=45 before=45
+OK   cancel restores flip and zoom  file=False,False 100  before=False,False 100
+OK   settings file untouched by cancel  file=85
+OK   OK writes the settings file  file=58
+OK   log records the background change  
+OK   no exception in log  
+OK   transparency 100 collapses the layer  layer opacity=0
+OK   opacity 0 does NOT spin the UI thread  cpu=0% of a core over 5s   (the self-rescheduling loop measured ~21%)

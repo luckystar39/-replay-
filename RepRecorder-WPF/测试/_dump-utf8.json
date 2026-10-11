@@ -1,0 +1,82 @@
+[
+    {
+        "what":  "env reports five items",
+        "ok":  true,
+        "detail":  "n=5"
+    },
+    {
+        "what":  "a healthy machine reports allOk",
+        "ok":  true,
+        "detail":  "allOk=True"
+    },
+    {
+        "what":  "the env line is actually rendered in the UI",
+        "ok":  true,
+        "detail":  "text=OBS：已就绪    游戏：已就绪"
+    },
+    {
+        "what":  "no dialog pops when nothing is wrong",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the first-run check was remembered",
+        "ok":  true,
+        "detail":  "EnvChecked=True"
+    },
+    {
+        "what":  "a missing mod is reported",
+        "ok":  true,
+        "detail":  "mod=整合包里没有这个文件"
+    },
+    {
+        "what":  "allOk goes false",
+        "ok":  true,
+        "detail":  "allOk=False"
+    },
+    {
+        "what":  "the first-run dialog pops up",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the env line now shows a problem",
+        "ok":  true,
+        "detail":  "text=OBS：已就绪    游戏：已就绪"
+    },
+    {
+        "what":  "the dialog carries the recall id",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "closing it works",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the first-run self-check does not nag twice",
+        "ok":  true,
+        "detail":  "EnvChecked=True"
+    },
+    {
+        "what":  "recording is refused when the game dir is broken",
+        "ok":  true,
+        "detail":  "recording=False"
+    },
+    {
+        "what":  "and the user is told why (dialog)",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "no exception in log",
+        "ok":  true,
+        "detail":  ""
+    },
+    {
+        "what":  "the OBS registry step reads HKCU too",
+        "ok":  true,
+        "detail":  "cands=D:\\obs\\obs-studio\\bin\\64bit\\obs64.exe | C:\\Users\\江博文\\AppData\\Local\\Temp\\repobs-verify\\bin\\64bit\\obs64.exe"
+    }
+]
