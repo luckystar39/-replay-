@@ -1,26 +1,23 @@
 // ============================================================
-//  Recorder.cs -- the recording logic, lifted out of MainForm.
+//  Recorder.cs -- 录制逻辑（唯一的实现）
 //
-//  Why "lifted" and not "moved": Core.cs (the WinForms build) is left byte-identical so the
-//  old path (no --wpf) keeps working and can always be used as the fallback. Once the WPF
-//  path is verified (phase 6) we can decide about deleting MainForm.
+//  2026-10-03 从旧界面的 MainForm 里整段搬出来，为的是让逻辑和界面分开：旧界面 2026-10-12
+//  已经删掉（作为独立快照留在 RepRecorder-旧版WinForms\），所以这里现在是**唯一**一份录制逻辑，
+//  不会再出现"改了这边忘了那边"。
 //
-//  Nothing in this file may touch a WinForms control: everything that talks to the UI goes
-//  through the Ui facade. The bodies below were copied verbatim from MainForm, so the
-//  remaining compiler errors ARE the to-do list.
+//  硬规矩：这个文件不许碰任何控件类型。所有跟界面有关的事都走 Ui 门面
+//  （Ui.Status / Ui.AddRow / Ui.Post …），界面层在 Ui*.cs。
 // ============================================================
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
-using System.Windows.Forms;
 
 namespace RepRecorder
 {
@@ -82,14 +79,18 @@ namespace RepRecorder
                 if (res.Checked) queueSaveDecided = true;
                 if (res.Choice == 1 && res.Picked != null)
                 {
-                    cfg.Save();
+                    // ⚠ 落盘必须回 UI 线程：这个方法是在 worker 线程上被调的
+                    //   （RunParallelBatch / ProcessJob），而 Settings.Save() 是裸 File.WriteAllText，
+                    //   界面那边还有个 2 秒的定时器也会 Save —— 两边同时写同一个文件会写坏/丢更新。
+                    //   字段赋值留在本线程（那是 worker 自己的状态），只把 Save 这一步挪过去。
+                    Ui.Post(delegate { cfg.Save(); });
                     if (res.Checked) queueSaveFolder = res.Picked;
                     result = res.Picked;
                 }
                 else if (res.Choice == 2)
                 {
                     cfg.AskSaveLocation = false;
-                    cfg.Save();
+                    Ui.Post(delegate { cfg.Save(); });
                     Log.Write("已关闭“每次询问保存位置”，可在设置里重新打开");
                 }
             }
@@ -182,15 +183,15 @@ namespace RepRecorder
             return null;
         }
 
-        // ---- 旧代码里那些颜色常量（对应 MainForm 的 Hud* 静态字段）----
-        static Color HudOff { get { return MainForm.HudOff; } }
-        static Color HudOn { get { return MainForm.HudOn; } }
-        static Color HudDim { get { return MainForm.HudDim; } }
-        static Color HudLine { get { return MainForm.HudLine; } }
-        static Color HudText { get { return MainForm.HudText; } }
-        static Color HudRed { get { return MainForm.HudRed; } }
-        static Color HudOrange { get { return MainForm.HudOrange; } }
-        static Color HudAccent2 { get { return MainForm.HudAccent2; } }
+        // ---- 颜色常量：转发到 Palette（见 Palette.cs）----
+        static Color HudOff { get { return Palette.HudOff; } }
+        static Color HudOn { get { return Palette.HudOn; } }
+        static Color HudDim { get { return Palette.HudDim; } }
+        static Color HudLine { get { return Palette.HudLine; } }
+        static Color HudText { get { return Palette.HudText; } }
+        static Color HudRed { get { return Palette.HudRed; } }
+        static Color HudOrange { get { return Palette.HudOrange; } }
+        static Color HudAccent2 { get { return Palette.HudAccent2; } }
 
         // ⚠ 旧版是 MainForm 的构造函数里 cfg = Settings.Load()。搬字段的时候把这一句漏了，
         //   结果逻辑这边的 cfg 一直是 null（启动当场空引用）。现在由界面那边建好同一个实例传进来 ——
@@ -397,7 +398,7 @@ namespace RepRecorder
                 // 上一次更新留下的旧 exe，顺手清掉（细节见 CleanupOldExe）。
                 CleanupOldExe();
                 Log.Write("==== Rep → MP4 录制器 v" + AppInfo.Version + " 启动 ====");
-                Log.Write("界面：WPF 版（旧界面仍可用：加 --old 启动）");   // 日志轮转之后写，这一行才留得住
+                Log.Write("界面：WPF 版");   // 日志轮转之后写，这一行才留得住
                 Log.Write("游戏目录：" + (string.IsNullOrEmpty(cfg.GameDir) ? "<未找到>" : cfg.GameDir));
                 Log.Write("OBS     ：" + (string.IsNullOrEmpty(cfg.ObsExe) ? "<未找到>" : cfg.ObsExe));
                 SyncBgmFromIni();
@@ -424,7 +425,8 @@ namespace RepRecorder
             catch (Exception ex) { Log.Write("启动初始化出错：" + ex); }
         }
 
-        // 影子控件（对应旧版 MainForm 里的那几个字段；名字一模一样，逻辑那边不用改）
+        // 影子控件：逻辑里本来写的是控件属性赋值（btnSound.Text = "…"），现在这些都走 Ui 门面；
+        // 这几个字段只是为了在同一处保留"这批按钮叫什么名"，名字和界面上的 AutomationId 一致。
         readonly UiButton btnStart = new UiButton("btnStart");
         readonly UiButton btnStop = new UiButton("btnStop");
         readonly UiButton btnSound = new UiButton("btnSound");
@@ -436,6 +438,7 @@ namespace RepRecorder
         readonly object jobsLock = new object();
         Thread worker;
         volatile bool cancel;
+        volatile bool prepareBusy;          // 「准备 OBS」正在后台跑（见 OnPrepare）：挡连点，也挡开录
         volatile bool titleWatch = false;   // 并行录制期间盯着窗口标题，防止游戏改回去导致三格抢同一窗口
         ObsClient obs = new ObsClient();
         string captureSource = null;    // 采集源名字
@@ -478,7 +481,6 @@ namespace RepRecorder
             return plain;      // 兜底：真找不到空名字就还是老地方（宁可覆盖也别录不出来）
         }
 
-        // ---- moved from MainForm ----
         string FindExistingOutput(Job job)
         {
             try
@@ -503,7 +505,6 @@ namespace RepRecorder
             catch { }
             return null;
         }
-        // ---- moved from MainForm ----
         IntPtr WaitForMainWindow(Process p, int seconds)
         {
             DateTime end = DateTime.Now.AddSeconds(seconds);
@@ -520,7 +521,6 @@ namespace RepRecorder
             }
             return IntPtr.Zero;
         }
-        // ---- moved from MainForm ----
         void MoveWindowClientTo(IntPtr h, int x, int y)
         {
             RECT wr, cr; POINT pt;
@@ -531,7 +531,89 @@ namespace RepRecorder
             int dy = pt.Y - wr.Top;
             SetWindowPos(h, IntPtr.Zero, x - dx, y - dy, wr.Right - wr.Left, wr.Bottom - wr.Top, SWP_NOZORDER | SWP_NOACTIVATE);
         }
-        // ---- moved from MainForm ----
+        // 把游戏窗口撑到"够用又不浪费"的尺寸 —— **只放大，不缩小**。
+        //
+        // 为什么要做：每格采到的像素就是游戏窗口的**真实像素**。窗口 640×480 而成品是 1440×1080，
+        // 就必然放大 2.25 倍（糊）；窗口 1280×960 时只放大 1.125 倍（几乎原生）。
+        // 而窗口大小平时由 WindowResizer 模块的 ini 决定（默认 1x=640×480），用户不会去改它 ——
+        // 于是"画质差"这件事就一直是默认状态。程序自己撑一下，所有人都不用管。
+        //
+        // 实测依据（2026-10-13，本机）：外部对它 SetWindowPos 到 2x 之后，游戏是**按新尺寸重新渲染**的
+        //   —— 抓同一局的画面比过：底部六角形/HUD 的硬边像素块和 640×480 时同一风格，
+        //   不是"把 640×480 拉大"的那种糊图。（同一天还实测：模块的 Alt+1/Alt+2 只对当次运行有效，
+        //   尺寸只在游戏【正常退出】时才写回 ini —— 而本程序结束一批时是强杀游戏，
+        //   所以"让用户自己按 Alt+2"在录制流程里根本留不下来，只能程序自己动手。）
+        //
+        // 只挑 1x/2x（都是 640×480 的整数倍 —— 该模块自己的说明：非整数倍会让游戏里的字发糊），
+        // 并且要同时满足：
+        //   ① 不超过切分后的输出尺寸（再大也会被缩回去，纯浪费编码和磁盘）
+        //   ② 连同程序摆放窗口用的偏移（最多 +320/+60，见下面 MoveWindowClientTo）一起装得进屏幕工作区
+        //      —— 否则窗口跑到屏幕外，那块没被 Windows 合成的内容会被采成黑/花
+        // 本来就已经更大的（用户自己设了 3x 或全屏）**一律不动**：尊重用户的设置，缩小还可能让人莫名其妙。
+        void GrowGameWindows(List<IntPtr> handles)
+        {
+            try
+            {
+                int capW = cfg.CanvasWidth > 0 ? cfg.CanvasWidth : 1440;
+                int capH = cfg.CanvasHeight > 0 ? cfg.CanvasHeight : 1080;
+                RECT wa;
+                int workW = 1920, workH = 1080;
+                if (SystemParametersInfo(SPI_GETWORKAREA, 0, out wa, 0) && wa.Right > 0 && wa.Bottom > 0)
+                {
+                    workW = wa.Right; workH = wa.Bottom;
+                }
+                int tw = 0, th = 0;
+                for (int mult = 2; mult >= 1; mult--)
+                {
+                    int w = 640 * mult, h = 480 * mult;
+                    if (w <= capW && h <= capH && w + 320 <= workW && h + 60 <= workH) { tw = w; th = h; break; }
+                }
+                if (tw == 0) return;                     // 连 1x 都放不下（屏幕太小）→ 什么都不做
+                int done = 0;
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    int n = 0;
+                    foreach (IntPtr h in handles)
+                    {
+                        if (h == IntPtr.Zero) continue;
+                        int cw, chh;
+                        if (!ClientSizeOf(h, out cw, out chh)) continue;
+                        if (cw >= tw && chh >= th) continue;      // 已经够大（或更大）：不动
+                        SetClientSize(h, tw, th);
+                        n++;
+                    }
+                    if (n == 0) break;
+                    done = n;
+                    Thread.Sleep(1500);              // 等游戏重建渲染目标（模块可能紧接着又按 ini 设一次）
+                }
+                if (done > 0)
+                    Log.Write("并行：已把 " + done + " 个游戏窗口撑到 " + tw + "×" + th +
+                              "（每格按真实像素采；窗口越大成品越接近原生，代价是中间文件更大）");
+            }
+            catch (Exception ex) { Log.Write("并行：撑大游戏窗口失败（不影响录制）：" + ex.Message); }
+        }
+        bool ClientSizeOf(IntPtr h, out int cw, out int ch)
+        {
+            cw = ch = 0;
+            RECT cr;
+            if (!GetClientRect(h, out cr)) return false;
+            if (cr.Right <= 0 || cr.Bottom <= 0) return false;
+            double sc = WindowPixelScale(h);
+            cw = (int)Math.Round(cr.Right * sc);
+            ch = (int)Math.Round(cr.Bottom * sc);
+            return true;
+        }
+        void SetClientSize(IntPtr h, int cw, int ch)
+        {
+            RECT wr, cr; POINT pt;
+            if (!GetWindowRect(h, out wr) || !GetClientRect(h, out cr)) return;
+            pt.X = 0; pt.Y = 0;
+            if (!ClientToScreen(h, ref pt)) return;
+            int fw = (wr.Right - wr.Left) - cr.Right;      // 边框总宽
+            int fh = (wr.Bottom - wr.Top) - cr.Bottom;
+            SetWindowPos(h, IntPtr.Zero, wr.Left, wr.Top, cw + fw, ch + fh, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+
         bool ForceAllWindowTitles(List<IntPtr> handles, List<string> wants, int waitSeconds)
         {
             try
@@ -575,12 +657,10 @@ namespace RepRecorder
             }
             catch { return false; }
         }
-        // ---- moved from MainForm ----
         static string MakeWindowString(string title, string cls)
         {
             return (title == null ? "" : title) + ":" + (cls == null ? "" : cls) + ":th123.exe";
         }
-        // ---- moved from MainForm ----
         void EnsureInput(string name, string kind, Dictionary<string, object> settings)
         {
             List<object> inputs = ObsClient.ToList(obs.Request("GetInputList", null)["inputs"]);
@@ -598,7 +678,6 @@ namespace RepRecorder
             obs.Request("CreateInput", req);
             Log.Write("并行：已创建源 " + name);
         }
-        // ---- moved from MainForm ----
         static Dictionary<string, object> AudioInputSettings(string window)
         {
             Dictionary<string, object> a = new Dictionary<string, object>();
@@ -606,7 +685,6 @@ namespace RepRecorder
             a["priority"] = 1;
             return a;
         }
-        // ---- moved from MainForm ----
         static Dictionary<string, object> VideoInputSettings(string window)
         {
             Dictionary<string, object> v = new Dictionary<string, object>();
@@ -617,7 +695,6 @@ namespace RepRecorder
             v["priority"] = 1;
             return v;
         }
-        // ---- moved from MainForm ----
         void ApplyCellWindow(Dictionary<string, string> applied, string vName, string aName, string window)
         {
             string old;
@@ -630,7 +707,6 @@ namespace RepRecorder
             // 窗口串没变时上面已经 return，不会闪 —— 这就是"第 9~10 秒一帧黑"的由来与修法。
             Log.Write("并行：重设采集源绑定 " + vName + " → " + window);
         }
-        // ---- moved from MainForm ----
         void SetInputSettingsRaw(string inputName, Dictionary<string, object> settings)
         {
             Dictionary<string, object> r = new Dictionary<string, object>();
@@ -638,7 +714,6 @@ namespace RepRecorder
             r["inputSettings"] = settings;
             obs.Request("SetInputSettings", r);
         }
-        // ---- moved from MainForm ----
         void SetTransformRaw(string scene, int itemId, int x, int y, int cw, int ch)
         {
             if (itemId < 0) return;
@@ -658,7 +733,6 @@ namespace RepRecorder
             r["sceneItemTransform"] = t;
             obs.Request("SetSceneItemTransform", r);
         }
-        // ---- moved from MainForm ----
         void SetSceneItemEnabled(string scene, int itemId, bool enabled)
         {
             if (itemId < 0) return;
@@ -672,7 +746,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("并行：切换元素显示状态失败：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void SetTransformFitCell(string scene, int itemId, int x, int y, int cw, int ch, int idx)
         {
             if (itemId < 0) { Log.Write("并行：第 " + idx + " 格元素没找到（itemId<0），位置没设上"); return; }
@@ -712,7 +785,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("并行：第 " + idx + " 格设置位置失败 " + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void SetAudioTracksRaw(string inputName, int trackNo)
         {
             Dictionary<string, object> tracks = new Dictionary<string, object>();
@@ -722,7 +794,6 @@ namespace RepRecorder
             r["inputAudioTracks"] = tracks;
             obs.Request("SetInputAudioTracks", r);
         }
-        // ---- moved from MainForm ----
         void SetInputMuteRaw(string inputName, bool muted)
         {
             try
@@ -781,7 +852,6 @@ namespace RepRecorder
             SetAudioLeadRaw(AudioSourceName, lead);
             for (int i = 1; i <= 6; i++) SetAudioLeadRaw("RepRecorder P" + i + " 声音", lead);
         }
-        // ---- moved from MainForm ----
         void SetProfileParamRaw(string cat, string name, string val)
         {
             Dictionary<string, object> r = new Dictionary<string, object>();
@@ -790,14 +860,49 @@ namespace RepRecorder
             r["parameterValue"] = val;
             obs.Request("SetProfileParameter", r);
         }
-        // ---- moved from MainForm ----
         // internal（不是 private）：EnvReport 要问它 ffmpeg 在不在，好把结论一起报给用户。
         // 实现只有一份，在 Core.cs 的 Settings 里（那边还要做走盘 + 实跑校验，放不到这儿）。
         // 保留这个名字当转发器：调用点多，而且 EnvReport 认的就是它。
         // ⚠ 改之前这里是【一整份和 Core.cs 逐字相同的副本】—— 加一个查找位置要改两处，
         //   漏一处的表现是"旧界面找得到、新界面找不到"。2026-10-10 合并成一份。
         internal static string FindFfmpeg() { return Settings.FindFfmpeg(); }
-        // ---- moved from MainForm ----
+
+        // 一格的「往里裁一圈 + 放大」参数。逐格切（SplitOne）和一组多路切（SplitGroup）共用这一份 ——
+        // 以前只有 SplitOne 一处，分组切分如果自己再写一遍，两条路径的成品就会不一样。
+        class CellCrop
+        {
+            public int InX, InY, Cw2, Ch2;
+            public int InsetOut, OutW, OutH;      // 只在打日志时用（裁了多少成品像素、成品多大）
+            public string Filter = "";      // 形如 crop=w:h:x:y[,scale=W:H:flags=...]
+        }
+        CellCrop CellCropOf(int cw, int ch, int x, int y)
+        {
+            CellCrop c = new CellCrop();
+            // 往里裁一圈再缩放：并行时相邻格的采集源是"亚像素"缩放摆的（边界框），格与格之间会漏
+            // 1~3 像素的邻居画面（亮）或画布黑边（暗）进来；整边裁就会把那条线带进成品。
+            // 用户实测：成品最右 2~3 像素亮度 43 → 77 的断崖。往里裁 6 个成品像素后断崖消失（最大跳变 15 → 3.7）。
+            int insetOut = cfg.ParallelEdgeInset;
+            if (insetOut < 0) insetOut = 0;
+            int outW = cfg.CanvasWidth > 0 ? cfg.CanvasWidth : 1440;
+            c.InsetOut = insetOut;
+            c.OutW = outW;
+            c.OutH = cfg.CanvasHeight > 0 ? cfg.CanvasHeight : 1080;
+            c.InX = outW > 0 ? (int)Math.Round((double)insetOut * cw / outW) : 0;
+            c.InY = cw > 0 ? (int)Math.Round((double)c.InX * ch / cw) : 0;
+            if (c.InX * 2 >= cw - 16) c.InX = 0;      // 裁太多就别裁了（防呆）
+            if (c.InY * 2 >= ch - 16) c.InY = 0;
+            c.Cw2 = cw - c.InX * 2;
+            c.Ch2 = ch - c.InY * 2;
+            c.Filter = "crop=" + c.Cw2 + ":" + c.Ch2 + ":" + (x + c.InX) + ":" + (y + c.InY);
+            // 像素点采样（neighbor）而不是 lanczos：游戏是 640×480 的像素画，
+            // 用 lanczos 放大到 1440×1080 会整体发糊（用户实测：和别人的录像一比"清晰程度差很多"）。
+            // neighbor 保留硬边像素块，和游戏本身/别人录出来的观感一致。
+            if (cfg.CanvasWidth > cw || cfg.CanvasHeight > ch)
+                c.Filter += ",scale=" + cfg.CanvasWidth + ":" + cfg.CanvasHeight + ":flags=lanczos";
+            //   ↑ 上面三行是当初选 neighbor 的理由，但用户后来指定回到 lanczos：这是 9/27 22:55
+            //     那版（用户觉得"很清晰"的那版）的放大方式。最终决定＝lanczos，别照上面那段改回 neighbor。
+            return c;
+        }
         bool SplitOne(string grid, Job job, int idx, int cw, int ch, int x, int y, double startSec, double maxSeconds, out string err)
         {
             err = "";
@@ -825,30 +930,10 @@ namespace RepRecorder
                 ? " -ss " + startSec.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
                 : "";
             string baseArgs = "-hide_banner -y" + seek + " -i \"" + grid + "\" -map 0:v:0";
-            // 往里裁一圈再缩放：并行时相邻格的采集源是"亚像素"缩放摆的（边界框），格与格之间会漏
-            // 1~3 像素的邻居画面（亮）或画布黑边（暗）进来；整边裁就会把那条线带进成品。
-            // 用户实测：成品最右 2~3 像素亮度 43 → 77 的断崖。往里裁 6 个成品像素后断崖消失（最大跳变 15 → 3.7）。
-            int insetOut = cfg.ParallelEdgeInset;
-            if (insetOut < 0) insetOut = 0;
-            int outW = cfg.CanvasWidth > 0 ? cfg.CanvasWidth : 1440;
-            int inX = outW > 0 ? (int)Math.Round((double)insetOut * cw / outW) : 0;
-            int inY = cw > 0 ? (int)Math.Round((double)inX * ch / cw) : 0;
-            if (inX * 2 >= cw - 16) inX = 0;      // 裁太多就别裁了（防呆）
-            if (inY * 2 >= ch - 16) inY = 0;
-            int cw2 = cw - inX * 2, ch2 = ch - inY * 2;
-            if (inX > 0)
-                Log.Write("并行切分：每格往里裁 " + inX + " 像素（格子坐标）≈ 成品 " + insetOut + " 像素，" +
-                          "裁后 " + cw2 + "×" + ch2 + " 再缩放到 " + outW + "×" + (cfg.CanvasHeight > 0 ? cfg.CanvasHeight : 1080));
-            string scale = "";
-            try
-            {
-                if (cfg.CanvasWidth > cw || cfg.CanvasHeight > ch)
-                    // 像素点采样（neighbor）而不是 lanczos：游戏是 640×480 的像素画，
-                    // 用 lanczos 放大到 1440×1080 会整体发糊（用户实测：和别人的录像一比"清晰程度差很多"）。
-                    // neighbor 保留硬边像素块，和游戏本身/别人录出来的观感一致。
-                    scale = ",scale=" + cfg.CanvasWidth + ":" + cfg.CanvasHeight + ":flags=lanczos";   // 回到 9/27 22:55 那版的放大方式（用户指定）
-            }
-            catch { }
+            CellCrop cc = CellCropOf(cw, ch, x, y);
+            if (cc.InX > 0)
+                Log.Write("并行切分：每格往里裁 " + cc.InX + " 像素（格子坐标）≈ 成品 " + cc.InsetOut + " 像素，" +
+                          "裁后 " + cc.Cw2 + "×" + cc.Ch2 + " 再缩放到 " + cc.OutW + "×" + cc.OutH);
             // 结尾淡出：并行切分本来就要重编码，加这个不额外花钱，避免"最后一帧硬切"的观感
             string fadeV = "", fadeA = "";
             if (dur > 1.5)
@@ -857,8 +942,11 @@ namespace RepRecorder
                 fadeV = ",fade=t=out:st=" + st + ":d=0.6";
                 fadeA = " -af afade=t=out:st=" + st + ":d=0.6";
             }
-            string vfCore = " -filter:v crop=" + cw2 + ":" + ch2 + ":" + (x + inX) + ":" + (y + inY) + scale + fadeV;
-            string trim = (dur > 10)
+            string vfCore = " -filter:v " + cc.Filter + fadeV;
+            // 结尾截断：只要算出过"这格的画面到第几秒为止"（dur > 0；不到 5 秒的早就当不可信置 0 了），
+            // 就按它截。⚠ 这里以前是 dur > 10，于是"保留 5~10 秒"那档根本不截，
+            // 成品会一路放到整场结束（可能十几分钟）—— 和"截掉结尾黑屏"的本意相反。
+            string trim = (dur > 0)
                 ? " -t " + dur.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)
                 : "";
             // ⚠ afade 必须走 -af（以前拼成 ",afade=..." 直接跟在输出参数后面，ffmpeg 解析失败 →
@@ -866,10 +954,10 @@ namespace RepRecorder
             string aa = " -c:a aac -b:a 192k" + fadeA + trim;
             List<string> attempts = new List<string>();
             foreach (string e in encArgs)
-            {
-                attempts.Add(baseArgs + " -map 0:a:" + idx + vfCore + e + aa);
-                attempts.Add(baseArgs + vfCore + e + aa);              // 音轨不够时退化成不带音频
-            }
+                // "-map 0:a:N?" 的"?"：这条音轨不存在也别报错，直接出无声视频（实测 rc=0）。
+                // ⚠ 以前这一档写的是"不带 -map"——那样 ffmpeg 会自动挑第 0 条音轨，
+                //   于是第 4 格的成品配的是【第 1 格那个玩家的声音】，比没有声音更糟。
+                attempts.Add(baseArgs + " -map 0:a:" + idx + "?" + vfCore + e + aa);
             attempts.Add(baseArgs + vfCore + encArgs[0] + " -an" + trim);   // 最后兜底：无声
             int attemptNo = 0;
             foreach (string a in attempts)
@@ -882,24 +970,210 @@ namespace RepRecorder
                     psi.CreateNoWindow = true;
                     psi.WorkingDirectory = Path.GetDirectoryName(ff);
                     Process p = Process.Start(psi);
-                    p.WaitForExit();
-                    if (p.ExitCode == 0 && File.Exists(target) && new FileInfo(target).Length > 4096)
+                    FfmpegWait w = WaitFfmpeg(p, "并行切分");
+                    int code = ExitCodeAndDispose(p);
+                    if (w == FfmpegWait.Cancelled) { err = "已取消"; break; }        // 用户点了停止，别再试下一种参数
+                    if (w == FfmpegWait.TimedOut) { err = "ffmpeg 超时"; continue; } // 超时当作这次参数失败，让上面的循环换一种再试
+                    if (code == 0 && File.Exists(target) && new FileInfo(target).Length > 4096)
                     {
                         if (attemptNo > 1)
                             Log.Write("并行切分：第 " + attemptNo + " 种参数才成功（"
-                                      + (attemptNo > 2 ? "多半没 NVIDIA 显卡，已换 libx264 软编" : "退化成不带音频") + "）");
+                                      + (attemptNo > encArgs.Count ? "最后兜底：无声" : "多半没 NVIDIA 显卡，已换 libx264 软编") + "）");
                         job.Output = target;    // 实际落点由这里说了算（见上面 OutputPathFor 那行）
                         return true;
                     }
-                    err = "ffmpeg 退出码 " + p.ExitCode;
-                    if (p.ExitCode != 0 && attemptNo == 1 && encArgs.Count > 1)
+                    err = "ffmpeg 退出码 " + code;
+                    if (code != 0 && attemptNo == 1 && encArgs.Count > 1)
                         Log.Write("并行切分：" + enc + " 失败（多半没对应显卡），改用 libx264 软编重试…");
                 }
                 catch (Exception ex) { err = ex.Message; }
             }
             return false;
         }
-        // ---- moved from MainForm ----
+
+        // ── 一次解码、多路输出 ────────────────────────────────────────────────
+        // 一组最多几格共用一个 ffmpeg 进程。
+        // 实测（2026-10-13，本机 9MP 中继画布 + 45 秒样本，三种方案同一份素材）：
+        //   6 格逐格切、3 并发 = 37 s（就是改之前的行为）
+        //   3 格一组、两组并发 = 19 s，输出与逐格切分逐像素相同（PSNR=inf / SSIM=1.000000）
+        //   6 格一组、一组       = 19 s（一样快，但一轮要开 6 路编码器，见下）
+        //   6 格逐格切、6 并发   = 32 s（并发数拉到 6 没什么用 —— 瓶颈是编码，不是并发）
+        // 省的时间来自"源只解码一遍"：逐格切是每格各自把整张画布解码一遍。
+        // 为什么一组是 3 而不是一次 6：NVENC 的并发会话数在不少显卡上只有 3，
+        // "一组 3 路 + 失败退回逐格"在任何卡上都能给出正确结果，只是慢一点。
+        const int SplitGroupSize = 3;
+
+        // ffmpeg 的秒数一律走这里：不变文化的两位小数（在"逗号当小数点"的地区，
+        // 1.50 会被写成 1,50，ffmpeg 直接解析失败）。
+        static string Sec(double v)
+        {
+            if (v < 0) v = 0;
+            return v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // 一组格子共用一个 ffmpeg。cells = 这一组在 batch 里的下标（升序）。
+        // 成功才返回 true（batch[...].Output 已填好）；失败时调用方退回 SplitOne 逐格重切。
+        bool SplitGroup(string grid, List<Job> batch, int[] cells, int cols, int cw, int ch,
+                        double[] heads, double[] ends, out string err)
+        {
+            err = "";
+            string ff = FindFfmpeg();
+            if (ff == null) { err = "找不到 ffmpeg"; return false; }
+            int n = cells.Length;
+            string enc = string.IsNullOrEmpty(cfg.ParallelSplitEncoder) ? "h264_nvenc" : cfg.ParallelSplitEncoder;
+            List<string> encArgs = new List<string>();
+            if (enc == "libx264")
+                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");
+            else
+            {
+                encArgs.Add(" -c:v " + enc + " -preset p5 -tune hq -rc vbr -cq " + cfg.ParallelSplitCQ + " -b:v 0 -pix_fmt yuv420p");
+                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");
+            }
+            // 目标文件名先全部算好：一条命令行里要一次给全 N 个落点。
+            // ⚠ 之后收尾时【不能】再算一遍（"再录一次"会算出下一个空名字，于是列表指着一个不存在的文件）。
+            string[] targets = new string[n];
+            for (int k = 0; k < n; k++) targets[k] = OutputPathFor(batch[cells[k]], ".mp4");
+
+            // 滤镜图：源解一遍 → split=N → 每路各自 截头/去尾/裁边/缩放/淡出。
+            // ⚠ 时间段必须写进 trim，不能用 -ss：-ss 是输入级选项，而一组里每格的秒数各不相同。
+            //   实测 trim 和 -ss 出来的画面逐像素相同（PSNR=inf / SSIM=1.000000），这么换不掉画质。
+            StringBuilder fc = new StringBuilder();
+            fc.Append("[0:v]split=").Append(n);
+            for (int k = 0; k < n; k++) fc.Append("[b").Append(k).Append("]");
+            string[] aFilters = new string[n];
+            for (int k = 0; k < n; k++)
+            {
+                int i = cells[k];
+                double S = heads[i] < 0 ? 0 : heads[i];
+                double E = ends[i];
+                double dur = E - S;                 // 这格真正要的时长（E=0 表示"到片尾"，那时 dur<0）
+                bool fade = dur > 1.5;
+                CellCrop cc = CellCropOf(cw, ch, (i % cols) * cw, (i / cols) * ch);
+                if (k == 0 && cc.InX > 0)
+                    Log.Write("并行切分：每格往里裁 " + cc.InX + " 像素（格子坐标）≈ 成品 " + cc.InsetOut + " 像素，" +
+                              "裁后 " + cc.Cw2 + "×" + cc.Ch2 + " 再缩放到 " + cc.OutW + "×" + cc.OutH);
+                fc.Append(";[b").Append(k).Append("]");
+                if (S > 0.2 || E > 0)
+                {
+                    fc.Append("trim=");
+                    if (S > 0.2) fc.Append("start=").Append(Sec(S));
+                    if (S > 0.2 && E > 0) fc.Append(":");
+                    if (E > 0) fc.Append("end=").Append(Sec(E));
+                    fc.Append(",setpts=PTS-STARTPTS,");
+                }
+                fc.Append(cc.Filter);
+                // 结尾淡出：并行切分本来就要重编码，加这个不额外花钱，避免"最后一帧硬切"的观感
+                if (fade) fc.Append(",fade=t=out:st=").Append(Sec(dur - 0.6)).Append(":d=0.6");
+                fc.Append("[v").Append(k).Append("]");
+                // 这一格的音轨就是第 i 条（并行录制时一格一条，见 RecTracks 那段）。
+                // 音轨同样要自己截头去尾：视频用 trim 截了，音频不截就会音画不同步。
+                string af = "";
+                if (S > 0.2 || E > 0)
+                {
+                    af = "atrim=";
+                    if (S > 0.2) af += "start=" + Sec(S);
+                    if (S > 0.2 && E > 0) af += ":";
+                    if (E > 0) af += "end=" + Sec(E);
+                    af += ",asetpts=PTS-STARTPTS";
+                }
+                if (fade) af += (af.Length > 0 ? "," : "") + "afade=t=out:st=" + Sec(dur - 0.6) + ":d=0.6";
+                aFilters[k] = af;
+            }
+            string head = "-hide_banner -y -i \"" + grid + "\" -filter_complex \"" + fc + "\"";
+            List<string> cmds = new List<string>();
+            foreach (string e in encArgs) cmds.Add(GroupArgs(head, cells, e, true, aFilters, targets));
+            cmds.Add(GroupArgs(head, cells, encArgs[0], false, aFilters, targets));   // 最后兜底：整组无声
+            Log.Write("并行切分：一组 " + n + " 格（第 " + (cells[0] + 1) + "~" + (cells[n - 1] + 1) +
+                      " 格，配第 " + (cells[0] + 1) + "~" + (cells[n - 1] + 1) + " 条音轨），用 " + enc);
+
+            int attemptNo = 0;
+            foreach (string a in cmds)
+            {
+                attemptNo++;
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo(ff, a);
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+                    psi.WorkingDirectory = Path.GetDirectoryName(ff);
+                    Process p = Process.Start(psi);
+                    FfmpegWait w = WaitFfmpeg(p, "并行切分（一组 " + n + " 格）");
+                    int code = ExitCodeAndDispose(p);
+                    if (w == FfmpegWait.Cancelled) { err = "已取消"; return false; }
+                    if (w == FfmpegWait.TimedOut) { err = "ffmpeg 超时"; continue; }
+                    if (code == 0 && AllTargetsOk(targets))
+                    {
+                        if (attemptNo > 1)
+                            Log.Write("并行切分：一组 " + n + " 格，第 " + attemptNo + " 种参数才成功（"
+                                      + (attemptNo > encArgs.Count ? "最后兜底：无声" : "多半没 NVIDIA 显卡，已换 libx264 软编") + "）");
+                        for (int k = 0; k < n; k++) batch[cells[k]].Output = targets[k];
+                        return true;
+                    }
+                    err = "ffmpeg 退出码 " + code;
+                    if (code != 0 && attemptNo == 1 && encArgs.Count > 1)
+                        Log.Write("并行切分：" + enc + " 失败（多半没对应显卡），改用 libx264 软编重试…");
+                }
+                catch (Exception ex) { err = ex.Message; }
+            }
+            // 一组里有格子没切出来：把这轮【新建】的半成品删掉，别留下看着像成品的残缺文件。
+            // 只敢删"再录一次（旧的保留）"那种 —— 它的文件名是刚挑的空名字，删了动不到用户原来的录像；
+            // 普通的 xxx.mp4 可能是用户上一次的成品，绝不能删。
+            // 顺手把最后一次用的 ffmpeg 命令打进日志：这一档很少走到，真走到了就是拿来排查的。
+            Log.Write("并行切分：这组没切出来（" + err + "）。最后一次用的命令是：" + cmds[cmds.Count - 1]);
+            for (int k = 0; k < n; k++)
+            {
+                if (!batch[cells[k]].KeepOld) continue;
+                try { if (File.Exists(targets[k])) File.Delete(targets[k]); } catch { }
+            }
+            return false;
+        }
+
+        // 拼一组多路输出的命令行。withAudio=false 时整组不带声音（最后兜底）。
+        // 音轨用 0:a:N? 的"?"：那条轨不存在也不报错，直接出无声视频（实测 rc=0）——
+        // 所以以前 SplitOne 里"音轨不够就退化成不带音频"那一档可以省掉。
+        static string GroupArgs(string head, int[] cells, string encArg, bool withAudio,
+                                string[] aFilters, string[] targets)
+        {
+            StringBuilder sb = new StringBuilder(head);
+            for (int k = 0; k < cells.Length; k++)
+            {
+                sb.Append(" -map \"[v").Append(k).Append("]\"");
+                if (withAudio) sb.Append(" -map 0:a:").Append(cells[k]).Append("?");
+                sb.Append(encArg);
+                sb.Append(withAudio ? " -c:a aac -b:a 192k" : " -an");
+                if (withAudio && aFilters[k].Length > 0) sb.Append(" -af \"").Append(aFilters[k]).Append("\"");
+                sb.Append(" \"").Append(targets[k]).Append("\"");
+            }
+            return sb.ToString();
+        }
+
+        static bool AllTargetsOk(string[] targets)
+        {
+            foreach (string t in targets)
+            {
+                try { if (!File.Exists(t) || new FileInfo(t).Length <= 4096) return false; }
+                catch { return false; }
+            }
+            return true;
+        }
+
+        // 一格切完后的收尾（UI 状态、体积、时长、日志）。逐格路径和分组路径共用一份。
+        void MarkSplitDone(Job job, int idx, bool black)
+        {
+            if (string.IsNullOrEmpty(job.Output)) job.Output = OutputPathFor(job, ".mp4");
+            long outBytes = 0;
+            try { outBytes = new FileInfo(job.Output).Length; } catch { }
+            job.Size = outBytes;
+            job.VideoSeconds = Mp4Duration(job.Output);
+            job.Ended = DateTime.Now;
+            // 整场全黑的那几格标「注意」：文件是有的、也能播，但很可能没录上。
+            // 标「完成」等于骗人 —— 用户得自己点开看才知道是黑的。
+            Ui.SetJob(job, black ? "注意" : "完成",
+                      (outBytes / 1048576.0).ToString("0.0") + " MB（并行切分）"
+                      + (black ? "  ⚠ 这一格整场全黑，建议单独重录" : ""));
+            Log.Write("并行切分完成（第 " + (idx + 1) + " 格）：" + Path.GetFileName(job.Output) +
+                      "  " + (outBytes / 1048576.0).ToString("0.0") + " MB  视频时长 " + FmtDur(job.VideoSeconds));
+        }
         bool SourceLooksStatic(string sourceName)
         {
             try
@@ -919,14 +1193,12 @@ namespace RepRecorder
             }
             catch { return false; }
         }
-        // ---- moved from MainForm ----
         void CaptureOriginalRecordDir()
         {
             if (originalRecordDir != null) return;
             try { originalRecordDir = Convert.ToString(obs.Request("GetRecordDirectory", null)["recordDirectory"]); }
             catch { }
         }
-        // ---- moved from MainForm ----
         void RunParallel()
         {
             int want = cfg.ParallelCount;
@@ -973,26 +1245,57 @@ namespace RepRecorder
             obsStuckRetried = false;
             RunParallelBatch(batch);
         }
-        // 某个窗口所在显示器的 DPI 缩放（1.0 = 100%）。用来把 GetClientRect 的物理像素
-        // 换算成逻辑像素 —— 见 RunParallelBatch 里量窗口尺寸那段。
+        // 窗口尺寸换算用的几个 API —— 见 RunParallelBatch 里量窗口尺寸那段。
         //
-        // ⚠ 这里**不能**用 GetDpiForWindow。2026-10-05 用一个"假装是游戏"的 DPI 不感知探针
-        //   实测过：那个窗口自己看到的是 640×480、GetDpiForWindow 报 96；
-        //   从感知进程去问同一个窗口，GetDpiForWindow 仍然报 96 —— 拿它去除等于没除，
-        //   画布还是 1920×1440，掉帧照旧。
-        //   GetDpiForMonitor 返回的是显示器真实 DPI（300% 屏 = 288），这才对。
+        // ⚠ 这段注释 2026-10-13 改写过。当初（10-05）的结论是"非想天则是 DPI 不感知的老程序，
+        //   Windows 会把它 640×480 的画面位图拉伸到物理尺寸，所以要按逻辑尺寸采"——
+        //   那个结论来自一个**"假装是游戏"的探针窗口**（它自己确实是不感知的，
+        //   GetDpiForWindow 报 96）。但真实的 th123 不是：整合包的 mod 加载器把它设成了
+        //   PER_MONITOR_AWARE（实测 GetProcessDpiAwareness=2、GetDpiForWindow=144），
+        //   它渲染出来就是 640×480 个真像素，**没有**被拉伸。
+        //   所以那句"要换算成逻辑尺寸"从根上就不成立，按它做的除法一直在丢像素。
+        //   现在：本进程感知 → 系数 1.0；只有真不感知时才用显示器 DPI 乘回去。
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
         [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr mon, int type, out uint x, out uint y);
+        [DllImport("shcore.dll")] static extern int GetProcessDpiAwareness(IntPtr proc, out int value);
+        [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
 
-        static double WindowDpiScale(IntPtr hwnd)
+        // 本进程是不是 DPI 感知的（0=不感知 1=系统级 2=每显示器）。
+        // 只影响"量到的窗口尺寸要不要换算"，所以只问一次、缓存住。
+        static bool? selfDpiAware;
+        static bool SelfIsDpiAware()
         {
+            if (selfDpiAware.HasValue) return selfDpiAware.Value;
+            bool aware = true;      // 兜底：app.manifest 里就是 PerMonitorV2（Ui.cs 里还再设一次）
+            try
+            {
+                int v;
+                if (GetProcessDpiAwareness(GetCurrentProcess(), out v) == 0) aware = v != 0;
+            }
+            catch { }               // 老系统没有 shcore.dll
+            selfDpiAware = aware;
+            return aware;
+        }
+
+        // 把「量到的客户区」换算成**物理像素**的系数（物理像素 = OBS 画布的单位）。
+        // ⚠ 2026-10-13 修：这里以前返回 dx/96，而调用处拿它去【除】—— 方向反了，
+        //   等于凭空丢掉 1/3 的边长。实测：th123 的客户区物理是 640×480，程序却按 427×320 去采。
+        //   根因是当初那句假设（"非想天则是 DPI 不感知的老程序，Windows 会把它的 640×480
+        //   位图拉伸到物理尺寸"）在这个整合包里**不成立**：mod 加载器把 th123 设成了
+        //   PER_MONITOR_AWARE（实测 GetProcessDpiAwareness=2），它渲染出来就是 640×480 个
+        //   真像素、没有被拉伸。而本进程也是 DPI 感知的，GetClientRect 给到的**本来就是物理
+        //   像素** —— 和 OBS 画布同一个单位，系数就是 1.0。
+        //   真要不感知的老进程才会量到"虚拟尺寸"（640 的窗口量成 426），那时才需要【乘】dx/96。
+        static double WindowPixelScale(IntPtr hwnd)
+        {
+            if (SelfIsDpiAware()) return 1.0;      // 感知 → 量到的就是物理像素，不用换算
             try
             {
                 IntPtr mon = MonitorFromWindow(hwnd, 2);   // MONITOR_DEFAULTTONEAREST
                 uint dx, dy;
                 if (mon != IntPtr.Zero && GetDpiForMonitor(mon, 0, out dx, out dy) == 0
                     && dx >= 48 && dx <= 480)
-                    return dx / 96.0;
+                    return dx / 96.0;              // 不感知 → 虚拟尺寸要乘回去
             }
             catch { }   // 老系统没有 shcore.dll 就是这个 catch
             return 1.0;
@@ -1008,7 +1311,6 @@ namespace RepRecorder
             return s;
         }
 
-        // ---- moved from MainForm ----
         void RunParallelBatch(List<Job> batch)
         {
             // 哪几格自愈完还是黑的 —— 切分完要把它们标成「注意」而不是「完成」。
@@ -1050,7 +1352,6 @@ namespace RepRecorder
                 Log.Write("⚠ 同时录 " + batch.Count + " 个超过 6 条音轨上限，这一批会是无声视频");
 
             Log.Write("==== 并行录制开始：同时录 " + batch.Count + " 个 ====");
-            List<Process> games = new List<Process>();
             List<Process> games2 = new List<Process>();   // 带 rep 重启后的那些实例
             List<string> vNames = new List<string>();
             List<string> aNames = new List<string>();
@@ -1060,7 +1361,9 @@ namespace RepRecorder
             bool stdWasEnabled = true;
             DateTime recordStart = DateTime.MinValue;     // 开录时刻（用来算每格实际录了多久）
             double[] cellSec = null;
-            double[] cellHead = null;
+            // 只留"最后一次看到画面"这一个：采样是为了剪掉**结尾**的黑。
+            // （曾经还有个 cellHead 记"第一次看到画面"，但头部的黑是由 AnalyzeCellHead
+            //   逐帧算出来的、跟这些采样无关 —— 它从头到尾只被写、没被读过，2026-10-12 删掉。）
             double[] cellLastSeen = null;
             string gridFile = null;
             bool parMutedByUs = false;                    // 这一批是不是我们静音了系统输出（收尾要恢复）
@@ -1144,7 +1447,6 @@ namespace RepRecorder
                 }
                 catch (Exception ex) { Log.Write("并行：隐藏单文件采集源失败（可忽略）：" + ex.Message); }
                 cellSec = new double[batch.Count];
-                cellHead = new double[batch.Count];     // 这一格"采集到画面"的时刻（剪掉开头的黑屏）
                 cellLastSeen = new double[batch.Count]; // 这一格"最后一次看到画面"的时刻（剪掉结尾的黑屏）
 
                 // 准备阶段中途按了「停止」→ 别再往下开了（否则游戏照开、录像照起）
@@ -1195,6 +1497,9 @@ namespace RepRecorder
                         blackCells[i] = true;
                     }
                 }
+                // 窗户都出现了 → 开录前先把它们撑到"够用又不浪费"的尺寸（只放大不缩小）。
+                // ⚠ 必须在量尺寸之前做：下面那段就是按"撑完之后的真实客户区"排画布的。
+                GrowGameWindows(handles2);
                 // 窗口尺寸（每格按游戏客户区大小排，保持 4:3 不变形）
                 for (int i = 0; i < handles2.Count; i++)
                 {
@@ -1202,18 +1507,20 @@ namespace RepRecorder
                     RECT cr;
                     if (GetClientRect(handles2[i], out cr) && cr.Right > 0 && cr.Bottom > 0 && CW == 0)
                     {
-                        // ⚠ 必须换算成**逻辑尺寸**再用。
-                        //   非想天则是 DPI 不感知的老程序，Windows 会把它的 640×480 画面**位图拉伸**
-                        //   到物理尺寸再显示（300% 屏上就是 1920×1440）。按物理尺寸采等于把"已经糊掉的
-                        //   放大图"再存一遍：像素多 9 倍、一点真细节都没有，还把编码器直接压垮。
-                        //   2026-10-05 实测：画布 3640×4095 时 OBS 报「编码丢帧 98.1%」，
-                        //   而老版本（同一段逻辑、但进程 DPI 不感知，量到的就是 640×480）
-                        //   画布 1920×960，丢帧 0.2%。
-                        //   —— 也就是说：老版本一直是对的，是 WPF 版设了 DPI 感知之后这里才量错的。
-                        double sc = WindowDpiScale(handles2[i]);
-                        CW = (int)Math.Round(cr.Right / sc);
-                        CH = (int)Math.Round(cr.Bottom / sc);
-                        if (CW > 1920 || CH > 1440) { CW = 640; CH = 480; }   // 异常大就按游戏原生尺寸
+                        // 量到的就是**物理像素**（本进程 DPI 感知），OBS 画布用的也是物理像素，
+                        // 所以这里【乘 1.0】，只对"不感知"的情况才做换算。
+                        // ⚠ 2026-10-13 之前这里是 `cr.Right / WindowDpiScale(...)`，方向反了：
+                        //   本机把 640×480 的窗口按 427×320 采，白白丢掉 1/3 边长 ——
+                        //   而 427 这个数还刚好等于"不感知进程看到的虚拟尺寸"，所以一直没人看出来。
+                        //   用户反馈"后面几格画质太烂"，查到的第一层原因就是这个。
+                        double sc = WindowPixelScale(handles2[i]);
+                        CW = (int)Math.Round(cr.Right * sc);
+                        CH = (int)Math.Round(cr.Bottom * sc);
+                        // 明显不合理的测量值才丢掉（4096 = OBS 画布上限）。⚠ 这个门槛原来写的是
+                        // 1920/1440，那是按"除以 1.5 之后"的数值定的；换成物理像素之后，
+                        // 全屏 2560×1600 是**正常**值，用老门槛会把它误判成异常、缩回 640×480。
+                        // 真的偏大不用怕：下面那道"压到输出尺寸"的闸门会等比缩好。
+                        if (CW > 4096 || CH > 4096) { CW = 640; CH = 480; }   // 异常大就按游戏原生尺寸
                         // 每格不需要比"切分后的输出尺寸"更大 —— 切分那一步反正会缩到
                         // CanvasWidth×CanvasHeight。这同时也是一道保险：万一上面 DPI 那一步
                         // 没测准（或者哪天换个游戏窗口特别大），画布也不会失控到把编码器压垮。
@@ -1333,9 +1640,7 @@ namespace RepRecorder
                             if (!micOriginalMute.ContainsKey(n)) micOriginalMute[n] = was;
                         }
                         catch { }
-                        Dictionary<string, object> s = new Dictionary<string, object>();
-                        s["inputName"] = n; s["inputMuted"] = true;
-                        obs.Request("SetInputMute", s);
+                        SetInputMuteRaw(n, true);
                     }
                 }
                 catch { }
@@ -1347,24 +1652,9 @@ namespace RepRecorder
 
                 recordStart = DateTime.Now;
                 obs.Request("StartRecord", null);
-                // 再确认一次"真的在录"，不在就重试一次，还不在就直接报错（绝不白等）
-                bool reallyRecording = false;
-                for (int attempt = 0; attempt < 2 && !reallyRecording; attempt++)
-                {
-                    Thread.Sleep(1500);
-                    try
-                    {
-                        Dictionary<string, object> rs = obs.Request("GetRecordStatus", null);
-                        reallyRecording = rs.ContainsKey("outputActive") && rs["outputActive"] != null &&
-                                          Convert.ToBoolean(rs["outputActive"]);
-                    }
-                    catch { }
-                    if (!reallyRecording && attempt == 0)
-                    {
-                        Log.Write("并行：StartRecord 之后 OBS 说没在录，重试一次…");
-                        try { obs.Request("StartRecord", null); } catch (Exception ex) { Log.Write("并行：重试 StartRecord 失败：" + ex.Message); }
-                    }
-                }
+                // 再确认一次"真的在录"（这段逻辑 2026-10-12 抽成了 ConfirmRecordingStarted，
+                // 单录那条路以前没有这一步，偶发白录一整局）
+                bool reallyRecording = ConfirmRecordingStarted("并行");
                 if (!reallyRecording)
                 {
                     Log.Write("并行：❌ OBS 没真正开录（outputActive=false）。可能：有残留录像 / OBS 卡住 / 录制目录不可写");
@@ -1607,8 +1897,11 @@ namespace RepRecorder
                         }
                         catch { }
                     }
-                    // 各格"画面到底有没有出现"：切分时按第一帧真画面剪掉开头的黑、按最后一帧剪掉结尾的黑。
-                    if (recordStart != DateTime.MinValue && cellHead != null && vNames.Count > 0)
+                    // 各格"画面最后一次出现"是何时：切分时按它剪掉**结尾**的黑。
+                    // （每秒采一次。开头的黑不靠这个 —— 那是 AnalyzeCellHead 逐帧看出来的。
+                    //   ⚠ 别把间隔放宽到 2 秒以上：cellLastSeen 早 1 秒，成片结尾就多留 1 秒黑，
+                    //     而这里省下来的只是每格每秒一次 320×240 截图，收益小得多。）
+                    if (recordStart != DateTime.MinValue && cellLastSeen != null && vNames.Count > 0)
                     {
                         for (int i = 0; i < games2.Count && i < vNames.Count; i++)
                         {
@@ -1616,12 +1909,8 @@ namespace RepRecorder
                             {
                                 if (games2[i] == null || games2[i].HasExited) continue;
                                 double sec = (DateTime.Now - recordStart).TotalSeconds;
-                                bool blank = IsBlank(ShotOf(vNames[i]));
-                                if (!blank)
-                                {
-                                    if (cellHead[i] <= 0) cellHead[i] = sec;
+                                if (!IsBlank(ShotOf(vNames[i])))
                                     cellLastSeen[i] = sec;
-                                }
                             }
                             catch { }
                         }
@@ -1739,7 +2028,6 @@ namespace RepRecorder
                 try { if (stdItemId >= 0) SetSceneItemEnabled(RecSceneName, stdItemId, stdWasEnabled); } catch { }   // 还原单文件采集源的显示状态
                 try { if (cfg.UseDedicatedScene && obs.IsConnected) SwitchScene(false); } catch { }
                 try { RestoreRecordDirectory(); } catch { }
-                foreach (Process g in games) { try { if (!g.HasExited) g.Kill(); } catch { } }
                 foreach (Process g in games2) { try { if (g != null && !g.HasExited) g.Kill(); } catch { } }
             }
 
@@ -1747,15 +2035,18 @@ namespace RepRecorder
             if (gridFile != null && File.Exists(gridFile))
             {
                 int okCount = 0;
-                // 1) 先把每格的"开头/结尾该剪到第几秒"算好（这一步要抓 OBS 截图，串行做）
+                // 1) 先把每格的"开头/结尾该剪到第几秒"算好。
+                //    抽帧只看开头 45 秒、只要 160×120 的缩略图，所以**一次 ffmpeg 抽全部格子**
+                //    （见 AnalyzeCellHeads 的注释：以前每格一个进程、各解码一遍整张画布）。
                 double[] heads = new double[batch.Count];
                 double[] ends = new double[batch.Count];
+                double[] rawHead = AnalyzeCellHeads(gridFile, batch.Count, cols, CW, CH);
                 for (int i = 0; i < batch.Count; i++)
                 {
                     double head = 0;
                     try
                     {
-                        double h = AnalyzeCellHead(gridFile, (i % cols) * CW, (i / cols) * CH, CW, CH);
+                        double h = rawHead[i];
                         if (h > 0.2) head = h - 0.15;
                         Log.Write("并行切分（第 " + (i + 1) + " 格）：画面从第 " + h.ToString("0.0") +
                                   " 秒开始 → 开头剪掉 " + head.ToString("0.0") + " 秒");
@@ -1774,15 +2065,28 @@ namespace RepRecorder
                     heads[i] = head;
                     ends[i] = end;
                 }
-                // 2) 并发切分：同一时间跑 SplitParallel 个 ffmpeg（默认 3），切分总时间大约除以这个数。
-                //    以前是一格一格串行切，6 格要等 5~6 遍。
+                // 2) 切分：一组最多 SplitGroupSize 格共用一个 ffmpeg（一次解码、多路输出），
+                //    同时最多跑 conc 组。实测 6 格 37 秒 → 19 秒，画面逐像素相同。
+                //    ⚠ conc 现在指的是"同时跑几个 ffmpeg"，而一个 ffmpeg 里最多有 SplitGroupSize 路输出：
+                //      6 格 = 2 组，所以实际是 2 个进程 × 3 路。老显卡 NVENC 会话数不够时，
+                //      那组会自动退到 libx264 软编（慢但结果一样），再不行退回逐格切分。
                 int conc = cfg.SplitParallel;
                 if (conc < 1) conc = 1;
                 if (conc > 3) conc = 3;              // 上限 3（2026-10-09）；设置里也只列 1~3
-                if (conc > batch.Count) conc = batch.Count;
-                if (batch.Count > 1) Log.Write("并行切分：同时跑 " + conc + " 个 ffmpeg（共 " + batch.Count + " 格）");
+                List<int[]> groups = new List<int[]>();
+                for (int i0 = 0; i0 < batch.Count; i0 += SplitGroupSize)
+                {
+                    int len = batch.Count - i0 < SplitGroupSize ? batch.Count - i0 : SplitGroupSize;
+                    int[] g = new int[len];
+                    for (int k = 0; k < len; k++) g[k] = i0 + k;
+                    groups.Add(g);
+                }
+                if (conc > groups.Count) conc = groups.Count;
+                if (batch.Count > 1)
+                    Log.Write("并行切分：" + batch.Count + " 格分成 " + groups.Count + " 组（每组最多 " + SplitGroupSize +
+                              " 格共用一个 ffmpeg，源只解码一遍），同时跑 " + conc + " 组");
                 object splitGate = new object();
-                int nextCell = 0;
+                int nextGroup = 0;
                 List<Thread> splitThreads = new List<Thread>();
                 for (int w = 0; w < conc; w++)
                 {
@@ -1790,36 +2094,38 @@ namespace RepRecorder
                     {
                         while (true)
                         {
-                            int i;
-                            lock (splitGate) { i = nextCell; nextCell++; }
-                            if (i >= batch.Count) return;
-                            string err;
-                            if (SplitOne(gridFile, batch[i], i, CW, CH, (i % cols) * CW, (i / cols) * CH,
-                                         heads[i], ends[i], out err))
+                            int gi;
+                            lock (splitGate) { gi = nextGroup; nextGroup++; }
+                            if (gi >= groups.Count) return;
+                            int[] g = groups[gi];
+                            string err = "";
+                            if (g.Length > 1 && SplitGroup(gridFile, batch, g, cols, CW, CH, heads, ends, out err))
                             {
-                                // 落点由 SplitOne 按实际写出去的那个名字填好了。⚠ 这里【不能】再算一遍：
+                                // 落点由 SplitGroup 按实际写出去的那个名字填好了。⚠ 这里【不能】再算一遍：
                                 // 「再录一次」时第一次算出来是 xxx (2).mp4、而文件此刻已经存在，
                                 // 再算一次会得到 xxx (3).mp4 —— 于是列表指着一个不存在的文件。
-                                if (string.IsNullOrEmpty(batch[i].Output))
-                                    batch[i].Output = OutputPathFor(batch[i], ".mp4");
-                                long outBytes = 0;
-                                try { outBytes = new FileInfo(batch[i].Output).Length; } catch { }
-                                batch[i].Size = outBytes;
-                                batch[i].VideoSeconds = Mp4Duration(batch[i].Output);
-                                batch[i].Ended = DateTime.Now;
-                                // 整场全黑的那几格标「注意」：文件是有的、也能播，但很可能没录上。
-                                // 标「完成」等于骗人 —— 用户得自己点开看才知道是黑的。
-                                Ui.SetJob(batch[i], blackCells[i] ? "注意" : "完成",
-                                          (outBytes / 1048576.0).ToString("0.0") + " MB（并行切分）"
-                                          + (blackCells[i] ? "  ⚠ 这一格整场全黑，建议单独重录" : ""));
-                                Log.Write("并行切分完成（第 " + (i + 1) + " 格）：" + Path.GetFileName(batch[i].Output) +
-                                          "  " + (outBytes / 1048576.0).ToString("0.0") + " MB  视频时长 " + FmtDur(batch[i].VideoSeconds));
-                                lock (splitGate) okCount++;
+                                foreach (int i in g) MarkSplitDone(batch[i], i, blackCells[i]);
+                                lock (splitGate) okCount += g.Length;
+                                continue;
                             }
-                            else
+                            // 一组里只要有一格出问题就整组退回逐格切（SplitOne 有自己的编码器梯子）。
+                            // 稳妥优先：正确性靠它兜底，速度靠上面那条路。
+                            if (g.Length > 1)
+                                Log.Write("并行切分：这 " + g.Length + " 格一起切失败（" + err + "），退回逐格重切…");
+                            foreach (int i in g)
                             {
-                                Ui.SetJob(batch[i], "失败", "切分失败");
-                                Log.Write("并行切分失败（第 " + (i + 1) + " 格）：" + err + "；合并文件保留在 " + gridFile);
+                                string err2;
+                                if (SplitOne(gridFile, batch[i], i, CW, CH, (i % cols) * CW, (i / cols) * CH,
+                                             heads[i], ends[i], out err2))
+                                {
+                                    MarkSplitDone(batch[i], i, blackCells[i]);
+                                    lock (splitGate) okCount++;
+                                }
+                                else
+                                {
+                                    Ui.SetJob(batch[i], "失败", "切分失败");
+                                    Log.Write("并行切分失败（第 " + (i + 1) + " 格）：" + err2 + "；合并文件保留在 " + gridFile);
+                                }
                             }
                         }
                     });
@@ -1827,7 +2133,19 @@ namespace RepRecorder
                     st.Start();
                     splitThreads.Add(st);
                 }
-                foreach (Thread st in splitThreads) { try { st.Join(); } catch { } }
+                // ⚠ 无参 Join() 会把整批卡死：某个切分线程里的 ffmpeg 卡住时它永远不返回。
+                //   给每个线程留"一次 ffmpeg 超时 + 收尾"的余量，到点就不再等它
+                //   （那个线程自己会在 FfmpegTimeoutMs 到点后杀掉 ffmpeg 并结束）。
+                int joinMs = FfmpegTimeoutMs + 60000;
+                foreach (Thread st in splitThreads)
+                {
+                    try
+                    {
+                        if (!st.Join(joinMs))
+                            Log.Write("并行：有切分线程超过 " + (joinMs / 60000) + " 分钟没结束，不再等它");
+                    }
+                    catch { }
+                }
                 if (okCount == batch.Count)
                 {
                     try { File.Delete(gridFile); Log.Write("并行：已删除中间合并文件（切分全部成功）"); } catch { }
@@ -1866,9 +2184,13 @@ namespace RepRecorder
             }
             Log.Write("==== 并行录制结束 ====");
         }
-        // ---- moved from MainForm ----
         void StartRecording()
         {
+            // 「准备 OBS」正在后台跑的时候不许开录：那会儿它正在改画布/建采集源，
+            // 两边同时动 OBS 会把那一批搞成黑屏或直接失败（按钮已经被置灰，
+            // 这一句挡的是快捷键那条路）。
+            if (prepareBusy) { Log.Write("正在准备 OBS，稍等一下再开始"); return; }
+
             // ⚠ 游戏目录不对就别开录（2026-10-08 查实）：以前这里什么都不拦，
             //   结果每个游戏实例启动失败、录出一整批黑视频，**而且任务还标成「完成」** ——
             //   用户以为录好了。宁可不录，也要当场说清楚。
@@ -1961,7 +2283,6 @@ namespace RepRecorder
             Ui.Post(delegate { btnStart.Enabled = false; btnStop.Enabled = true; });
             StartQueue();
         }
-        // ---- moved from MainForm ----
         static double Mp4Duration(string path)
         {
             try
@@ -2035,7 +2356,6 @@ namespace RepRecorder
             catch { }
             return 0;
         }
-        // ---- moved from MainForm ----
         public static string FmtDur(double seconds)
         {
             if (double.IsNaN(seconds) || seconds < 0) seconds = 0;
@@ -2045,7 +2365,6 @@ namespace RepRecorder
             if (m > 0) return m + "分" + s.ToString("00") + "秒";
             return s + "秒";
         }
-        // ---- moved from MainForm ----
         bool EnsureObs()
         {
             string obsExe = Settings.FindObsExe();
@@ -2091,7 +2410,6 @@ namespace RepRecorder
             Log.Write("请检查：OBS → 工具 → WebSocket 服务器设置 → 启用（端口 " + cfg.Port + "）");
             return false;
         }
-        // ---- moved from MainForm ----
         void PrepareObs(bool verbose)
         {
             try
@@ -2191,32 +2509,8 @@ namespace RepRecorder
 
                 // 同一个源可以被同一个场景添加多次（OBS 允许），
                 // 所以这里必须"只保留一个元素、把多余的删掉"，否则画面上会叠出好几个游戏画面。
-                int keepItemId = -1;
-                int removed = 0;
-                try
-                {
-                    Dictionary<string, object> q = new Dictionary<string, object>();
-                    q["sceneName"] = RecSceneName;
-                    List<object> items = ObsClient.ToList(obs.Request("GetSceneItemList", q)["sceneItems"]);
-                    foreach (object o in items)
-                    {
-                        Dictionary<string, object> m = (Dictionary<string, object>)o;
-                        if (Convert.ToString(m["sourceName"]) != RecSourceName) continue;
-                        int id = Convert.ToInt32(m["sceneItemId"]);
-                        if (keepItemId < 0) { keepItemId = id; continue; }
-                        try
-                        {
-                            Dictionary<string, object> d = new Dictionary<string, object>();
-                            d["sceneName"] = RecSceneName;
-                            d["sceneItemId"] = id;
-                            obs.Request("RemoveSceneItem", d);
-                            removed++;
-                        }
-                        catch { }
-                    }
-                }
-                catch (Exception ex) { Log.Write("读取场景元素失败：" + ex.Message); }
-                if (removed > 0) Log.Write("清理了 " + removed + " 个重复的采集源元素（之前重复添加导致的画面叠加）");
+                // （这段以前是内联写在这里的，和 CleanupDuplicateItems 是同一份逻辑 —— 2026-10-12 合并成一句。）
+                int keepItemId = CleanupDuplicateItems(RecSceneName, RecSourceName);
 
                 // 场景元素可能是「隐藏」状态：并行录制期间会把单文件采集源临时隐藏，如果那次程序被强制结束
                 // （任务管理器结束/崩溃/断电），隐藏状态就留在 OBS 里了 —— 之后所有单录都会录成全黑
@@ -2304,7 +2598,6 @@ namespace RepRecorder
                 Log.Write("准备 OBS 时出错：" + ex.Message);
             }
         }
-        // ---- moved from MainForm ----
         void SwitchScene(bool toOurs)
         {
             try
@@ -2316,7 +2609,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("切换场景失败：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void RestoreRecordDirectory()
         {
             if (originalRecordDir == null || !obs.IsConnected) return;
@@ -2326,24 +2618,15 @@ namespace RepRecorder
             obs.Request("SetRecordDirectory", r);
             Log.Write("已还原 OBS 录像目录：" + originalRecordDir);
         }
-        // ---- moved from MainForm ----
         void RestoreInputMutes(Dictionary<string, bool> saved, string logMessage)
         {
             foreach (KeyValuePair<string, bool> kv in saved)
             {
-                try
-                {
-                    Dictionary<string, object> s = new Dictionary<string, object>();
-                    s["inputName"] = kv.Key;
-                    s["inputMuted"] = kv.Value;
-                    obs.Request("SetInputMute", s);
-                }
-                catch { }
+                SetInputMuteRaw(kv.Key, kv.Value);
             }
             if (saved.Count > 0) Log.Write(logMessage);
             saved.Clear();
         }
-        // ---- moved from MainForm ----
         void ApplyMicMode(bool beforeRecording)
         {
             try
@@ -2391,7 +2674,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("处理麦克风失败（可忽略）：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void ApplyAudioRouting(bool beforeRecording)
         {
             // 两种情况都要临时静音 OBS 的桌面音频：
@@ -2428,7 +2710,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("处理音频路由失败（可忽略）：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void KeepGameWindowCapturable(Process game)
         {
             if (!cfg.KeepGameCapturable || game == null) return;
@@ -2446,7 +2727,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void LogAudioLevels(int round)
         {
             if (!obs.MetersFresh)
@@ -2472,7 +2752,6 @@ namespace RepRecorder
             }
             Log.Write("音频电平第" + round + "次：" + (s.Length == 0 ? "<没有相关的音频源>" : s));
         }
-        // ---- moved from MainForm ----
         int CleanupDuplicateItems(string scene, string source)
         {
             int keep = -1;
@@ -2503,7 +2782,6 @@ namespace RepRecorder
             if (removed > 0) Log.Write("清理了 " + removed + " 个重复的「" + source + "」元素");
             return keep;
         }
-        // ---- moved from MainForm ----
         void FitSourceToCanvas(string scene, int itemId)
         {
             if (itemId < 0) return;
@@ -2550,7 +2828,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("缩放采集源失败（可忽略）：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         bool BindGameWindow(int pid)
         {
             if (captureSource == null) return false;
@@ -2579,7 +2856,6 @@ namespace RepRecorder
             string windowValue = MakeWindowString(title, cls);
             return ApplyWindowBinding(windowValue);
         }
-        // ---- moved from MainForm ----
         bool ApplyWindowBinding(string windowValue)
         {
             if (captureSource == null) return false;
@@ -2619,7 +2895,6 @@ namespace RepRecorder
                 return false;
             }
         }
-        // ---- moved from MainForm ----
         bool BindSingleGameWindow(Process game, out IntPtr hwnd)
         {
             hwnd = WaitForMainWindow(game, 30);
@@ -2631,7 +2906,6 @@ namespace RepRecorder
             if (cls == "") cls = "th123_110a";
             return ApplyWindowBinding(MakeWindowString(SingleWinTitle, cls));
         }
-        // ---- moved from MainForm ----
         void KeepSingleTitleFixed(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero) return;
@@ -2647,14 +2921,12 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         static string MethodName(int m)
         {
             if (m == 1) return "BitBlt";
             if (m == 2) return "Windows 图形捕获(WGC)";
             return "自动";
         }
-        // ---- moved from MainForm ----
         void ApplyMethod(int m)
         {
             Dictionary<string, object> s = new Dictionary<string, object>();
@@ -2665,7 +2937,6 @@ namespace RepRecorder
             obs.Request("SetInputSettings", r);
             Thread.Sleep(m == 2 ? 1200 : 800);
         }
-        // ---- moved from MainForm ----
         bool EnsureNotBlank()
         {
             if (captureSource == null) return true;
@@ -2694,7 +2965,95 @@ namespace RepRecorder
             Log.Write("采集画面还是黑的，录像可能是黑屏 —— 请在 OBS 里换捕获方式；截图：" + LastFramePath);
             return false;
         }
-        // ---- moved from MainForm ----
+        // 发完 StartRecord 之后，OBS 到底有没有**真的**在录？
+        //
+        // 为什么必须查：OBS 处于"录制中/半停止"那种卡住的状态时，StartRecord 会返回成功，
+        // 但实际什么都没录 —— 于是白等一整局，最后 StopRecord 报 501、拿不到文件。
+        // 并行那条路 2026-10-08 加了这个确认；单录这条路一直到 2026-10-12 才发现没有，
+        // 所以偶发"白录一局"（用户报的就是这个）。
+        //
+        // 复核 → 不在就重发一次 StartRecord → 再复核；两次都不在才返回 false。
+        // 调用方自己决定失败之后怎么办（并行会去自动重启 OBS 并重跑这一批，单录直接判这一局失败）。
+        bool ConfirmRecordingStarted(string who)
+        {
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                Thread.Sleep(1500);
+                bool really = false;
+                try
+                {
+                    Dictionary<string, object> rs = obs.Request("GetRecordStatus", null);
+                    really = rs.ContainsKey("outputActive") && rs["outputActive"] != null &&
+                             Convert.ToBoolean(rs["outputActive"]);
+                }
+                catch { }
+                if (really) return true;
+                if (attempt == 0)
+                {
+                    Log.Write(who + "：StartRecord 之后 OBS 说没在录，重试一次…");
+                    try { obs.Request("StartRecord", null); }
+                    catch (Exception ex) { Log.Write(who + "：重试 StartRecord 失败：" + ex.Message); }
+                }
+            }
+            return false;
+        }
+
+        // ================================================================ ffmpeg 的等待与兜底超时
+        //
+        // 为什么要有这两样（2026-10-12 补）：三处 ffmpeg 调用以前都是裸 `p.WaitForExit()`，
+        // 它有两个毛病，凑在一起就是"点停止没用、只能去任务管理器杀进程"：
+        //   · 没有超时 —— ffmpeg 卡住（磁盘满 / 输入的 mp4 坏了 / 编码器挂了）时永远不返回，
+        //     整批卡死；切分线程那边的无参 `Join()` 也跟着一起卡。
+        //   · 不看 cancel —— 点了「停止」也得等 ffmpeg 自己跑完。
+        // 现在的做法：每 200ms 查一次，取消就杀、超时就杀；调用方按返回值决定走哪条路。
+        enum FfmpegWait { Exited, TimedOut, Cancelled }
+
+        // 单次 ffmpeg 调用的兜底超时。
+        // 实测（2026-10-12 本机，用 45 秒 1440×1080@60 的样本，就是"一局"的规格）：
+        //   切一格 crop+scale：nvenc 4.1 s / libx264 veryfast 4.5 s；抽 225 帧 1.3 s；-c copy 裁尾 0.08 s。
+        // 最坏情形是单格要切满 MaxMinutes（默认 12 分钟）那么长的源 —— 按 45 秒样本线性外推约 70 秒，
+        // 再乘"用户机器可能比我这儿慢几倍"的余量。取 5 分钟 ≈ 实测的 60 倍、外推最坏值的 4 倍：
+        // 正常切分绝不可能碰到，它只为"ffmpeg 卡死"兜底。
+        // ⚠ 万一将来在很慢的机器上真的误杀了，就是改这一个数（同时会放宽下面那个 Join 的超时）。
+        const int FfmpegTimeoutMs = 5 * 60 * 1000;
+
+        FfmpegWait WaitFfmpeg(Process p, string what)
+        {
+            int waited = 0;
+            for (;;)
+            {
+                bool exited;
+                try { exited = p.HasExited; }
+                catch { return FfmpegWait.Exited; }        // 进程对象已经没了，当作已结束
+                if (exited) return FfmpegWait.Exited;
+
+                if (cancel)
+                {
+                    try { p.Kill(); } catch { }
+                    Log.Write(what + "：已按「停止」终止 ffmpeg");
+                    return FfmpegWait.Cancelled;
+                }
+                if (waited >= FfmpegTimeoutMs)
+                {
+                    try { p.Kill(); } catch { }
+                    Log.Write(what + "：ffmpeg 超过 " + (FfmpegTimeoutMs / 60000) +
+                              " 分钟没结束，已终止（磁盘满 / 输入的 mp4 损坏 / 编码器卡住都可能）");
+                    return FfmpegWait.TimedOut;
+                }
+                Thread.Sleep(200);
+                waited += 200;
+            }
+        }
+
+        // 取退出码并释放进程对象。⚠ 必须在 Dispose 之前读 —— Dispose 之后再读 ExitCode 不可靠。
+        static int ExitCodeAndDispose(Process p)
+        {
+            int code = -1;
+            try { if (p.HasExited) code = p.ExitCode; } catch { }
+            try { p.Dispose(); } catch { }
+            return code;
+        }
+
         void StopObsRecordingIfAny()
         {
             try
@@ -2709,7 +3068,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void EnsureStandardSourceEnabled()
         {
             try
@@ -2727,7 +3085,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void CheckCaptureHealth()
         {
             try
@@ -2756,7 +3113,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         byte[] Shot()
         {
             if (captureScene != null && captureScene != captureSource)
@@ -2766,7 +3122,6 @@ namespace RepRecorder
             }
             return ShotOf(captureSource);
         }
-        // ---- moved from MainForm ----
         byte[] ShotOf(string sourceName)
         {
             Dictionary<string, object> q = new Dictionary<string, object>();
@@ -2780,7 +3135,6 @@ namespace RepRecorder
             if (k >= 0) data = data.Substring(k + 7);
             return Convert.FromBase64String(data);
         }
-        // ---- moved from MainForm ----
         bool IsBlank(byte[] jpg)
         {
             try
@@ -2801,7 +3155,6 @@ namespace RepRecorder
             }
             catch { return false; }
         }
-        // ---- moved from MainForm ----
         void ProcessJob(Job job)
         {
             job.Started = DateTime.Now;
@@ -2874,6 +3227,17 @@ namespace RepRecorder
                 if (captureSource != null) EnsureNotBlank();
 
                 obs.Request("StartRecord", null);
+                // 单录这条路以前发完 StartRecord 就直接往下走，不确认 OBS 真的在录 ——
+                // OBS 卡住时就是白录一整局（等满 MaxMinutes，最后拿不到文件）。
+                // 2026-10-12 补上和并行同一道确认。
+                if (!ConfirmRecordingStarted("单录"))
+                {
+                    Log.Write("单录：❌ OBS 没真正开录（outputActive=false）。可能：有残留录像 / OBS 卡住 / 录制目录不可写");
+                    try { if (obs.IsConnected) obs.Request("StopRecord", null); } catch { }   // 别把半开的状态留给下一个
+                    KillGame();
+                    Ui.SetJob(job, "失败", "OBS 没真正开录");
+                    return;
+                }
                 Ui.SetJob(job, "录制中", "0:00");
                 jobMaxGameLevel = 0;
                 try { ApplyGameAudioSetting(); } catch { }   // 再确认一次"录不录打击音效"
@@ -2894,6 +3258,9 @@ namespace RepRecorder
                     ticks++;
                     if (captureSource != null && ticks % 10 == 0) CheckCaptureHealth();
                     // 每秒记一次"画面还在不在"：游戏退出时会先黑一下，收尾时按这个把结尾的黑剪掉
+                    // （ticks 是 500ms 一格，所以 % 2 = 每秒一次）。
+                    // ⚠ 别放宽到 2 秒：lastVisibleSec 早 1 秒，成片结尾就多留 1 秒黑；
+                    //   而省下的只是每秒一次 320×240 截图，收益小得多。
                     if (captureSource != null && ticks % 2 == 0)
                     {
                         try { if (!IsBlank(ShotOf(captureSource))) lastVisibleSec = (DateTime.Now - t0).TotalSeconds; }
@@ -3060,7 +3427,6 @@ namespace RepRecorder
                 KillGame();
             }
         }
-        // ---- moved from MainForm ----
         void TrimTrailingBlack(Job job, double totalSec, double lastVisibleSec)
         {
             string tmp = null;
@@ -3085,10 +3451,13 @@ namespace RepRecorder
                 psi.CreateNoWindow = true;
                 psi.WorkingDirectory = Path.GetDirectoryName(ff);
                 Process p = Process.Start(psi);
-                p.WaitForExit();
-                if (p.ExitCode != 0 || !File.Exists(tmp) || new FileInfo(tmp).Length < 4096 || !HasMoov(tmp))
+                FfmpegWait w = WaitFfmpeg(p, "修剪结尾黑屏");
+                int code = ExitCodeAndDispose(p);
+                if (w != FfmpegWait.Exited || code != 0 || !File.Exists(tmp) || new FileInfo(tmp).Length < 4096 || !HasMoov(tmp))
                 {
-                    Log.Write("结尾黑屏修剪没成功（ffmpeg 退出码 " + p.ExitCode + "），保留原文件");
+                    Log.Write("结尾黑屏修剪没成功（ffmpeg 退出码 " + code
+                              + (w == FfmpegWait.TimedOut ? "，超时" : w == FfmpegWait.Cancelled ? "，已取消" : "")
+                              + "），保留原文件");
                     try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                     return;
                 }
@@ -3106,7 +3475,6 @@ namespace RepRecorder
                 try { if (tmp != null && File.Exists(tmp)) File.Delete(tmp); } catch { }
             }
         }
-        // ---- moved from MainForm ----
         string MoveOutputTo(Job job, string folder)
         {
             try
@@ -3133,7 +3501,6 @@ namespace RepRecorder
                 return null;
             }
         }
-        // ---- moved from MainForm ----
         static bool HasMoov(string path)
         {
             try
@@ -3153,7 +3520,6 @@ namespace RepRecorder
             }
             catch { return false; }
         }
-        // ---- moved from MainForm ----
         static void KillGame()
         {
             try
@@ -3165,7 +3531,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void RunQueue()
         {
             try
@@ -3249,7 +3614,6 @@ namespace RepRecorder
                 }
             }
         }
-        // ---- moved from MainForm ----
         void StartQueue()
         {
             if (worker != null && worker.IsAlive) { Log.Write("队列已在运行，新加入的会排在后面"); return; }
@@ -3258,7 +3622,6 @@ namespace RepRecorder
             worker.IsBackground = true;
             worker.Start();
         }
-        // ---- moved from MainForm ----
         void MarkPendingFailed(string reason)
         {
             Ui.Post(delegate
@@ -3270,66 +3633,76 @@ namespace RepRecorder
                 }
             });
         }
-        // ---- moved from MainForm ----
         void AddPaths(string[] paths)
         {
-            List<string> reps = new List<string>();
+            // 先把参数分成"文件"和"文件夹"两类。
+            // 文件（拖进来的 .rep）同步加 —— 那本来就快，拖文件时用户希望立刻看到。
+            // 文件夹要 Directory.GetFiles(..., AllDirectories) 整棵递归，拖进一个装满 rep 的大文件夹
+            // （甚至整合包根目录）时会把 UI 线程占住、界面冻住 —— 2026-10-12 挪到后台线程。
+            List<string> direct = new List<string>();
+            List<string> dirs = new List<string>();
             foreach (string p in paths)
             {
                 try
                 {
-                    if (Directory.Exists(p))
-                        reps.AddRange(Directory.GetFiles(p, "*.rep", SearchOption.AllDirectories));
-                    else if (File.Exists(p) && p.ToLower().EndsWith(".rep"))
-                        reps.Add(p);
+                    if (Directory.Exists(p)) dirs.Add(p);
+                    else if (File.Exists(p) && p.ToLower().EndsWith(".rep")) direct.Add(p);
                 }
                 catch (Exception ex) { Log.Write("读取 " + p + " 失败：" + ex.Message); }
             }
+
+            if (dirs.Count == 0) { EnqueueReps(direct); return; }
+
+            Ui.Status("正在扫描文件夹…");
+            Thread t = new Thread(delegate()
+            {
+                List<string> reps = new List<string>(direct);
+                foreach (string p in dirs)
+                {
+                    try { reps.AddRange(Directory.GetFiles(p, "*.rep", SearchOption.AllDirectories)); }
+                    catch (Exception ex) { Log.Write("读取 " + p + " 失败：" + ex.Message); }
+                }
+                Ui.Post(delegate { EnqueueReps(reps); });   // 加条目要回 UI 线程（它碰控件）
+            });
+            t.IsBackground = true;
+            t.Name = "扫描rep";
+            t.Start();
+        }
+
+        // 把（可能刚扫完的）一批 rep 加进队列 —— 原来这段是 AddPaths 的后半截，原样搬过来。
+        // ⚠ 只在 UI 线程上调（它碰控件）。
+        void EnqueueReps(List<string> reps)
+        {
             reps.Sort(StringComparer.OrdinalIgnoreCase);
             int added = 0;
             List<Job> already = new List<Job>();
-            Ui.Post(delegate
+            lock (jobsLock)
             {
-                // ⚠ 必须用 BeginUpdate/EndUpdate 把"加条目"整个包起来。
-                //   这是 owner-draw 的 ListView：每 Items.Add 一次它就自己重画一次，而重画的时候
-                //   后面的条目还没排好版 —— 结果就是"一部分行画出来了、后面的行只有序号是空的，
-                //   再点一下才补上"（用户报的"放进来一开始不显示，点一下才出来"）。
-                //   顺带也解决了性能问题：放几百个 rep 时不再逐条重画。
-                try
+                // 去重：以前每加一个 rep 都对整个 jobs 线性扫一遍（O(n²)，拖几百个就明显）。
+                // 这里按当前 jobs 建一次 HashSet（O(n)）。
+                // ⚠ 刻意**不**另外维护一份"已入队路径"的索引：那种索引要和增/删/清空三处同步维护，
+                //   漏一处就会漂移（比 O(n) 贵得多的 bug）。每次重建它反而是最不容易错的写法。
+                HashSet<string> known = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (Job j in jobs) known.Add(j.Rep);
+                foreach (string r in reps)
                 {
-                lock (jobsLock)
-                {
-                    foreach (string r in reps)
+                    if (!known.Add(r)) continue;     // Add 返回 false = 队列里已经有了
+                    Job job = new Job(r);
+                    // 已经有录好的视频 → 先标成「已录制」，然后统一问一次用户"要不要重录"
+                    string have = FindExistingOutput(job);
+                    if (have != null)
                     {
-                        bool dup = false;
-                        foreach (Job j in jobs) if (string.Equals(j.Rep, r, StringComparison.OrdinalIgnoreCase)) { dup = true; break; }
-                        if (dup) continue;
-                        Job job = new Job(r);
-                        // 已经有录好的视频 → 先标成「已录制」，然后统一问一次用户"要不要重录"
-                        string have = FindExistingOutput(job);
-                        if (have != null)
-                        {
-                            job.Output = have;
-                            try { job.Size = new FileInfo(have).Length; } catch { }
-                            job.Status = "已录制";
-                            job.Detail = "已有视频，点开始会跳过";
-                            already.Add(job);
-                        }
-                        job.Item = new ListViewItem(new string[] {
-                            (jobs.Count + 1).ToString(), Path.GetFileName(r), job.Status, "",
-                            job.Size > 0 ? (job.Size / 1048576.0).ToString("0.0") + " MB" : "", job.Detail });
-                        job.Item.Tag = job;
-                        if (job.Status == "已录制") job.Item.ForeColor = Color.FromArgb(0, 120, 0);
-                        jobs.Add(job);
-                        Ui.AddRow(job);
-                        added++;
+                        job.Output = have;
+                        try { job.Size = new FileInfo(have).Length; } catch { }
+                        job.Status = "已录制";
+                        job.Detail = "已有视频，点开始会跳过";
+                        already.Add(job);
                     }
+                    jobs.Add(job);
+                    Ui.AddRow(job);
+                    added++;
                 }
-                }
-                finally
-                {
-                }
-            });
+            }
             Ui.SyncScroll();     // 条目数变了，自绘滚动条要跟着更新
             if (added > 0) Log.Write("加入队列 " + added + " 个 rep");
             else Log.Write("没有可加入的 rep（重复或不是 .rep）");
@@ -3338,7 +3711,6 @@ namespace RepRecorder
             // 少一步操作：数量自动跟着"放进来几个"走，并把这一批要录的高亮出来
             AfterQueueChanged(added);
         }
-        // ---- moved from MainForm ----
         void AfterQueueChanged(int added)
         {
             try
@@ -3359,7 +3731,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void AskReRecord(List<Job> already)
         {
             try
@@ -3402,7 +3773,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("询问重录失败：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void SyncParallelCountToSelection()
         {
             try
@@ -3422,7 +3792,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void RestoreSoundIfLeftMuted()
         {
             try
@@ -3444,7 +3813,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void RefreshSoundButtons()
         {
             if (btnSound == null) return;
@@ -3472,7 +3840,6 @@ namespace RepRecorder
                 Ui.ToggleLook(btnSound, true);
             }
         }
-        // ---- moved from MainForm ----
         void ApplyGameAudioSetting()
         {
             if (obs == null || !obs.IsConnected) return;
@@ -3497,7 +3864,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("设置游戏声音录制失败：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void ApplyRecordVolume(string inputName)
         {
             if (obs == null || !obs.IsConnected) return;
@@ -3515,7 +3881,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("设置录像音量失败（忽略）：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void RefreshGameAudioButton()
         {
             if (btnGameAudio == null) return;
@@ -3542,7 +3907,6 @@ namespace RepRecorder
                 else RefreshBgmButton();
             }
         }
-        // ---- moved from MainForm ----
         List<string> BgmIniPaths()
         {
             List<string> list = new List<string>();
@@ -3554,7 +3918,6 @@ namespace RepRecorder
             }
             return list;
         }
-        // ---- moved from MainForm ----
         void ApplyBgmSetting(bool verbose)
         {
             int want = cfg.RecordBgm ? 0 : 1;
@@ -3582,7 +3945,6 @@ namespace RepRecorder
                 catch (Exception ex) { Log.Write("写 ReplayDnD.ini 失败（" + p + "）：" + ex.Message); }
             }
         }
-        // ---- moved from MainForm ----
         void RefreshBgmButton()
         {
             if (btnBgm == null) return;
@@ -3597,7 +3959,6 @@ namespace RepRecorder
                 Ui.ToggleLook(btnBgm, false);
             }
         }
-        // ---- moved from MainForm ----
         void SyncBgmFromIni()
         {
             bool? muted = ReadBgmMuted();
@@ -3620,7 +3981,6 @@ namespace RepRecorder
                 Log.Write("找不到 ReplayDnD.ini，BGM 开关读不到（检查「设置…」里的游戏目录）");
             }
         }
-        // ---- moved from MainForm ----
         void SetSystemMuteUi(bool mute)
         {
             string msg;
@@ -3637,7 +3997,6 @@ namespace RepRecorder
             }
             RefreshSoundButtons();
         }
-        // ---- moved from MainForm ----
         static void MarkSystemMuted(bool muted)
         {
             try
@@ -3647,7 +4006,6 @@ namespace RepRecorder
             }
             catch { }
         }
-        // ---- moved from MainForm ----
         void OnSoundToggle(object sender, EventArgs e)
         {
             bool muted;
@@ -3659,7 +4017,6 @@ namespace RepRecorder
             }
             SetSystemMuteUi(!muted);   // 已静音 → 恢复；未静音 → 静音
         }
-        // ---- moved from MainForm ----
         void OnGameAudioToggle(object sender, EventArgs e)
         {
             cfg.RecordGameAudio = !cfg.RecordGameAudio;
@@ -3686,7 +4043,7 @@ namespace RepRecorder
                     // 并行录制正在跑的话，把每一格的音源也一起切掉/打开（不然按钮要等下一次录制才生效）
                     try
                     {
-                        for (int i = 1; i <= 4; i++)
+                        for (int i = 1; i <= 6; i++)   // 并行上限是 6 格，P5/P6 也要跟着切（和 765 行那处一致）
                             SetInputMuteRaw("RepRecorder P" + i + " 声音", !cfg.RecordGameAudio);
                     }
                     catch { }
@@ -3696,7 +4053,6 @@ namespace RepRecorder
             }
             RefreshGameAudioButton();
         }
-        // ---- moved from MainForm ----
         void OnBgmToggle(object sender, EventArgs e)
         {
             cfg.RecordBgm = !cfg.RecordBgm;
@@ -3709,12 +4065,10 @@ namespace RepRecorder
             if (cfg.RecordBgm)
                 Log.Write("提醒：BGM 有版权风险（B 站等平台会检测），用不用你自己判断。");
         }
-        // ---- moved from MainForm ----
         void OnStart(object sender, EventArgs e)
         {
             StartRecording();
         }
-        // ---- moved from MainForm ----
         void OnStop(object sender, EventArgs e)
         {
             // 队列/批次根本没在跑的时候点「停止」什么都不该做。
@@ -3734,7 +4088,6 @@ namespace RepRecorder
             Ui.Status("正在停止…");
             Ui.Post(delegate { btnStop.Enabled = false; });   // 已经在停了，别让它被连点
         }
-        // ---- moved from MainForm ----
         void OnClear(object sender, EventArgs e)
         {
             if (worker != null && worker.IsAlive) { Log.Write("队列运行中，先停止再清空"); return; }
@@ -3748,7 +4101,6 @@ namespace RepRecorder
             Ui.SyncScroll();
             Log.Write("队列已清空");
         }
-        // ---- moved from MainForm ----
         void OnRemove(object sender, EventArgs e)        {
             if (worker != null && worker.IsAlive) { Log.Write("队列运行中，不能移除"); return; }
             List<Job> del = new List<Job>();
@@ -3771,7 +4123,6 @@ namespace RepRecorder
             Ui.SyncScroll();
             Log.Write("已从队列移除 " + del.Count + " 个 rep");
         }
-        // ---- moved from MainForm ----
         void OnMarkBatch(object sender, EventArgs e)
         {
             try
@@ -3800,7 +4151,6 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("标记本批失败：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void OnRefreshQueue(object sender, EventArgs e)
         {
             int done = 0, waiting = 0, skip = 0;
@@ -3838,7 +4188,6 @@ namespace RepRecorder
             Log.Write("已刷新队列：有视频 " + done + " 个，待录制 " + waiting + " 个" +
                       (skip > 0 ? "，正在处理中 " + skip + " 个（未改动）" : ""));
         }
-        // ---- moved from MainForm ----
         void OnOpenLog(object sender, EventArgs e)
         {
             try
@@ -3912,7 +4261,6 @@ namespace RepRecorder
             t.Start();
         }
 
-        // ---- moved from MainForm ----
         // 「检查环境」：把五项报给用户看。
         // 2026-10-08 之前这里【只写日志】—— 用户点完一个窗都不弹，得自己开终端去翻，
         // 而左下角那张环境卡又只报两项。现在先弹窗，日志照写（脚本和排查都还要看它）。
@@ -3992,212 +4340,59 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("环境窗弹出失败（不影响使用）：" + ex.Message); }
         }
-        // ---- moved from MainForm ----
         void OnPrepare(object sender, EventArgs e)
         {
-            try
+            // ⚠ 录制中不许「准备 OBS」（2026-10-08 查实）：PrepareObs 第一句就是
+            //   StopObsRecordingIfAny()，而且 AutoCanvas 会顺手把画布改成 1440×1080 ——
+            //   正在跑的那一批当场被掐断、画布也被改错，而 worker 完全不知道：
+            //   它继续等游戏退出，最后 StopRecord 报 501、退回去捡那个残缺文件，
+            //   然后每一格都标成「完成」。界面上只有 开始/停止 两个键在录制时被锁，
+            //   所以这个键点得到 —— 这里补上同一道闸。
+            if (worker != null && worker.IsAlive)
             {
-                // ⚠ 录制中不许「准备 OBS」（2026-10-08 查实）：PrepareObs 第一句就是
-                //   StopObsRecordingIfAny()，而且 AutoCanvas 会顺手把画布改成 1440×1080 ——
-                //   正在跑的那一批当场被掐断、画布也被改错，而 worker 完全不知道：
-                //   它继续等游戏退出，最后 StopRecord 报 501、退回去捡那个残缺文件，
-                //   然后每一格都标成「完成」。界面上只有 开始/停止 两个键在录制时被锁，
-                //   所以这个键点得到 —— 这里补上同一道闸。
-                if (worker != null && worker.IsAlive)
-                {
-                    Log.Write("正在录制，先点「停止」再准备 OBS");
-                    return;
-                }
-                if (!EnsureObs()) return;
-                PrepareObs(true);
-                Log.Write("OBS 准备完毕");
+                Log.Write("正在录制，先点「停止」再准备 OBS");
+                return;
             }
-            catch (Exception ex) { Log.Write("准备 OBS 失败：" + ex.Message); }
+            if (prepareBusy) return;          // 正在准备就别再来一遍（连点）
+
+            // 2026-10-12：整段丢到后台线程。
+            //   以前是在 UI 线程上同步跑的 —— EnsureObs 里有 Sleep(3000)，后面还跟着最长 60 秒
+            //   的"每 2 秒重连一次"。OBS 没开、或者起着但 WebSocket 连不上时，这几十秒里界面
+            //   完全不动、连一句"正在准备"都不显示，用户会以为程序崩了（实测卡 7.6 秒；
+            //   OBS 起不来/连不上时能到 60 秒出头）。
+            //   挪得动的前提：PrepareObs 全程不碰任何控件（只发 obs-websocket 请求 + 写日志），
+            //   已经逐行确认过。
+            prepareBusy = true;
+            Ui.Status("正在准备 OBS…");
+            Ui.Post(delegate { btnStart.Enabled = false; });   // 照 OnStop 里那个写法直接改影子按钮
+            Thread t = new Thread(delegate()
+            {
+                try
+                {
+                    if (!EnsureObs()) return;
+                    PrepareObs(true);
+                    Log.Write("OBS 准备完毕");
+                    Ui.Status("就绪");
+                }
+                catch (Exception ex) { Log.Write("准备 OBS 失败：" + ex.Message); }
+                finally
+                {
+                    prepareBusy = false;
+                    // 只有还停在"准备中"时才把状态改回就绪 —— 免得盖掉录制流程写的状态字。
+                    Ui.Post(delegate { if (!(worker != null && worker.IsAlive)) btnStart.Enabled = true; });
+                }
+            });
+            t.IsBackground = true;
+            t.Name = "准备OBS";
+            t.Start();
         }
-        // ---- moved from MainForm ----
         // 设置窗口整个搬去界面层了（旧版是个 PropertyGrid 对话框，WPF 里没有现成控件，
         // 用反射列字段自己搭了一个，见 Ui.ShowSettings）
         void OnSettings(object sender, EventArgs e)
         {
             Ui.ShowSettings();
         }
-        // ---- moved from MainForm ----
-        static void StopRecordingCli()
-        {
-            try
-            {
-                Settings cfg = Settings.Load();
-                using (ObsClient obs = new ObsClient())
-                {
-                    obs.Connect(cfg.Port, cfg.Password);
-                    Dictionary<string, object> st = obs.Request("GetRecordStatus", null);
-                    bool active = st.ContainsKey("outputActive") && st["outputActive"] != null &&
-                                  Convert.ToBoolean(st["outputActive"]);
-                    if (!active)
-                    {
-                        Log.Write("--stop-record：OBS 当前没有在录像");
-                        return;
-                    }
-                    Dictionary<string, object> resp = obs.Request("StopRecord", null);
-                    string path = (resp.ContainsKey("outputPath") && resp["outputPath"] != null)
-                                  ? Convert.ToString(resp["outputPath"]) : "";
-                    Log.Write("--stop-record：已停止录像" + (path.Length > 0 ? "，文件：" + path : ""));
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Write("--stop-record 失败：" + ex.Message);
-            }
-        }
-        // ---- moved from MainForm ----
-        static void SetRecordDirCli(string dir)
-        {
-            try
-            {
-                Settings cfg = Settings.Load();
-                using (ObsClient obs = new ObsClient())
-                {
-                    obs.Connect(cfg.Port, cfg.Password);
-                    Dictionary<string, object> r = new Dictionary<string, object>();
-                    r["recordDirectory"] = dir;
-                    obs.Request("SetRecordDirectory", r);
-                    Log.Write("--set-record-dir：OBS 录像目录已设为 " + dir);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Write("--set-record-dir 失败：" + ex.Message);
-            }
-        }
-        // ---- moved from MainForm ----
-        static void MicCli(string mode)      {
-            try
-            {
-                Settings cfg = Settings.Load();
-                using (ObsClient obs = new ObsClient())
-                {
-                    obs.Connect(cfg.Port, cfg.Password);
-                    List<string> all = Program.FindGlobalAudioNames(false);
-                    Log.Write("--mic " + mode + "：JSON 里的全局音频设备 = " +
-                              (all.Count == 0 ? "<无>" : string.Join(" / ", all.ToArray())));
-                    List<string> targets = Program.FindMicTargets(obs);
-                    Log.Write("--mic " + mode + "：麦克风候选 = " +
-                              (targets.Count == 0 ? "<无>" : string.Join(" / ", targets.ToArray())));
-                    if (targets.Count == 0) return;
-                    bool want = (mode == "on");
-                    foreach (string n in targets)
-                    {
-                        try
-                        {
-                            Dictionary<string, object> q = new Dictionary<string, object>();
-                            q["inputName"] = n;
-                            bool was = Convert.ToBoolean(obs.Request("GetInputMute", q)["inputMuted"]);
-                            Log.Write("  " + n + "：当前" + (was ? "已静音" : "未静音"));
-                            if (mode == "test") continue;
-                            if (was != want)
-                            {
-                                Dictionary<string, object> s = new Dictionary<string, object>();
-                                s["inputName"] = n;
-                                s["inputMuted"] = want;
-                                obs.Request("SetInputMute", s);
-                            }
-                            bool now = Convert.ToBoolean(obs.Request("GetInputMute", q)["inputMuted"]);
-                            Log.Write("  " + n + "：写回后" + (now ? "已静音" : "未静音") + (now == want ? "  OK" : "  没生效"));
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Write("  " + n + "：失败 —— " + ex.Message);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) { Log.Write("--mic 失败：" + ex.Message); }
-        }
-        // ---- moved from MainForm ----
-        static void GameSoundCli(string mode)        {
-            try
-            {
-                bool mute = (mode == "off" || mode == "mute" || mode == "静音");
-                Process[] ps = Process.GetProcessesByName("th123");
-                if (ps.Length == 0) { Log.Write("--game-sound：游戏没在运行"); return; }
-                foreach (Process p in ps)
-                {
-                    string msg;
-                    bool ok = GameAudio.SetProcessMute(p.Id, mute, out msg);
-                    Log.Write("--game-sound：" + (mute ? "静音" : "打开") + " 游戏声音 PID " + p.Id + " → " + msg + (ok ? "  OK" : "  失败"));
-                }
-            }
-            catch (Exception ex) { Log.Write("--game-sound 失败：" + ex.Message); }
-        }
-        // ---- moved from MainForm ----
-        static void AudioMeterCli(string secArg)
-        {
-            int sec = 15;
-            int.TryParse(secArg, out sec);
-            if (sec <= 0) sec = 15;
-            try
-            {
-                Settings cfg = Settings.Load();
-                using (ObsClient obs = new ObsClient())
-                {
-                    obs.MetersEnabled = true;
-                    obs.Connect(cfg.Port, cfg.Password);
-                    DateTime end = DateTime.Now.AddSeconds(sec);
-                    int round = 0;
-                    while (DateTime.Now < end)
-                    {
-                        Thread.Sleep(1000);
-                        round++;
-                        if (!obs.MetersFresh)
-                        {
-                            Log.Write("--audio-meter #" + round + "：还没收到电平事件");
-                            continue;
-                        }
-                        string s = "";
-                        foreach (string n in obs.LevelNames())
-                            s += (s.Length > 0 ? "   |   " : "") + n + " = " + obs.GetLevel(n).ToString("0.000");
-                        Log.Write("--audio-meter #" + round + "：" + (s.Length == 0 ? "<没有活动的音频源>" : s));
-                    }
-                }
-            }
-            catch (Exception ex) { Log.Write("--audio-meter 失败：" + ex.Message); }
-        }
-        // ---- moved from MainForm ----
-        static void SysMuteCli(string mode)
-        {
-            try
-            {
-                string m;
-                if (mode == "on")
-                    Log.Write("--sys-mute on：" + (GameAudio.SetSystemMute(true, out m) ? "OK " : "失败 ") + m);
-                else if (mode == "off")
-                    Log.Write("--sys-mute off：" + (GameAudio.SetSystemMute(false, out m) ? "OK " : "失败 ") + m);
-                else
-                {
-                    bool cur;
-                    GameAudio.GetSystemMute(out cur, out m);
-                    Log.Write("--sys-mute test：默认输出设备" + (cur ? "已静音" : "未静音") + "（" + m + "）");
-                }
-            }
-            catch (Exception ex) { Log.Write("--sys-mute 失败：" + ex.Message); }
-        }
-        // ---- moved from MainForm ----
-        static void ObsReqCli(string type)
-        {
-            try
-            {
-                Settings cfg = Settings.Load();
-                using (ObsClient obs = new ObsClient())
-                {
-                    obs.Connect(cfg.Port, cfg.Password);
-                    Dictionary<string, object> resp = obs.Request(type, null);
-                    Log.Write("--obs-req " + type + " → " + new JavaScriptSerializer().Serialize(resp));
-                }
-            }
-            catch (Exception ex) { Log.Write("--obs-req " + type + " 失败：" + ex.Message); }
-        }
-
-        // ---- Win32 declarations + state, copied from MainForm ----
+        // ---- Win32 声明与状态 ----
         delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
@@ -4212,8 +4407,11 @@ namespace RepRecorder
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+        // 屏幕工作区（物理像素）—— 给 GrowGameWindows 判断"窗口撑到多大还放得下"。见那儿的注释。
+        [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint action, uint param, out RECT data, uint winIni);
         struct RECT { public int Left, Top, Right, Bottom; }
         const int SW_RESTORE = 9;
+        const uint SPI_GETWORKAREA = 0x0030;
         const uint SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
         const int CAPBTN_W = 46;   // 窗口按钮宽度（三个并排贴在右上角）
                     const int arm = 12;                         // 角标每条臂的长度
@@ -4245,33 +4443,59 @@ namespace RepRecorder
 
         static readonly string[] BgmIniSubPaths = new string[] { @"modules\ReplayDnD\ReplayDnD.ini", @"modules\ReplayDnD-old\ReplayDnD.ini" };
 
-        double AnalyzeCellHead(string grid, int x, int y, int cw, int ch)
+        // 一次抽完所有格子的"画面从第几秒开始"（0 = 整段没画面 / 分析失败 → 不往前剪）。
+        // ⚠ 2026-10-13 改成一次 ffmpeg 抽全部：以前是**每格单独开一个进程**、各自把整张中继
+        //   画布解码一遍。画布从 1281×640 涨到 3840×1920（每格按真实像素采）之后，这一条
+        //   从 16 秒变成 111 秒 —— 而它要的只是 160×120、5fps 的缩略图，白白解码 6 遍没道理。
+        //   现在：一次解码 → split=N → 每格各自 crop+scale 出自己那串 jpg（实测回到 20 秒上下）。
+        double[] AnalyzeCellHeads(string grid, int count, int cols, int cw, int ch)
         {
+            double[] heads = new double[count];
             string ff = FindFfmpeg();
-            if (ff == null) return 0;
+            if (ff == null || count <= 0) return heads;
             string tmpDir = Path.Combine(Path.GetTempPath(), "RepRecorder_scan_" + Guid.NewGuid().ToString("N"));
             try
             {
                 Directory.CreateDirectory(tmpDir);
-                string vf = "crop=" + cw + ":" + ch + ":" + x + ":" + y + ",scale=160:120,fps=5";
+                StringBuilder fc = new StringBuilder();
+                StringBuilder outArgs = new StringBuilder();
+                fc.Append("[0:v]split=").Append(count);
+                for (int i = 0; i < count; i++) fc.Append("[b").Append(i).Append("]");
+                for (int i = 0; i < count; i++)
+                {
+                    fc.Append(";[b").Append(i).Append("]crop=").Append(cw).Append(":").Append(ch).Append(":")
+                      .Append((i % cols) * cw).Append(":").Append((i / cols) * ch)
+                      .Append(",scale=160:120,fps=5[o").Append(i).Append("]");
+                    outArgs.Append(" -map \"[o").Append(i).Append("]\" -q:v 6 \"")
+                           .Append(Path.Combine(tmpDir, "h" + i + "_%04d.jpg")).Append("\"");
+                }
                 ProcessStartInfo psi = new ProcessStartInfo(ff,
-                    "-hide_banner -loglevel error -y -t 45 -i \"" + grid + "\" -vf \"" + vf + "\" -q:v 6 \"" +
-                    Path.Combine(tmpDir, "h%04d.jpg") + "\"");
+                    "-hide_banner -loglevel error -y -t 45 -i \"" + grid + "\" -filter_complex \"" + fc + "\"" + outArgs);
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
                 psi.WorkingDirectory = Path.GetDirectoryName(ff);
                 Process p = Process.Start(psi);
-                p.WaitForExit();
-                string[] files = Directory.GetFiles(tmpDir, "h*.jpg");
-                Array.Sort(files, StringComparer.Ordinal);
-                for (int i = 0; i < files.Length; i++)
+                FfmpegWait w = WaitFfmpeg(p, "抽帧分析");
+                ExitCodeAndDispose(p);
+                // 超时或取消：当作"分析不出来"，全部留在 0（也就是不往前剪）——
+                // 拿半截帧去判断只会得出错的头位置，比不剪更糟。只解码一遍，所有格子一起作废。
+                if (w != FfmpegWait.Exited) return heads;
+                for (int i = 0; i < count; i++)
                 {
-                    try
+                    string[] files = Directory.GetFiles(tmpDir, "h" + i + "_*.jpg");
+                    Array.Sort(files, StringComparer.Ordinal);
+                    for (int k = 0; k < files.Length; k++)
                     {
-                        if (!IsBlank(File.ReadAllBytes(files[i])))
-                            return i / 5.0;      // 第 i 帧（5 帧/秒）
+                        try
+                        {
+                            if (!IsBlank(File.ReadAllBytes(files[k])))
+                            {
+                                heads[i] = k / 5.0;      // 第 k 帧（5 帧/秒）
+                                break;
+                            }
+                        }
+                        catch { }
                     }
-                    catch { }
                 }
             }
             catch { }
@@ -4279,7 +4503,7 @@ namespace RepRecorder
             {
                 try { if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true); } catch { }
             }
-            return 0;
+            return heads;
         }
 
         // MISSING: ReadBgmMuted

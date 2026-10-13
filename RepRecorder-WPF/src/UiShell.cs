@@ -4,6 +4,7 @@
 // ============================================================
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -56,7 +57,7 @@ namespace RepRecorder
             // 平时完全透明 —— 新设计稿里卡片之间就是一道空隙，没有可见的分隔条。
             // 光标会变成双向箭头，鼠标压上去也有一档高亮，知道这里能拖。
             s.Background = Brushes.Transparent;
-            s.MouseEnter += delegate { s.Background = Br(MainForm.HudAccent, 0xCC); };
+            s.MouseEnter += delegate { s.Background = Br(Palette.HudAccent, 0xCC); };
             s.MouseLeave += delegate { s.Background = Brushes.Transparent; };
         }
 
@@ -178,25 +179,41 @@ namespace RepRecorder
     }
 
     // ================================================================ 队列行模型
-    public class RowVm
+    // 2026-10-12 实现 INotifyPropertyChanged。以前是个纯 POCO，改完字段只能靠
+    // queueList.Items.Refresh() 让绑定生效 —— 那是**整表重建容器**：录制中每来一次状态更新
+    // （UpdateRow）、每删一行（RenumberRows）、每标一次本批（HighlightBatchRows），
+    // 整个队列的行容器都要重建一遍，队列一长就肉眼可见地闪。
+    // 现在改哪个属性只通知那一行的那一个属性，那三处 Refresh 全删了。
+    public class RowVm : INotifyPropertyChanged
     {
-        public string Index { get; set; }
-        public string File { get; set; }
-        public string Status { get; set; }
-        public string Dur { get; set; }
-        public string Size { get; set; }
-        public string Detail { get; set; }
-        public string StatusColor { get; set; }      // "#37C8A0" 这种，绑定时自动转 Brush
-        public bool Batch { get; set; }              // "本批"那几行：绿底 + 左侧绿条
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        void Set<T>(ref T field, T value, string name)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return;   // 没变就别通知，省掉无谓的重画
+            field = value;
+            PropertyChangedEventHandler h = PropertyChanged;
+            if (h != null) h(this, new PropertyChangedEventArgs(name));
+        }
+
+        // 下面这 8 个是**行模板里真正绑定的**（{Binding Index/File/Status/Dur/Size/Detail/StatusColor/Batch}），
+        // 改属性名要连模板里的绑定一起改。
+        string index = "", file = "", status = "等待", dur = "", size = "", detail = "", statusColor = "#93A0B4";
+        bool batch;
+
+        public string Index { get { return index; } set { Set(ref index, value, "Index"); } }
+        public string File { get { return file; } set { Set(ref file, value, "File"); } }
+        public string Status { get { return status; } set { Set(ref status, value, "Status"); } }
+        public string Dur { get { return dur; } set { Set(ref dur, value, "Dur"); } }
+        public string Size { get { return size; } set { Set(ref size, value, "Size"); } }
+        public string Detail { get { return detail; } set { Set(ref detail, value, "Detail"); } }
+        public string StatusColor { get { return statusColor; } set { Set(ref statusColor, value, "StatusColor"); } }   // "#37C8A0" 这种，绑定时自动转 Brush
+        public bool Batch { get { return batch; } set { Set(ref batch, value, "Batch"); } }                          // "本批"那几行：绿底 + 左侧绿条
+
+        // 这三个不参与绑定，保持自动属性（改了也不会触发通知，界面本来就不看它们）
         public string RepPath { get; set; }
         public string OutputPath { get; set; }
         public Job Job { get; set; }                 // 这一行对应哪个 Job
-
-        public RowVm()
-        {
-            Index = ""; File = ""; Status = "等待"; Dur = ""; Size = ""; Detail = "";
-            StatusColor = "#93A0B4";
-        }
     }
 
     // ================================================================ 调试接口

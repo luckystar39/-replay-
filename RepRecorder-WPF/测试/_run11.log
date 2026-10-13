@@ -1,4 +1,4 @@
-﻿OK   again: app alive  pid=29428
+﻿OK   again: app alive  pid=26148
 OK   again: the three-way dialog opened  
 OK   again: the prompt is in the log  
 OK   again: the dialog closed after the answer  q={"found":false}
@@ -8,7 +8,7 @@ OK   again: the row says what was chosen  detail=你选了再录一次（旧的�
 OK   again: the choice is logged  
 OK   again: the existing video is still on disk  
 OK   again: no exception in log  
-OK   overwrite: app alive  pid=34912
+OK   overwrite: app alive  pid=20816
 OK   overwrite: the three-way dialog opened  
 OK   overwrite: the prompt is in the log  
 OK   overwrite: the dialog closed after the answer  q={"found":false}
@@ -18,7 +18,7 @@ OK   overwrite: the row says what was chosen  detail=你选了重录（会覆盖
 OK   overwrite: the choice is logged  
 OK   overwrite: the existing video is still on disk  
 OK   overwrite: no exception in log  
-OK   skip: app alive  pid=32104
+OK   skip: app alive  pid=32356
 OK   skip: the three-way dialog opened  
 OK   skip: the prompt is in the log  
 OK   skip: the dialog closed after the answer  q={"found":false}

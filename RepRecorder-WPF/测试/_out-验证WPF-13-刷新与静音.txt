@@ -1,4 +1,4 @@
-OK   app alive  pid=29172 waited=0s
+OK   app alive  pid=30852 waited=0s
 OK   sysmute reads the current state  muted=False
 OK   sysmute:on reports success  ok=True
 OK   the endpoint is now muted  muted=True
@@ -11,7 +11,7 @@ OK   refresh is logged
 OK   refresh found the new video  recorded=1 of 2
 OK   it is the right row  file=r1.rep
 OK   refresh did not drop any row  count=2
-OK   app alive after refresh  pid=29172
+OK   app alive after refresh  pid=30852
 OK   no exception in log  
 OK   mic row is enabled when not parallel  
 OK   picking game+mic stores gameAndMic (not "both")  file=gameAndMic

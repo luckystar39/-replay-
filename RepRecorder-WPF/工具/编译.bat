@@ -31,9 +31,10 @@ tasklist /fi "imagename eq RepRecorderWPF.exe" | find /i "RepRecorderWPF.exe" >n
 "%CSC%" /nologo /target:winexe /codepage:65001 /out:..\RepRecorderWPF.exe ^
   /r:"%REF%\PresentationFramework.dll" /r:"%REF%\PresentationCore.dll" ^
   /r:"%REF%\WindowsBase.dll" /r:"%REF%\System.Xaml.dll" ^
-  /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Core.dll ^
+  /r:System.Drawing.dll /r:System.Web.Extensions.dll /r:System.Core.dll ^
   /r:"%REF%\System.IO.Compression.FileSystem.dll" ^
-  ..\src\Ui.cs ..\src\UiShell.cs ..\src\UiWindow.cs ..\src\UiDialogs.cs ..\src\Core.cs ..\src\Recorder.cs ..\src\Update.cs ..\src\AssemblyInfo.cs
+  ..\src\Palette.cs ..\src\FolderPicker.cs ..\src\Ui.cs ..\src\UiShell.cs ..\src\UiWindow.cs ^
+  ..\src\UiDialogs.cs ..\src\Core.cs ..\src\Recorder.cs ..\src\Update.cs ..\src\AssemblyInfo.cs
 if errorlevel 1 (
   echo.
   echo BUILD FAILED -- see the errors above.

@@ -1,14 +1,11 @@
 验证WPF-00-编译与启动.ps1 -> PASS
 验证WPF-01-界面壳.ps1 -> PASS
 验证WPF-02-调试接口与设置兼容.ps1 -> PASS
-验证WPF-18-检查更新.ps1 -> FAIL(rc=124)
-ALL DONE
 验证WPF-03-左栏面板.ps1 -> PASS
 验证WPF-04-队列列表.ps1 -> PASS
 验证WPF-05-终端.ps1 -> PASS
 验证WPF-06-录制流程接上.ps1 -> PASS
 验证WPF-07-背景设置窗.ps1 -> PASS
-验证WPF-08-默认界面切换.ps1 -> PASS
 验证WPF-10-队列选中与按钮状态.ps1 -> PASS
 验证WPF-11-重录询问.ps1 -> PASS
 验证WPF-12-快捷键.ps1 -> PASS
@@ -17,5 +14,6 @@ ALL DONE
 验证WPF-15-自动找游戏.ps1 -> PASS
 验证WPF-16-首次自检等自动找游戏.ps1 -> PASS
 验证WPF-17-自动找ffmpeg.ps1 -> PASS
-验证WPF-18-检查更新.ps1 -> FAIL(rc=124)
+验证WPF-18-检查更新.ps1 -> PASS
+验证WPF-19-无WinForms依赖.ps1 -> PASS
 ALL DONE

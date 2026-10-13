@@ -2,13 +2,13 @@
 step: killing old instances
 step: removing old log
 step: starting with D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\_testreps\t1.rep
-step: started pid=34540
+step: started pid=4020
 step: slept 7s
-OK   app alive  pid=34540
-OK   log has the startup banner  len=299
+OK   app alive  pid=4020
+OK   log has the startup banner  len=352
 OK   log has the game dir line  
 OK   no exception in log  
-OK   terminal panel shows the startup log  shown=8
+OK   terminal panel shows the startup log  shown=10
 OK   one row in the queue  count=1
 OK   row shows the rep file name  file=t1.rep
 OK   row starts as waiting  status=等待

@@ -1,7 +1,7 @@
 bg image forced to: D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\bg-test.png
 bg layout forced to: free   (must come back as fill)
 before: BgOpacity=85 BgScope=global
-OK   app alive  pid=34796 waited=0s
+OK   app alive  pid=17968 waited=0s
 OK   bgstate answers  
 OK   background image loaded  pixels=640x480
 OK   a stored "free" layout migrates to "fill"  layout=fill (file said free)
@@ -29,7 +29,7 @@ OK   transparency 60 lands on the layer as opacity 40  layer=40
 OK   scope switches to global  scope=global
 OK   viewport follows the scope change (global)  viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648
 OK   scope switches back to content  scope=content
-OK   viewport follows the scope change (content)  viewport=0,0,889x667  rendered=889x667  layer=889x611
+OK   viewport follows the scope change (content)  viewport=0,0,895x671  rendered=895x671  layer=895x611
 OK   layout switches to stretch  stretch=Fill
 OK   the layer brush really switched too  brush=Fill cfg=Fill
 OK   alignment index 0 is fill  layout=fill

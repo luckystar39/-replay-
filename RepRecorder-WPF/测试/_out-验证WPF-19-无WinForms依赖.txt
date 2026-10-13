@@ -1,0 +1,13 @@
+OK  build script does not reference System.Windows.Forms  
+OK  no code line in src/ uses System.Windows.Forms  hits=0
+OK  no `using System.Windows.Forms;` anywhere  hits=0
+OK  palette (colors moved out of the old MainForm) exists  
+OK  Palette.cs is in the build command line  
+OK  folder picker (replaces WinForms FolderBrowserDialog) exists  
+OK  FolderPicker.cs is in the build command line  
+OK  the built exe does not reference System.Windows.Forms  refs=mscorlib,System,PresentationFramework,System.Drawing,PresentationCore,WindowsBase,System.Web.Extensions,System.Core,System.IO.Compression.FileSystem
+OK  the built exe still references PresentationFramework  
+OK  main window appeared even when started with --old  
+OK  --old is swallowed, not treated as a dropped file  
+OK  the startup log says WPF  
+PASS

@@ -69,6 +69,28 @@ Patch-One (Join-Path $wpf (Join-Path 'src' 'Core.cs')) 'const string Version = "
 Patch-One (Join-Path $wpf (Join-Path 'src' 'AssemblyInfo.cs')) 'AssemblyVersion\("[^"]*"\)' ('AssemblyVersion("' + $four + '")') 'AssemblyVersion' | Out-Null
 Patch-One (Join-Path $wpf (Join-Path 'src' 'AssemblyInfo.cs')) 'AssemblyFileVersion\("[^"]*"\)' ('AssemblyFileVersion("' + $four + '")') 'AssemblyFileVersion' | Out-Null
 
+# ---------------------------------------------------------------- 1b) 两份「说明」里的版本号
+# 2026-10-12 补：程序标题写的是 1.1.2、发出去的两份说明里却还写着 v1.0 —— 一直没人管
+# （AssemblyInfo.cs 的注释里明明写着"改版本号要同时改四处"，其中两处就是这两份 md）。
+# 简短版有两处：头部那句「RepRecorder vX」是它的版本声明；「（比如 vX）」是举例（顺手一起对齐）。
+# 详细版只有一处举例。三处都用 Patch-One，所以 --check 下也会照常报告。
+Patch-One (Join-Path $src '说明-给使用者（简短版）.md') 'RepRecorder v[0-9][^ ]*' ('RepRecorder v' + $ver) '说明-简短版 头部版本号' | Out-Null
+Patch-One (Join-Path $src '说明-给使用者（简短版）.md') '比如 v[0-9][^）]*' ('比如 v' + $ver) '说明-简短版 举例版本号' | Out-Null
+Patch-One (Join-Path $src '说明-给使用者（详细版）.md') '例如 `v[0-9][^`]*`' ('例如 `v' + $ver + '`') '说明-详细版 举例版本号' | Out-Null
+
+# 后置校验：真的改到了才算数（只在真发版时查；--check 不改文件，那时候查会误报）
+if (-not $check) {
+  foreach ($f in @('说明-给使用者（简短版）.md', '说明-给使用者（详细版）.md')) {
+    $p = Join-Path $src $f
+    if (-not (Test-Path $p)) { Write-Host ('  ✗ 找不到 ' + $f); exit 7 }
+    $t = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
+    if ($t -notmatch ('v' + [regex]::Escape($ver))) {
+      Write-Host ('  ✗ ' + $f + ' 里的版本号没改成 v' + $ver); exit 7
+    }
+    Write-Host ('  ' + $f + ' 的版本号已是 v' + $ver)
+  }
+}
+
 # ---------------------------------------------------------------- 2) 不带 --check 才做的
 if (-not $check) {
   # ⚠ 调那两个 .bat 之前必须把控制台代码页设成 936。它们是 GBK 编码的，

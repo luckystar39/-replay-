@@ -1,5 +1,5 @@
 settings ParallelCount before test = 1
-OK  app alive  pid=16040
+OK  app alive  pid=3852
 OK  panel starts expanded  already expanded
 OK  all left-panel controls present  missing=
 OK  btnStart has a playlist glyph + CJK  raw=? ¿ªÊ¼Â¼ÖÆ

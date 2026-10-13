@@ -49,7 +49,7 @@ namespace RepRecorder
             // 很长，560 的时候右边会被切掉一截（2026-10-08 截图看出来的）。
             Width = 620;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "envDialog");
             Ui.MakeDraggable(this);
@@ -59,7 +59,7 @@ namespace RepRecorder
             // ⚠ 这一行必须 Wrap：StackPanel 的宽度取所有子元素里最宽的那个，
             //   一句不换行的长提示会把整块内容撑得比窗口还宽，ScrollViewer 就把右边裁掉
             //   （2026-10-08 截图看出来的 —— 连 OBS 路径都被切了一半）。
-            introText = Ui.Txt("", 12.5, MainForm.HudText, false);
+            introText = Ui.Txt("", 12.5, Palette.HudText, false);
             introText.TextWrapping = TextWrapping.Wrap;
             introText.MaxWidth = 570;
             col.Children.Add(introText);
@@ -67,7 +67,7 @@ namespace RepRecorder
             itemsHost = new StackPanel();
             col.Children.Add(itemsHost);
 
-            statusLine = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusLine = Ui.Txt("", 11.5, Palette.HudDim, false);
             statusLine.TextWrapping = TextWrapping.Wrap;
             statusLine.Margin = new Thickness(0, 8, 0, 0);
             Ui.Id(statusLine, "envStatus");
@@ -143,25 +143,25 @@ namespace RepRecorder
         {
             StackPanel sp = new StackPanel { Margin = new Thickness(0, 7, 0, 0) };
             StackPanel head = new StackPanel { Orientation = Orientation.Horizontal };
-            TextBlock mark = Ui.Txt(it.Ok ? "✓" : "✗", 12.5, it.Ok ? MainForm.HudAccent2 : MainForm.HudRed, true);
+            TextBlock mark = Ui.Txt(it.Ok ? "✓" : "✗", 12.5, it.Ok ? Palette.HudAccent2 : Palette.HudRed, true);
             mark.Width = 18;
             // 给验收脚本读的：text:<这个 id> 直接返回 "✓" / "✗"。
             // 卡上的内容原本是"弹出那一刻的事实"；2026-10-10 起后台查找落定后会重画
             // （见 Render），所以这个标记现在也可能中途从 ✗ 变成 ✓ —— 正是要能测这件事。
             Ui.Id(mark, "env_" + it.Key + "Mark");
             head.Children.Add(mark);
-            TextBlock name = Ui.Txt(it.Label, 12.5, MainForm.HudText, false);
+            TextBlock name = Ui.Txt(it.Label, 12.5, Palette.HudText, false);
             name.Width = 118;
             name.TextWrapping = TextWrapping.NoWrap;
             head.Children.Add(name);
-            TextBlock val = Ui.Txt(it.Value, 12.5, it.Ok ? MainForm.HudDim : MainForm.HudText, false);
+            TextBlock val = Ui.Txt(it.Value, 12.5, it.Ok ? Palette.HudDim : Palette.HudText, false);
             val.TextWrapping = TextWrapping.Wrap;
             val.MaxWidth = 420;
             head.Children.Add(val);
             sp.Children.Add(head);
             if (!it.Ok && !string.IsNullOrEmpty(it.Fix))
             {
-                TextBlock fix = Ui.Txt("　→ " + it.Fix, 11.5, MainForm.HudOrange, false);
+                TextBlock fix = Ui.Txt("　→ " + it.Fix, 11.5, Palette.HudOrange, false);
                 fix.TextWrapping = TextWrapping.Wrap;
                 fix.Margin = new Thickness(18, 2, 0, 0);
                 fix.MaxWidth = 550;
@@ -191,14 +191,14 @@ namespace RepRecorder
             SizeToContent = SizeToContent.Height;
             Width = 560;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "updateDialog");
             Ui.MakeDraggable(this);
 
             StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
             TextBlock head = Ui.Txt("发现新版本 v" + info.Version +
-                                    "（你现在是 v" + AppInfo.Version + "）", 13, MainForm.HudText, true);
+                                    "（你现在是 v" + AppInfo.Version + "）", 13, Palette.HudText, true);
             Ui.Id(head, "updateVersion");
             col.Children.Add(head);
 
@@ -209,13 +209,13 @@ namespace RepRecorder
             notes.TextWrapping = TextWrapping.Wrap;
             notes.MaxHeight = 220;
             notes.Margin = new Thickness(0, 10, 0, 0);
-            notes.Background = Ui.Br(MainForm.HudPanel2);
-            notes.Foreground = Ui.Br(MainForm.HudDim);
-            notes.BorderBrush = Ui.Br(MainForm.HudLine);
+            notes.Background = Ui.Br(Palette.HudPanel2);
+            notes.Foreground = Ui.Br(Palette.HudDim);
+            notes.BorderBrush = Ui.Br(Palette.HudLine);
             Ui.Id(notes, "updateNotes");
             col.Children.Add(notes);
 
-            statusLine = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusLine = Ui.Txt("", 11.5, Palette.HudDim, false);
             statusLine.TextWrapping = TextWrapping.Wrap;
             statusLine.Margin = new Thickness(0, 10, 0, 0);
             Ui.Id(statusLine, "updateStatus");
@@ -348,20 +348,20 @@ namespace RepRecorder
             SizeToContent = SizeToContent.Height;
             Width = 460;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "infoDialog");
             Ui.MakeDraggable(this);
 
             StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
 
-            TextBlock head = Ui.Txt(title, 13, MainForm.HudText, true);
+            TextBlock head = Ui.Txt(title, 13, Palette.HudText, true);
             Ui.Id(head, "infoTitle");
             col.Children.Add(head);
 
             // ⚠ 必须 Wrap（同 EnvBox 里那段说明）：StackPanel 取最宽子元素的宽度，
             //   一句不换行的长提示会把内容撑得比窗还宽、右边被裁掉。
-            TextBlock body = Ui.Txt(msg, 12, MainForm.HudDim, false);
+            TextBlock body = Ui.Txt(msg, 12, Palette.HudDim, false);
             body.TextWrapping = TextWrapping.Wrap;
             body.MaxWidth = 410;
             body.Margin = new Thickness(0, 10, 0, 0);
@@ -397,13 +397,13 @@ namespace RepRecorder
             SizeToContent = SizeToContent.Height;
             Width = 470;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "askDialog");
             Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
 
             StackPanel col = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
-            TextBlock tb = Ui.Txt(info, 12.5, MainForm.HudText, false);
+            TextBlock tb = Ui.Txt(info, 12.5, Palette.HudText, false);
             tb.TextWrapping = TextWrapping.Wrap;
             col.Children.Add(tb);
 
@@ -422,19 +422,9 @@ namespace RepRecorder
             for (int i = 0; i < 3; i++)
             {
                 int idx = i;
-                col.Children.Add(DlgButton(labels[i], ids[i], delegate { Choose(idx); }));
+                col.Children.Add(Ui.DlgButton(labels[i], ids[i], delegate { Choose(idx); }));
             }
             Content = col;
-        }
-
-        Button DlgButton(string text, string id, Action onClick)
-        {
-            Button b = Ui.FlatButton(text, id);
-            b.Height = 28;
-            b.HorizontalAlignment = HorizontalAlignment.Stretch;
-            b.Margin = new Thickness(0, 6, 0, 0);
-            b.Click += delegate { onClick(); };
-            return b;
         }
 
         void Choose(int idx)
@@ -444,11 +434,9 @@ namespace RepRecorder
             {
                 try
                 {
-                    System.Windows.Forms.FolderBrowserDialog d = new System.Windows.Forms.FolderBrowserDialog();
-                    d.Description = "视频保存到哪个文件夹？";
-                    if (!string.IsNullOrEmpty(last) && Directory.Exists(last)) d.SelectedPath = last;
-                    if (d.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-                    Picked = d.SelectedPath;
+                    string picked = FolderPicker.Pick("视频保存到哪个文件夹？", last);
+                    if (picked == null) return;      // null = 取消（或对话框出错），什么都不做
+                    Picked = picked;
                     Choice = 1;
                     Close();
                     return;
@@ -478,13 +466,13 @@ namespace RepRecorder
             SizeToContent = SizeToContent.Height;
             Width = 470;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "reRecordDialog");
             Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
 
             StackPanel col = new StackPanel { Margin = new Thickness(14, 12, 14, 12) };
-            TextBlock tb = Ui.Txt(info, 12.5, MainForm.HudText, false);
+            TextBlock tb = Ui.Txt(info, 12.5, Palette.HudText, false);
             // ⚠ 必须 Wrap（同 EnvBox/InfoBox 里那两处）：StackPanel 取最宽子元素的宽度，
             //   一句不换行的长文件名会把整个窗撑得比屏幕还宽、右边被裁掉。
             tb.TextWrapping = TextWrapping.Wrap;
@@ -501,7 +489,7 @@ namespace RepRecorder
             for (int i = 0; i < labels.Length; i++)
             {
                 int idx = i;
-                col.Children.Add(DlgButton(labels[i], ids[i], delegate { Choice = idx; Close(); }));
+                col.Children.Add(Ui.DlgButton(labels[i], ids[i], delegate { Choice = idx; Close(); }));
             }
             Content = col;
         }
@@ -558,7 +546,7 @@ namespace RepRecorder
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(196) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            TextBlock lb = Ui.Txt(label, 12.5, MainForm.HudText, false);
+            TextBlock lb = Ui.Txt(label, 12.5, Palette.HudText, false);
             lb.VerticalAlignment = VerticalAlignment.Center;
             lb.TextWrapping = TextWrapping.Wrap;
             lb.Margin = new Thickness(0, 0, 10, 0);
@@ -569,7 +557,7 @@ namespace RepRecorder
 
         void Hint(Grid g, string text)
         {
-            TextBlock h = Ui.Txt(text, 11, MainForm.HudDim, false);
+            TextBlock h = Ui.Txt(text, 11, Palette.HudDim, false);
             h.VerticalAlignment = VerticalAlignment.Center;
             h.Margin = new Thickness(8, 0, 0, 0);
             Grid.SetColumn(h, 2);
@@ -578,10 +566,10 @@ namespace RepRecorder
 
         void Section(StackPanel col, string title)
         {
-            TextBlock t = Ui.Txt(title, 12, MainForm.HudAccent, true);
+            TextBlock t = Ui.Txt(title, 12, Palette.HudAccent, true);
             t.Margin = new Thickness(0, 14, 0, 2);
             col.Children.Add(t);
-            Rectangle r = new Rectangle { Height = 1, Fill = Ui.Br(MainForm.HudLine), HorizontalAlignment = HorizontalAlignment.Stretch };
+            Rectangle r = new Rectangle { Height = 1, Fill = Ui.Br(Palette.HudLine), HorizontalAlignment = HorizontalAlignment.Stretch };
             r.Margin = new Thickness(0, 2, 0, 2);
             col.Children.Add(r);
         }
@@ -623,9 +611,9 @@ namespace RepRecorder
             TextBox tb = new TextBox();
             tb.Width = 120; tb.Height = 24;
             tb.FontFamily = new FontFamily("Consolas"); tb.FontSize = 12;
-            tb.Background = Ui.Br(MainForm.HudPanel2);
-            tb.Foreground = Ui.Br(MainForm.HudText);
-            tb.BorderBrush = Ui.Br(MainForm.HudLine);
+            tb.Background = Ui.Br(Palette.HudPanel2);
+            tb.Foreground = Ui.Br(Palette.HudText);
+            tb.BorderBrush = Ui.Br(Palette.HudLine);
             tb.Text = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
             Ui.Id(tb, "set_" + name);
             Field f = new Field();
@@ -646,9 +634,9 @@ namespace RepRecorder
             PasswordBox pb = new PasswordBox();
             pb.Width = 240; pb.Height = 24;
             pb.FontFamily = new FontFamily("Consolas"); pb.FontSize = 12;
-            pb.Background = Ui.Br(MainForm.HudPanel2);
-            pb.Foreground = Ui.Br(MainForm.HudText);
-            pb.BorderBrush = Ui.Br(MainForm.HudLine);
+            pb.Background = Ui.Br(Palette.HudPanel2);
+            pb.Foreground = Ui.Br(Palette.HudText);
+            pb.BorderBrush = Ui.Br(Palette.HudLine);
             pb.Password = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
             Ui.Id(pb, "set_" + name);
             Field f = new Field();
@@ -669,9 +657,9 @@ namespace RepRecorder
             TextBox tb = new TextBox();
             tb.Height = 24;
             tb.FontFamily = new FontFamily("Consolas"); tb.FontSize = 11.5;
-            tb.Background = Ui.Br(MainForm.HudPanel2);
-            tb.Foreground = Ui.Br(MainForm.HudText);
-            tb.BorderBrush = Ui.Br(MainForm.HudLine);
+            tb.Background = Ui.Br(Palette.HudPanel2);
+            tb.Foreground = Ui.Br(Palette.HudText);
+            tb.BorderBrush = Ui.Br(Palette.HudLine);
             tb.Text = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
             Ui.Id(tb, "set_" + name);
 
@@ -700,21 +688,19 @@ namespace RepRecorder
                 {
                     if (folder)
                     {
-                        System.Windows.Forms.FolderBrowserDialog d = new System.Windows.Forms.FolderBrowserDialog();
-                        d.Description = label;
-                        if (!string.IsNullOrEmpty(tb.Text) && Directory.Exists(tb.Text)) d.SelectedPath = tb.Text;
-                        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) tb.Text = d.SelectedPath;
+                        string picked = FolderPicker.Pick(label, tb.Text);
+                        if (picked != null) tb.Text = picked;
                     }
                     else
                     {
-                        System.Windows.Forms.OpenFileDialog d = new System.Windows.Forms.OpenFileDialog();
+                        Microsoft.Win32.OpenFileDialog d = new Microsoft.Win32.OpenFileDialog();
                         d.Filter = "程序|*.exe|所有文件|*.*";
                         if (!string.IsNullOrEmpty(tb.Text) && File.Exists(tb.Text))
                         {
                             d.InitialDirectory = System.IO.Path.GetDirectoryName(tb.Text);
                             d.FileName = System.IO.Path.GetFileName(tb.Text);
                         }
-                        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) tb.Text = d.FileName;
+                        if (d.ShowDialog() == true) tb.Text = d.FileName;
                     }
                 }
                 catch (Exception ex) { RepRecorder.Log.Write("选路径失败：" + ex.Message); }
@@ -735,7 +721,7 @@ namespace RepRecorder
             ResizeMode = ResizeMode.NoResize;
             Width = 640; Height = 620;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             Ui.Id(this, "settingsDialog");
             Ui.MakeDraggable(this);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
@@ -749,7 +735,7 @@ namespace RepRecorder
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
 
             StackPanel head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(18, 14, 18, 4) };
-            TextBlock title = Ui.Txt("设置", 13.5, MainForm.HudText, true);
+            TextBlock title = Ui.Txt("设置", 13.5, Palette.HudText, true);
             title.VerticalAlignment = VerticalAlignment.Center;
             head.Children.Add(title);
             Button auto = Ui.FlatButton("重新自动检测", "setAuto");
@@ -897,7 +883,7 @@ namespace RepRecorder
             SizeToContent = SizeToContent.Height;
             Width = 470;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            Background = Ui.Br(MainForm.HudBg);
+            Background = Ui.Br(Palette.HudBg);
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             Ui.Id(this, "bgDialog");
             Ui.MakeDraggable(this);         // 无边框窗口，要手动让它能拖
@@ -905,14 +891,14 @@ namespace RepRecorder
             StackPanel col = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
 
             StackPanel r0 = new StackPanel { Orientation = Orientation.Horizontal };
-            TextBlock lp = Ui.Txt("背景图片：", 12.5, MainForm.HudText, false);
+            TextBlock lp = Ui.Txt("背景图片：", 12.5, Palette.HudText, false);
             lp.Width = 96; lp.VerticalAlignment = VerticalAlignment.Center;
             txtPath = new TextBox();
             txtPath.Width = 240; txtPath.Height = 24;
             txtPath.FontFamily = new FontFamily("Consolas"); txtPath.FontSize = 11.5;
-            txtPath.Background = Ui.Br(MainForm.HudPanel2);
-            txtPath.Foreground = Ui.Br(MainForm.HudText);
-            txtPath.BorderBrush = Ui.Br(MainForm.HudLine);
+            txtPath.Background = Ui.Br(Palette.HudPanel2);
+            txtPath.Foreground = Ui.Br(Palette.HudText);
+            txtPath.BorderBrush = Ui.Br(Palette.HudLine);
             txtPath.Text = cfg.BgImage == null ? "" : cfg.BgImage;
             txtPath.TextChanged += delegate { cfg.BgImage = txtPath.Text; owner.ApplyBackground(); RefreshPanRows(); };
             Ui.Id(txtPath, "bgImage");
@@ -923,9 +909,9 @@ namespace RepRecorder
             {
                 try
                 {
-                    System.Windows.Forms.OpenFileDialog d = new System.Windows.Forms.OpenFileDialog();
+                    Microsoft.Win32.OpenFileDialog d = new Microsoft.Win32.OpenFileDialog();
                     d.Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*";
-                    if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                    if (d.ShowDialog() == true)
                     {
                         txtPath.Text = d.FileName;
                         cfg.BgImage = d.FileName;
@@ -1004,7 +990,7 @@ namespace RepRecorder
             // ---- 翻转（镜像）放最下面（用户 2026-10-07 要求）。
             //      和位移正交：镜像改的是「图本身」，位移改的是「图在框里的落点」。
             StackPanel rowFlip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            TextBlock lbFlip = Ui.Txt("翻转：", 12.5, MainForm.HudText, false);
+            TextBlock lbFlip = Ui.Txt("翻转：", 12.5, Palette.HudText, false);
             lbFlip.Width = 96; lbFlip.VerticalAlignment = VerticalAlignment.Center;
             rowFlip.Children.Add(lbFlip);
             CheckBox ckH = Ui.HudCheck("左右镜像", "bgFlipH", cfg.BgFlipH, 0);
@@ -1151,12 +1137,12 @@ namespace RepRecorder
                              Action<double> onChange, out Slider slOut)
         {
             StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            TextBlock lb = Ui.Txt(label, 12.5, MainForm.HudText, false);
+            TextBlock lb = Ui.Txt(label, 12.5, Palette.HudText, false);
             lb.Width = 96; lb.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(lb);
             Slider sl = Ui.HudSlider(min, max, val, id);
             slOut = sl;
-            TextBlock num = Ui.Txt(((int)val).ToString() + suffix, 12, MainForm.HudText, false);
+            TextBlock num = Ui.Txt(((int)val).ToString() + suffix, 12, Palette.HudText, false);
             num.Width = 44; num.Margin = new Thickness(8, 0, 0, 0);
             num.VerticalAlignment = VerticalAlignment.Center;
             sl.ValueChanged += delegate
@@ -1176,7 +1162,7 @@ namespace RepRecorder
         UIElement ComboRow(string label, UIElement combo)
         {
             StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-            TextBlock lb = Ui.Txt(label, 12.5, MainForm.HudText, false);
+            TextBlock lb = Ui.Txt(label, 12.5, Palette.HudText, false);
             lb.Width = 96; lb.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(lb);
             row.Children.Add(combo);

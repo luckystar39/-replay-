@@ -1,12 +1,32 @@
-OK   app alive  pid=34868
-OK   the "record again?" dialog opened  dialogs=1 waited=1
-OK   the prompt is in the log  
-OK   the debug port answers again after the prompt  waited=0
-OK   the dialog closed after No  dialogs=0
-OK   the skip is logged  
-OK   the row stayed in the queue  count=1
-OK   the row is now marked as already-recorded  status=已录制
-OK   the app is alive after answering  pid=34868
-OK   no exception in log  
+OK   again: app alive  pid=34824
+OK   again: the three-way dialog opened  
+OK   again: the prompt is in the log  
+OK   again: the dialog closed after the answer  q={"found":false}
+OK   again: the row stayed in the queue  count=1
+OK   again: the row status is the expected one  status=等待
+OK   again: the row says what was chosen  detail=你选了再录一次（旧的保留，新的另存）
+OK   again: the choice is logged  
+OK   again: the existing video is still on disk  
+OK   again: no exception in log  
+OK   overwrite: app alive  pid=17096
+OK   overwrite: the three-way dialog opened  
+OK   overwrite: the prompt is in the log  
+OK   overwrite: the dialog closed after the answer  q={"found":false}
+OK   overwrite: the row stayed in the queue  count=1
+OK   overwrite: the row status is the expected one  status=等待
+OK   overwrite: the row says what was chosen  detail=你选了重录（会覆盖原视频）
+OK   overwrite: the choice is logged  
+OK   overwrite: the existing video is still on disk  
+OK   overwrite: no exception in log  
+OK   skip: app alive  pid=25732
+OK   skip: the three-way dialog opened  
+OK   skip: the prompt is in the log  
+OK   skip: the dialog closed after the answer  q={"found":false}
+OK   skip: the row stayed in the queue  count=1
+OK   skip: the row status is the expected one  status=已录制
+OK   skip: the row says what was chosen  detail=已有视频（你选择跳过）
+OK   skip: the choice is logged  
+OK   skip: the existing video is still on disk  
+OK   skip: no exception in log  
 settings restored
 PASS

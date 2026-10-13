@@ -132,6 +132,13 @@ namespace RepRecorder
         // 所以滑块拉到头时改用这个精确值来渲染，中间位置仍然按整数走。
         double panXExact, panYExact;
 
+        // 标题栏那几个自绘按钮的字体/模板、终端用的等宽字体：都只建一次。
+        // （CapButton 每个标题栏按钮都会建一遍，以前各自 XamlReader.Parse 一次模板；
+        //   等宽字体在 LogCharW 那条热路径上也被反复 new 过。）
+        static readonly FontFamily capButtonFont = new FontFamily("Microsoft YaHei UI, Microsoft YaHei, Segoe UI");
+        static readonly FontFamily logMonoFont = new FontFamily("Consolas, Courier New");
+        static ControlTemplate capButtonTemplate;
+
         System.Windows.Threading.DispatcherTimer soundTimer;
 
         public double PanelWidthNow { get { return colLeft == null ? 0 : colLeft.Width.Value; } }
@@ -154,10 +161,9 @@ namespace RepRecorder
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
             Width = 1180; Height = 648;                 // DIP：和旧版的逻辑像素一样大
-            // 旧版 WinForms 里有一句 MinimumSize = new Size(760, 520)（Core.cs 的 MainForm），
-            // 目的是「窗口缩小也不会漏掉按钮」。搬到 WPF 时漏了这一句 —— 能一路拖到只剩几百像素，
-            // 左栏五张卡片被挤成一条缝。旧版那套是 DPI 不感知的，760×520 就是逻辑像素，
-            // WPF 这边同样是 DIP，所以数值直接照搬。
+            // MinimumSize 760×520：目的是「窗口缩小也不会漏掉按钮」。这个数是从旧界面照搬的
+            // （它按逻辑像素布局，WPF 这边是 DIP，量纲一致）。曾经漏过这一句 —— 能一路拖到
+            // 只剩几百像素，左栏五张卡片被挤成一条缝。
             MinWidth = 760; MinHeight = 520;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Background = Ui.Base;                       // 跟着「面板暗化」走的窗口底色
@@ -185,7 +191,15 @@ namespace RepRecorder
 
             Content = BuildRoot();
             if (cfg != null && cfg.PanelCollapsed) SetPanelCollapsed(true);
-            SizeChanged += delegate { ApplyBackground(); };
+            // 走和 bgLayer.SizeChanged 同一条路（QueueBackgroundReapply），让**一次布局只算一遍背景**。
+            // 2026-10-12 实测：以前这里是直接 ApplyBackground()，于是窗口尺寸一变，
+            // 这一句先算一遍、紧接着 bgLayer.SizeChanged 排的那次又算一遍 ——
+            //   最大化/还原一次 = 2 次；分步改尺寸每步 2.00 次（实测 10 步共 20 次）。
+            // （快速连续拖动时 `bgReapplyQueued` 那个合并排队已经吃掉大部分重复，实测每步 1.07 次，
+            //   所以这条改动的收益主要在"最大化/还原/吸附/慢拖"这些离散场合。）
+            // 仍然从窗口的 SizeChanged 走一遍、而不是干脆删掉这句：万一有"窗口变了但 bgLayer 没变"
+            // 的场合，这条还能兜底；重复时由 bgReapplyQueued 合并掉。
+            SizeChanged += delegate { QueueBackgroundReapply(); };
             SourceInitialized += delegate
             {
                 HwndSource src = (HwndSource)PresentationSource.FromVisual(this);
@@ -228,7 +242,7 @@ namespace RepRecorder
             StackPanel left = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(22, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             // 横向 StackPanel 会把子元素拉满整行高度，而 TextBlock 默认贴着自己盒子的顶部画字，
             // 所以标题看着"顶在上面"。单独把它垂直居中。
-            TextBlock title = Ui.Txt("REP → MP4  录制器   (OBS)   v" + AppInfo.Version, 13, MainForm.HudText, true);
+            TextBlock title = Ui.Txt("REP → MP4  录制器   (OBS)   v" + AppInfo.Version, 13, Palette.HudText, true);
             title.VerticalAlignment = VerticalAlignment.Center;
             left.Children.Add(title);
             btnPanel = Ui.FlatButton("◀  收起面板", "btnPanel");
@@ -261,7 +275,7 @@ namespace RepRecorder
             // 用 Border 的边框画：边框画在边界【内侧】，所以这个 Border 总高 = TopBarH(37)
             // 时，里面正好剩 36 给 bar、最底下 1px 是线。
             Border wrap = new Border();
-            wrap.BorderBrush = Ui.Br(MainForm.HudLine);
+            wrap.BorderBrush = Ui.Br(Palette.HudLine);
             wrap.BorderThickness = new Thickness(0, 0, 0, 1);
             wrap.Child = bar;
             return wrap;
@@ -272,13 +286,15 @@ namespace RepRecorder
             Button b = new Button();
             b.Content = glyph;
             b.Width = 46; b.Height = CaptionH;
-            b.Foreground = Ui.Br(MainForm.HudText);
+            b.Foreground = Ui.Br(Palette.HudText);
             b.Background = Brushes.Transparent;
             b.BorderThickness = new Thickness(0);
-            b.FontFamily = new FontFamily("Microsoft YaHei UI, Microsoft YaHei, Segoe UI");
+            b.FontFamily = capButtonFont;
             b.FontSize = 13;
             b.Cursor = Cursors.Hand;
-            b.Template = (ControlTemplate)XamlReader.Parse(CapButtonXaml);
+            // 模板只解析一次（CapButton 每个标题栏按钮都要建一遍）
+            if (capButtonTemplate == null) capButtonTemplate = (ControlTemplate)XamlReader.Parse(CapButtonXaml);
+            b.Template = capButtonTemplate;
             b.Click += delegate { onClick(); };
             Ui.Id(b, id);
             WindowChrome.SetIsHitTestVisibleInChrome(b, true);
@@ -371,7 +387,7 @@ namespace RepRecorder
         {
             activityBar = new Border();
             activityBar.Background = Ui.Scrim;               // 同上
-            activityBar.BorderBrush = Ui.Br(MainForm.HudLine);
+            activityBar.BorderBrush = Ui.Br(Palette.HudLine);
             activityBar.BorderThickness = new Thickness(0, 0, 1, 0);
             activityBar.Visibility = Visibility.Collapsed;
             Ui.Id(activityBar, "activityBar");
@@ -519,16 +535,16 @@ namespace RepRecorder
 
             // ① 录制
             btnStart = Ui.FlatButton("▶", "开始录制", "btnStart");
-            btnStart.Background = Ui.Br(MainForm.HudOn);
+            btnStart.Background = Ui.Br(Palette.HudOn);
             btnStart.Height = 26; btnStart.HorizontalAlignment = HorizontalAlignment.Stretch;
             btnStop = Ui.FlatButton("■", "停止", "btnStop");
-            btnStop.Background = Ui.Br(MainForm.HudOff);
+            btnStop.Background = Ui.Br(Palette.HudOff);
             btnStop.Height = 26; btnStop.HorizontalAlignment = HorizontalAlignment.Stretch; btnStop.Margin = new Thickness(0, 6, 0, 0);
             leftCol.Children.Add(Ui.Card("录 制", "◉", new StackPanel { Children = { btnStart, btnStop } }, "cardRecord", 8));
 
             // ② 并行
             StackPanel par = new StackPanel();
-            TextBlock lblPar = Ui.Txt("同时录制数量：", 12.5, MainForm.HudText, false);
+            TextBlock lblPar = Ui.Txt("同时录制数量：", 12.5, Palette.HudText, false);
             lblPar.FontWeight = FontWeights.Bold;
             lblPar.VerticalAlignment = VerticalAlignment.Center;
             string[] nums = { "1", "2", "3", "4", "5", "6" };
@@ -571,13 +587,13 @@ namespace RepRecorder
             snd.Children.Add(btnSound);
             snd.Children.Add(Ui.Note("本机静音，录像里照样有声音", null, 2));
             btnGameAudio = Ui.FlatButton("🔊 录打击音效：开 ✓", "btnGameAudio");
-            btnGameAudio.Foreground = Ui.Br(MainForm.HudAccent2);
+            btnGameAudio.Foreground = Ui.Br(Palette.HudAccent2);
             btnGameAudio.HorizontalAlignment = HorizontalAlignment.Left; btnGameAudio.Margin = new Thickness(0, 4, 0, 0);
             snd.Children.Add(btnGameAudio);
             btnBgm = Ui.FlatButton(cfg != null && cfg.RecordBgm ? "录BGM：开 ✓" : "录BGM：关 ✕", "btnBgm");
             btnBgm.HorizontalAlignment = HorizontalAlignment.Left; btnBgm.Margin = new Thickness(0, 4, 0, 0);
             snd.Children.Add(btnBgm);
-            TextBlock lblMic = Ui.Txt("录音模式：", 12.5, MainForm.HudText, false);
+            TextBlock lblMic = Ui.Txt("录音模式：", 12.5, Palette.HudText, false);
             lblMic.VerticalAlignment = VerticalAlignment.Center;
             cbMic = Ui.HudCombo("cbMic", 150, new string[] { "只录游戏声音", "游戏 + 麦克风" }, MicIndex());
             snd.Children.Add(Ui.Row(6, lblMic, cbMic));
@@ -611,14 +627,14 @@ namespace RepRecorder
             //   Ui.Env() 一直在往一个 null 里写（编译器一直在报 CS0649，被编译脚本的过滤挡掉了）。
             //   结果就是：**这台机器缺什么，界面上一个字都不显示**，只能去翻日志。
             //   2026-10-08 把它挂进「环 境」这张卡里 —— 这是它本来就该在的地方。
-            statusEnv = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            statusEnv = Ui.Txt("", 11.5, Palette.HudDim, false);
             statusEnv.TextWrapping = TextWrapping.Wrap;
             statusEnv.Margin = new Thickness(0, 6, 0, 0);
             Ui.Id(statusEnv, "envLine");
             env.Children.Add(statusEnv);
             leftCol.Children.Add(Ui.Card("环 境", "▍", env, "cardEnv", 8));
 
-            hintText = Ui.Txt("", 12, MainForm.HudAccent, false);
+            hintText = Ui.Txt("", 12, Palette.HudAccent, false);
             hintText.Margin = new Thickness(2, 0, 0, 0);
             Ui.Id(hintText, "hint");
             hintText.Visibility = Visibility.Collapsed;
@@ -721,7 +737,7 @@ namespace RepRecorder
             string[] names = { "#", "文件", "状态", "用时", "大小", "说明" };
             for (int i = 0; i < names.Length; i++)
             {
-                TextBlock tb = Ui.Txt(names[i], 12.5, MainForm.HudText, true);
+                TextBlock tb = Ui.Txt(names[i], 12.5, Palette.HudText, true);
                 tb.FontWeight = FontWeights.Bold;
                 tb.Margin = new Thickness(i == 0 ? 8 : 4, 0, 0, 0);
                 tb.VerticalAlignment = VerticalAlignment.Center;
@@ -729,7 +745,7 @@ namespace RepRecorder
                 Grid.SetColumn(tb, i);
                 head.Children.Add(tb);
             }
-            Rectangle hline = new Rectangle { Height = 1, Fill = Ui.Br(MainForm.HudLine), VerticalAlignment = VerticalAlignment.Bottom };
+            Rectangle hline = new Rectangle { Height = 1, Fill = Ui.Br(Palette.HudLine), VerticalAlignment = VerticalAlignment.Bottom };
             Grid.SetColumnSpan(hline, 6);
             head.Children.Add(hline);
             wrap.Children.Add(head);
@@ -738,7 +754,7 @@ namespace RepRecorder
             queueList = new ListBox();
             queueList.Background = Brushes.Transparent;
             queueList.BorderThickness = new Thickness(0);
-            queueList.Foreground = Ui.Br(MainForm.HudText);
+            queueList.Foreground = Ui.Br(Palette.HudText);
             queueList.SelectionMode = SelectionMode.Extended;
             queueList.ItemsSource = rows;
             queueList.ItemTemplate = (DataTemplate)XamlReader.Parse(ListRowXaml);
@@ -762,9 +778,9 @@ namespace RepRecorder
 
             marqueeLayer = new Canvas { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
             marqueeRect = new Rectangle();
-            marqueeRect.Stroke = Ui.Br(MainForm.HudAccent);
+            marqueeRect.Stroke = Ui.Br(Palette.HudAccent);
             marqueeRect.StrokeThickness = 1;
-            marqueeRect.Fill = Ui.Br(MainForm.HudAccent, 0x3C);
+            marqueeRect.Fill = Ui.Br(Palette.HudAccent, 0x3C);
             marqueeLayer.Children.Add(marqueeRect);
             body.Children.Add(marqueeLayer);
 
@@ -800,25 +816,9 @@ namespace RepRecorder
         // HudScrollBarXaml 里那个 Width 哪天改了，这里也不会对不上。
         double QueueBarWidth()
         {
-            ScrollBar sb = FindVerticalBar(queueScroll);
+            ScrollBar sb = Ui.FindVerticalScrollBar(queueScroll);   // 以前这里另有一份一模一样的实现
             if (sb != null && sb.ActualWidth > 0) return sb.ActualWidth;
             return 10;
-        }
-
-        static ScrollBar FindVerticalBar(DependencyObject root)
-        {
-            if (root == null) return null;
-            int n = 0;
-            try { n = VisualTreeHelper.GetChildrenCount(root); } catch { return null; }
-            for (int i = 0; i < n; i++)
-            {
-                DependencyObject c = VisualTreeHelper.GetChild(root, i);
-                ScrollBar sb = c as ScrollBar;
-                if (sb != null && sb.Orientation == Orientation.Vertical) return sb;
-                ScrollBar r = FindVerticalBar(c);
-                if (r != null) return r;
-            }
-            return null;
         }
 
         static T FindChild<T>(DependencyObject root) where T : DependencyObject
@@ -1025,9 +1025,11 @@ namespace RepRecorder
             // 命中集合和上一帧一样就什么都别做。
             // ⚠ 这是"蓝色框不停闪烁"的根源（2026-10-05 用户报的，旧版也有类似的）：
             //   以前鼠标每移动一点点都 Clear + 重加一遍选中，于是 SelectionChanged 连锁触发
-            //   → SyncParallelCountToSelection → HighlightBatchRows → queueList.Items.Refresh()，
+            //   → SyncParallelCountToSelection → HighlightBatchRows →（那时是）queueList.Items.Refresh()，
             //   整个列表的容器每移一像素就重建一次，蓝色框和整列都在闪。
             //   顺带还省掉了每次移动都写一遍设置文件（数量跟随会 cfg.Save()）。
+            //   2026-10-12 那半条根也拔了：RowVm 现在实现 INotifyPropertyChanged，
+            //   HighlightBatchRows 只通知变化的那几行，不再重建整张表。
             if (SameHits(hit)) return;
             marqueeHit.Clear();
             marqueeHit.AddRange(hit);
@@ -1070,7 +1072,7 @@ namespace RepRecorder
             hdr.Background = Brushes.Transparent;
             hdr.BorderThickness = new Thickness(0);
             Grid hdrIn = new Grid();
-            TextBlock arrow = Ui.Txt("▼ 收起", 11.5, MainForm.HudDim, false);
+            TextBlock arrow = Ui.Txt("▼ 收起", 11.5, Palette.HudDim, false);
             // 靠左，和这张卡片的标题「▍ 终端 / STDOUT」同一个 x（2026-10-05 用户要求）。
             // 卡片内容区的左内边距是 12，卡片标题在 12+2 的地方，所以这里给 2。
             arrow.Margin = new Thickness(2, 0, 0, 0);
@@ -1079,7 +1081,7 @@ namespace RepRecorder
             Ui.Id(arrow, "logHeaderArrow");
             logHeaderArrow = arrow;
             hdrIn.Children.Add(arrow);
-            TextBlock tail = Ui.Txt("", 11.5, MainForm.HudDim, false);
+            TextBlock tail = Ui.Txt("", 11.5, Palette.HudDim, false);
             tail.HorizontalAlignment = HorizontalAlignment.Right;
             tail.Margin = new Thickness(0, 0, 10, 0);
             tail.VerticalAlignment = VerticalAlignment.Center;
@@ -1094,8 +1096,8 @@ namespace RepRecorder
             logList = new ListBox();
             logList.Background = Brushes.Transparent;
             logList.BorderThickness = new Thickness(0);
-            logList.Foreground = Ui.Br(MainForm.HudLog);
-            logList.FontFamily = new FontFamily("Consolas, Courier New");
+            logList.Foreground = Ui.Br(Palette.HudLog);
+            logList.FontFamily = logMonoFont;
             logList.FontSize = 12.5;
             logList.ItemsSource = logLines;
             logList.ItemTemplate = (DataTemplate)XamlReader.Parse(LogLineXaml);
@@ -1226,22 +1228,34 @@ namespace RepRecorder
 
         // 终端是按"字符个数"手工折行的，折多宽取决于当时的宽度。窗口一变宽，
         // 之前按窄宽度折好的那些行还留在列表里 —— 右边白白空一大块。
-        // 旧版 WinForms 在 OnSizeChanged 里做了重排，移植时漏了。
         // 只在宽度真的变了才重排（拖边框会连着触发很多次）。
+        //
+        // 2026-10-12 再加一层防抖：拖边框时宽度每帧都在变，而"宽度变了就排一次"等于
+        // 每帧都对最多 2000 条原始行做一遍全量重折行 —— 终端攒到几百上千行时，
+        // 拖窗口就能看出卡顿、发白。现在改成"每次变化都重新计时，停手 150ms 之后才真排"，
+        // 拖动过程中一次都不排。
         void OnLogResized(object sender, SizeChangedEventArgs e)
         {
             int w = LogTextWidth();
             if (w == wrapWidth) return;
             wrapWidth = w;
             if (logRaw.Count == 0) return;
-            bool atBottom = AtLogBottom();
-            Dispatcher.BeginInvoke(new Action(delegate
+            if (logWrapTimer == null)
             {
-                if (logRaw.Count == 0) return;
-                RebuildLogLines(atBottom);
-            }));
+                logWrapTimer = new System.Windows.Threading.DispatcherTimer();
+                logWrapTimer.Interval = TimeSpan.FromMilliseconds(150);
+                logWrapTimer.Tick += delegate
+                {
+                    logWrapTimer.Stop();          // 停拖之后只排这一次
+                    if (logRaw.Count == 0) return;
+                    RebuildLogLines(AtLogBottom());   // 是否滚到底要在"排的时候"判断，不是变化的时候
+                };
+            }
+            logWrapTimer.Stop();
+            logWrapTimer.Start();
         }
 
+        System.Windows.Threading.DispatcherTimer logWrapTimer;
         int wrapWidth = -1;
 
         List<string> WrapLogLine(string s)
@@ -1287,7 +1301,7 @@ namespace RepRecorder
         {
             int w;
             if (logCharW.TryGetValue(c, out w)) return w;
-            TextBlock tb = new TextBlock { Text = c.ToString(), FontFamily = new FontFamily("Consolas, Courier New"), FontSize = 12.5 };
+            TextBlock tb = new TextBlock { Text = c.ToString(), FontFamily = logMonoFont, FontSize = 12.5 };
             tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             w = Math.Max(1, (int)Math.Ceiling(tb.DesiredSize.Width));
             logCharW[c] = w;
@@ -1381,7 +1395,9 @@ namespace RepRecorder
             j.Status = status;
             j.Detail = detail;
             FillRow(r, j);
-            try { queueList.Items.Refresh(); } catch { }
+            // 这里以前有一句 queueList.Items.Refresh()（整表重建容器）。
+            // 2026-10-12 RowVm 实现了 INotifyPropertyChanged，FillRow 改到哪个属性就通知哪一行，
+            // 不再需要重建整张表。
         }
 
         public void RemoveRow(Job j)
@@ -1393,8 +1409,8 @@ namespace RepRecorder
 
         public void RenumberRows()
         {
+            // 只改 Index —— RowVm 的 INPC 会逐行通知，不再整表 Refresh（这里原来有一句）。
             for (int i = 0; i < rows.Count; i++) rows[i].Index = (i + 1).ToString();
-            try { queueList.Items.Refresh(); } catch { }
         }
 
         public void ClearSelection()
@@ -1404,19 +1420,17 @@ namespace RepRecorder
 
         public void HighlightBatchRows(List<Job> batch)
         {
-            // 先算出新的绿色集合，**只有真的变了**才 Refresh。
-            // Items.Refresh() 是整表重建容器 —— 框选拖动时每帧都调就是那阵闪烁。
-            List<RowVm> want = new List<RowVm>();
-            if (batch != null && batch.Count > 0)
-                foreach (RowVm r in rows) if (batch.Contains(r.Job)) want.Add(r);
-            bool changed = false;
+            // 改 HashSet：原来两边都用 List.Contains，整体是 O(行数×批大小) ——
+            // 队列几百行、本批几十个的时候，标记一次就能看出来一顿。Job 是引用类型，
+            // 默认比较就是引用相等，正合用（别给它加 Equals/GetHashCode 覆写）。
+            HashSet<Job> inBatch = new HashSet<Job>();
+            if (batch != null) foreach (Job j in batch) inBatch.Add(j);
+
+            // 只标变化的那几行 —— RowVm 的 INPC 会自己通知，不再整表 Refresh。
+            // （以前这里靠"只有真的变了才 Items.Refresh()"把闪烁压下去，那是在治症状：
+            //   框选拖动时每帧都调 Refresh 重建整张表就是那阵闪烁的根。）
             foreach (RowVm r in rows)
-            {
-                bool b = want.Contains(r);
-                if (r.Batch != b) { r.Batch = b; changed = true; }
-            }
-            if (!changed) return;
-            try { queueList.Items.Refresh(); } catch { }
+                r.Batch = inBatch.Contains(r.Job);
         }
 
         public void ScrollRowsIntoView(Job j)
@@ -1446,9 +1460,9 @@ namespace RepRecorder
             Ui.SetButtonText(id, text);
             Ui.Post(delegate
             {
-                Ui.SetButtonBackColor(id, on ? MainForm.HudOn : MainForm.HudOff);
-                Ui.SetButtonForeColor(id, on ? MainForm.HudText : MainForm.HudDim);
-                Ui.SetButtonBorderColor(id, MainForm.HudLine);
+                Ui.SetButtonBackColor(id, on ? Palette.HudOn : Palette.HudOff);
+                Ui.SetButtonForeColor(id, on ? Palette.HudText : Palette.HudDim);
+                Ui.SetButtonBorderColor(id, Palette.HudLine);
             });
         }
 
@@ -1471,7 +1485,7 @@ namespace RepRecorder
             Ui.Id(bgClip, "bgClip");
 
             bgLayer = new Rectangle();
-            bgLayer.Fill = Ui.Br(MainForm.HudBg);
+            bgLayer.Fill = Ui.Br(Palette.HudBg);
             Ui.Id(bgLayer, "bgLayer");
             // ⚠ 图层尺寸一变就必须重算背景 —— 这是【通用】兜底，别再逐个调用点去补。
             //   背景的尺寸/位移是靠画刷视口做的，视口尺寸 = bgLayer.ActualWidth。
@@ -1518,7 +1532,7 @@ namespace RepRecorder
                 }
                 else if (string.IsNullOrEmpty(cfg.BgImage))
                 {
-                    bgLayer.Fill = Ui.Br(MainForm.HudBg);
+                    bgLayer.Fill = Ui.Br(Palette.HudBg);
                     bgLoadedKey = null;
                 }
 
@@ -1604,7 +1618,16 @@ namespace RepRecorder
                         ib.RelativeTransform = new ScaleTransform(cfg.BgFlipH ? -1 : 1, cfg.BgFlipV ? -1 : 1, 0.5, 0.5);
                     else ib.RelativeTransform = Transform.Identity;
                 }
-                else bgViewport = Rect.Empty;
+                else
+                {
+                    bgViewport = Rect.Empty;
+                    // 没图了，量程要归位：量程（PanXNow/PanYNow）只在 ComputePanRange 里更新，
+                    // 而那个只在"有背景图"时才被调 —— 不在这里清掉的话，背景设置窗里
+                    // 「位置 X/Y」两根滑杆会留着上一张图的量程：看着能拖，拖了没有任何效果。
+                    // （下面 tile 与"算不出渲染尺寸"那两处分支本来就是这么归位的。）
+                    PanXNow = PanYNow = 0;
+                    panXExact = panYExact = 0;
+                }
                 bgLayer.RenderTransform = Transform.Identity;   // 图层自己不动
 
                 if (cfg.BgBlur > 0)
@@ -1845,7 +1868,7 @@ namespace RepRecorder
             if (btnBgm != null) btnBgm.Click += delegate { rec.UiToggleBgm(); };
             if (btnBg != null) btnBg.Click += delegate { Ui.ShowBackgroundDialog(); };
 
-            // 旧版 MainForm 里 list.ItemSelectionChanged 那根线（选中几个 → 「同时录制数量」跟着变）
+            // 列表里选中几个 rep → 「同时录制数量」跟着变（用户要求的那根线）
             if (queueList != null) queueList.SelectionChanged += delegate { rec.UiOnSelectionChanged(); };
 
             if (chkPrepare != null) chkPrepare.Click += delegate { if (cfg != null) { cfg.AutoPrepareObs = chkPrepare.IsChecked == true; cfg.Save(); } };
@@ -1895,17 +1918,17 @@ namespace RepRecorder
             soundTimer.Tick += delegate { try { rec.UiRefreshSoundButtons(); } catch { } try { rec.UiTick(); } catch { } };
             soundTimer.Start();
 
-            // 旧版这段挂在 MainForm 的 Shown 事件上。移植时改成了"构造完直接调" —— 那时候
-            // 可视树还没建起来，Ui 门面里"按 AutomationId 找控件再赋值"的那些（按钮宽度、
-            // 前景/背景色）会**全部静默落空**；等两秒后声音状态定时器第一次跑才真正生效，
-            // 于是看起来就是"开软件后控制面板里的声音按钮闪一下"（2026-10-05 用户报的）。
+            // 为什么必须挂在 Loaded 上（而不是构造完直接调）：构造完那一刻可视树还没建起来，
+            // Ui 门面里"按 AutomationId 找控件再赋值"的那些（按钮宽度、前景/背景色）会
+            // **全部静默落空**；要等两秒后声音状态定时器第一次跑才真正生效，于是看起来就是
+            // "开软件后控制面板里的声音按钮闪一下"（2026-10-05 用户报的）。
             // 挂到 Loaded 上，在第一次绘制之前就把状态设好，就不会有这一下。
             if (!IsLoaded) Loaded += delegate { rec.UiOnShown(args); };
             else rec.UiOnShown(args);
         }
 
         // 关窗口要先问录制逻辑：还在录的话不能直接退，否则 OBS 会一直在后台录下去。
-        // 旧版是 MainForm 的 FormClosing += OnFormClosing（Core.cs），移植时整块漏了。
+        // 这一段曾经整块漏掉过 —— 后果是关窗后 OBS 还在后台一直录。
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             try
@@ -1973,7 +1996,7 @@ namespace RepRecorder
         // ColorTranslator 正好干这个转换，而且和旧版 Core.cs:2609 用的是同一个调用。
         static int HudPanelColorRef()
         {
-            return System.Drawing.ColorTranslator.ToWin32(MainForm.HudPanel);
+            return System.Drawing.ColorTranslator.ToWin32(Palette.HudPanel);
         }
 
         IntPtr Hook(IntPtr hwnd, int msg, IntPtr w, IntPtr l, ref bool handled)

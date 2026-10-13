@@ -1,12 +1,13 @@
 // ============================================================
-//  Ui.cs —— WPF 界面层（新写的那一半）
+//  Ui.cs —— 界面层的公共件
 //
-//  阶段 0.3 只做「壳」：无边框窗口 + 顶栏/左栏/右栏/底栏骨架 + 背景图层 +
-//  调色板（直接引用 MainForm.Hud* 那几个常量，保证和旧版是同一个真源，阶段 5
-//  再把它们搬过来）。数据、卡片内容、列表、终端都在后面的阶段填。
+//  这里是界面层的地基：Ui.Start 入口、DPI 感知、把 System.Drawing.Color 转成 WPF 画刷、
+//  卡片/按钮/勾选框/下拉框/滚动条的模板，以及"录制逻辑能调界面"的那套门面方法
+//  （Recorder 里只认 Ui.xxx，它不碰任何控件类型）。
 //
-//  跑法：RepRecorderWPF.exe --wpf      （不带 --wpf 还是旧的那套 WinForms）
-//  参考实现：D:\WPF样机\WpfProbe.cs（已实测：缩放 9.2ms/步、DPI 感知不糊、最大化不盖任务栏）
+//  窗口壳在 UiWindow.cs / UiShell.cs，三个对话框在 UiDialogs.cs，颜色常量在 Palette.cs。
+//
+//  跑法：RepRecorderWPF.exe      （2026-10-12 起只有 WPF 版；旧版的 --old 已删）
 // ============================================================
 using System;
 using System.Collections.Generic;
@@ -54,8 +55,8 @@ namespace RepRecorder
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
                 Recorder rec = new Recorder(cfg);
                 ShellWindow win = new ShellWindow(cfg, rec);
-                // ⚠ 旧版 MainForm 的构造函数里订阅了 Log.OnLine，终端面板才能实时显示日志。
-                //   这一段搬过来时漏了 —— 结果日志只进文件、面板一直空着（冒烟测试截图里看出来的）。
+                // 终端面板要实时显示日志，靠的就是这一句订阅。（迁移时漏过一次，
+                //   表现是日志只进文件、面板一直空着 —— 冒烟测试截图里看出来的。）
                 RepRecorder.Log.OnLine += delegate(string line) { Ui.Log(line); };
                 DebugPort.TryStart(args, win);       // 只有带 --debug-port=<端口> 时才起
                 win.HookRecorder(args);              // 按钮/拖放/定时器接到录制逻辑上
@@ -69,9 +70,10 @@ namespace RepRecorder
         }
 
         // DPI 感知：**运行时设**，不要写进 manifest。
-        //   manifest 是整个 exe 生效的，而迁移期间同一个 exe 里还跑着旧的 WinForms 界面 ——
-        //   那套界面是按"DPI 不感知"布局的，一旦变感知，在 300% 屏上会缩成原来的 1/3。
-        //   所以只有走 WPF 这条路时才设，而且必须在创建任何窗口之前。
+        //   当初不写 manifest 是因为迁移期间同一个 exe 里还跑着按"DPI 不感知"布局的旧界面
+        //   （整进程一变感知，那套界面在 300% 屏上会缩成 1/3）。旧界面 2026-10-12 已删，
+        //   但运行时设这条路继续留着：它比 manifest 好回退 —— 设失败只是退回 system-aware，
+        //   功能不受影响；manifest 设错了没救。而且必须在创建任何窗口之前。
         static void MakeDpiAware()
         {
             // -4 = DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
@@ -106,31 +108,37 @@ namespace RepRecorder
         }
 
         // ---------------------------------------------------------------- 调色板
-        // 和旧版共用 MainForm 里那几个常量（同一个真源，免得两边颜色慢慢跑偏）。
-        // 阶段 5 会把它们搬到这里，旧界面一删就没人引用了。
-        public static SolidColorBrush Br(Drawing.Color c)
+        // 颜色常量全部集中在 Palette.cs（2026-10-12 从旧界面的 MainForm 里搬出来，值一个没改）。
+        // 这里只负责把 System.Drawing.Color 转成冻结的 WPF 画刷。
+        // 画刷缓存：颜色是有限常量集（Palette 那 19 个 + 几个 alpha 变体），而 Br() 在绘制、
+        // 悬停、状态刷新里被高频调用。键 = (alpha<<24)|RGB，所有画刷都 Freeze 过，跨控件共享安全。
+        // ⚠ 单参那个重载保留原语义：跟着 c.A 走，不硬套 255。
+        static readonly Dictionary<int, SolidColorBrush> brushCache = new Dictionary<int, SolidColorBrush>();
+        public static SolidColorBrush Br(Drawing.Color c) { return BrCached(c.A, c); }
+        public static SolidColorBrush Br(Drawing.Color c, byte alpha) { return BrCached(alpha, c); }
+        static SolidColorBrush BrCached(byte a, Drawing.Color c)
         {
-            SolidColorBrush b = new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));
+            int key = (a << 24) | (c.R << 16) | (c.G << 8) | c.B;
+            SolidColorBrush b;
+            if (brushCache.TryGetValue(key, out b)) return b;
+            b = new SolidColorBrush(Color.FromArgb(a, c.R, c.G, c.B));
             b.Freeze();
+            brushCache[key] = b;
             return b;
         }
-        public static SolidColorBrush Br(Drawing.Color c, byte alpha)
-        {
-            SolidColorBrush b = new SolidColorBrush(Color.FromArgb(alpha, c.R, c.G, c.B));
-            b.Freeze();
-            return b;
-        }
-        static Drawing.Color CBg { get { return MainForm.HudBg; } }
-        static Drawing.Color CPanel { get { return MainForm.HudPanel; } }
-        static Drawing.Color CPanel2 { get { return MainForm.HudPanel2; } }
-        static Drawing.Color CLine { get { return MainForm.HudLine; } }
-        static Drawing.Color CLineDim { get { return MainForm.HudLineDim; } }
-        static Drawing.Color CCorner { get { return MainForm.HudCorner; } }
-        static Drawing.Color CText { get { return MainForm.HudText; } }
-        static Drawing.Color CDim { get { return MainForm.HudDim; } }
-        static Drawing.Color CAccent { get { return MainForm.HudAccent; } }
-        static Drawing.Color CAccent2 { get { return MainForm.HudAccent2; } }
-        static FontFamily UiFont { get { return new FontFamily("Microsoft YaHei UI, Microsoft YaHei, Segoe UI"); } }
+        static Drawing.Color CBg { get { return Palette.HudBg; } }
+        static Drawing.Color CPanel { get { return Palette.HudPanel; } }
+        static Drawing.Color CPanel2 { get { return Palette.HudPanel2; } }
+        static Drawing.Color CLine { get { return Palette.HudLine; } }
+        static Drawing.Color CLineDim { get { return Palette.HudLineDim; } }
+        static Drawing.Color CCorner { get { return Palette.HudCorner; } }
+        static Drawing.Color CText { get { return Palette.HudText; } }
+        static Drawing.Color CDim { get { return Palette.HudDim; } }
+        static Drawing.Color CAccent { get { return Palette.HudAccent; } }
+        static Drawing.Color CAccent2 { get { return Palette.HudAccent2; } }
+        // FontFamily 不可变、可以共用，只建一次
+        static readonly FontFamily UiFontFamily = new FontFamily("Microsoft YaHei UI, Microsoft YaHei, Segoe UI");
+        static FontFamily UiFont { get { return UiFontFamily; } }
 
         // 面板底色：一个【不冻结】的共享画刷 —— 顶栏 / 底栏 / 队列表头 / 每张卡片全都用这一个实例。
         // 改它的颜色，所有面板立刻跟着变，不用重建界面（缩放的性能就是靠这个才没被拖垮：
@@ -152,14 +160,15 @@ namespace RepRecorder
             ScrimBrush.Color = Color.FromArgb((byte)(p * 255 / 100), c.R, c.G, c.B);
 
             // 底色 = 在 HudBg 上按同样的比例掺入面板色，这样左右两边"掺的量"一致
-            Drawing.Color b = MainForm.HudBg;
+            Drawing.Color b = Palette.HudBg;
             BaseBrush.Color = Color.FromArgb(255,
                 (byte)(b.R + (c.R - b.R) * p / 100),
                 (byte)(b.G + (c.G - b.G) * p / 100),
                 (byte)(b.B + (c.B - b.B) * p / 100));
         }
 
-        static FontFamily MonoFont { get { return new FontFamily("Consolas, Courier New"); } }
+        static readonly FontFamily MonoFontFamily = new FontFamily("Consolas, Courier New");
+        static FontFamily MonoFont { get { return MonoFontFamily; } }
 
         // ---------------------------------------------------------------- 小零件
         public static void Id(FrameworkElement el, string automationId)
@@ -262,8 +271,12 @@ namespace RepRecorder
             return c;
         }
 
+        // 模板与实例无关（里面的画刷都已 Freeze），做成"一次解析、所有控件共用" ——
+        // 以前每建一个勾选框/下拉框/按钮就重新拼一遍 FrameworkElementFactory 树。
+        static ControlTemplate CheckTemplateCache;
         static ControlTemplate CheckTemplate()
         {
+            if (CheckTemplateCache != null) return CheckTemplateCache;
             ControlTemplate t = new ControlTemplate(typeof(CheckBox));
             FrameworkElementFactory g = new FrameworkElementFactory(typeof(StackPanel));
             g.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
@@ -302,6 +315,7 @@ namespace RepRecorder
             Trigger hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
             hover.Setters.Add(new Setter(Border.BorderBrushProperty, Br(CAccent), "box"));
             t.Triggers.Add(hover);
+            CheckTemplateCache = t;
             return t;
         }
 
@@ -314,7 +328,7 @@ namespace RepRecorder
             cb.FontFamily = UiFont;
             cb.FontSize = 12.5;
             cb.Foreground = Br(CText);
-            cb.Background = Br(MainForm.HudLine);      // 旧版 cbParallel 的 Face = HudLine（钢蓝底）
+            cb.Background = Br(Palette.HudLine);      // 旧版 cbParallel 的 Face = HudLine（钢蓝底）
             cb.VerticalContentAlignment = VerticalAlignment.Center;
             foreach (string s in items) cb.Items.Add(s);
             if (sel >= 0 && sel < items.Length) cb.SelectedIndex = sel;
@@ -323,8 +337,12 @@ namespace RepRecorder
             return cb;
         }
 
+        // 模板与实例无关（里面的画刷都已 Freeze），做成"一次解析、所有控件共用" ——
+        // 以前每建一个勾选框/下拉框/按钮就重新拼一遍 FrameworkElementFactory 树。
+        static ControlTemplate ComboTemplateCache;
         static ControlTemplate ComboTemplate()
         {
+            if (ComboTemplateCache != null) return ComboTemplateCache;
             ControlTemplate t = new ControlTemplate(typeof(ComboBox));
             FrameworkElementFactory g = new FrameworkElementFactory(typeof(Grid));
 
@@ -377,11 +395,16 @@ namespace RepRecorder
             g.AppendChild(pop);
 
             t.VisualTree = g;
+            ComboTemplateCache = t;
             return t;
         }
 
+        // 模板与实例无关（里面的画刷都已 Freeze），做成"一次解析、所有控件共用" ——
+        // 以前每建一个勾选框/下拉框/按钮就重新拼一遍 FrameworkElementFactory 树。
+        static ControlTemplate ComboToggleTemplateCache;
         static ControlTemplate ComboToggleTemplate()
         {
+            if (ComboToggleTemplateCache != null) return ComboToggleTemplateCache;
             ControlTemplate t = new ControlTemplate(typeof(ToggleButton));
             FrameworkElementFactory bd = new FrameworkElementFactory(typeof(Border));
             bd.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(ToggleButton.BackgroundProperty));
@@ -389,6 +412,7 @@ namespace RepRecorder
             bd.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(ToggleButton.BorderThicknessProperty));
             bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(3));
             t.VisualTree = bd;
+            ComboToggleTemplateCache = t;
             return t;
         }
 
@@ -424,6 +448,19 @@ namespace RepRecorder
             return b;
         }
 
+        // 对话框底部那种"占满一整行的按钮"。
+        // 2026-10-12 合并：AskDialog 和"视频放哪里"那个对话框里各有一份逐字相同的实现，
+        // 与其两处养着，不如放这儿一处（改高度/间距只要改这里）。
+        public static Button DlgButton(string text, string automationId, Action onClick)
+        {
+            Button b = FlatButton(text, automationId);
+            b.Height = 28;
+            b.HorizontalAlignment = HorizontalAlignment.Stretch;
+            b.Margin = new Thickness(0, 6, 0, 0);
+            b.Click += delegate { if (onClick != null) onClick(); };
+            return b;
+        }
+
         public static Button FlatButton(string text, string automationId)
         {
             Button b = new Button();
@@ -440,8 +477,12 @@ namespace RepRecorder
             return b;
         }
 
+        // 模板与实例无关（里面的画刷都已 Freeze），做成"一次解析、所有控件共用" ——
+        // 以前每建一个勾选框/下拉框/按钮就重新拼一遍 FrameworkElementFactory 树。
+        static ControlTemplate FlatTemplateCache;
         static ControlTemplate FlatTemplate()
         {
+            if (FlatTemplateCache != null) return FlatTemplateCache;
             ControlTemplate t = new ControlTemplate(typeof(Button));
             FrameworkElementFactory bd = new FrameworkElementFactory(typeof(Border));
             bd.Name = "b";
@@ -464,6 +505,7 @@ namespace RepRecorder
             Trigger press = new Trigger { Property = Button.IsPressedProperty, Value = true };
             press.Setters.Add(new Setter(Border.BackgroundProperty, Br(CAccent, 0x99), "b"));
             t.Triggers.Add(press);
+            FlatTemplateCache = t;
             return t;
         }
 
@@ -492,8 +534,8 @@ namespace RepRecorder
             {
                 if (W == null || W.StatusEnv == null) return;
                 W.StatusEnv.Text = s;
-                W.StatusEnv.Foreground = Br(level == 1 ? CAccent2 : level == 2 ? (Drawing.Color)MainForm.HudOrange
-                                          : level == 3 ? (Drawing.Color)MainForm.HudRed : CDim);
+                W.StatusEnv.Foreground = Br(level == 1 ? CAccent2 : level == 2 ? (Drawing.Color)Palette.HudOrange
+                                          : level == 3 ? (Drawing.Color)Palette.HudRed : CDim);
             });
         }
 
@@ -608,9 +650,9 @@ namespace RepRecorder
             if (b == null) return;
             Post(delegate
             {
-                Ui.SetButtonBackColor(b.Id, on ? MainForm.HudOn : MainForm.HudOff);
-                Ui.SetButtonForeColor(b.Id, on ? MainForm.HudText : MainForm.HudDim);
-                Ui.SetButtonBorderColor(b.Id, MainForm.HudLine);
+                Ui.SetButtonBackColor(b.Id, on ? Palette.HudOn : Palette.HudOff);
+                Ui.SetButtonForeColor(b.Id, on ? Palette.HudText : Palette.HudDim);
+                Ui.SetButtonBorderColor(b.Id, Palette.HudLine);
             });
         }
 
@@ -880,13 +922,17 @@ namespace RepRecorder
             sv.Loaded += delegate { pin(); };
         }
 
+        // 滑块模板：以前每建一根滑杆就 XamlReader.Parse 一次（背景窗 4 根 + 设置窗若干）
+        static ControlTemplate sliderTemplate;
+
         public static Slider HudSlider(double min, double max, double val, string id)
         {
             Slider sl = new Slider();
             sl.Minimum = min; sl.Maximum = max; sl.Value = val;
             sl.Width = 250; sl.Height = 20;
             sl.IsSnapToTickEnabled = false;
-            sl.Template = (ControlTemplate)XamlReader.Parse(SliderXaml);
+            if (sliderTemplate == null) sliderTemplate = (ControlTemplate)XamlReader.Parse(SliderXaml);
+            sl.Template = sliderTemplate;
             if (!string.IsNullOrEmpty(id)) Id(sl, id);
             return sl;
         }

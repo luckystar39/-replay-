@@ -1,7 +1,7 @@
 wrote a minimal settings file: {"ParallelCount":6}
-OK  app did not exit  pid=36648
+OK  app did not exit  pid=12904
 OK  no crash in log  
-OK  status answers  raw={"wpf":true,"stage":"7-switched","version":"1.1","recording":false,"queue":0,"statusText":"","env":"OBS：已就绪    游戏：已就绪","panel":322,"collapsed":false,"parallel":6,"mic":"gameOnly","micEff":"gameOnly","win":"1180x648"}
+OK  status answers  raw={"wpf":true,"stage":"7-switched","version":"1.1.2","recording":false,"queue":0,"statusText":"","env":"OBS：已就绪    游戏：已就绪","panel":322,"collapsed":false,"parallel":6,"mic":"gameOnly","micEff":"gameOnly","win":"1180x648"}
 OK  status.wpf  wpf=True
 OK  status.parallel  parallel=6
 OK  status.statusText is a string  len=0

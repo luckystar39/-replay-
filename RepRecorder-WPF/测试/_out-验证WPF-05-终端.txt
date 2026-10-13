@@ -1,4 +1,4 @@
-OK   app alive  pid=34540
+OK   app alive  pid=30936
 OK   logBox exists  
 OK   starts with the startup log (Log.OnLine wired)  shown=8
 OK   not collapsed at start  collapsed=False

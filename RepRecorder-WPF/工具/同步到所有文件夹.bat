@@ -56,7 +56,7 @@ if exist "%T2%" (
 
 echo.
 echo 注意：RepRecorder-旧版WinForms\ 一个字节都没动（旧版快照，是退路）。
-echo       要跑旧界面：双击 启动旧界面-退路.bat，或给 exe 加 --old 参数。
+echo       要跑旧版程序：去 RepRecorder-旧版WinForms\ 双击那份 RepRecorder.exe。
 
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SRC%打包-发给别人.ps1"

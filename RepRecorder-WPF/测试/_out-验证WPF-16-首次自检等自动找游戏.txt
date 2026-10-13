@@ -1,5 +1,5 @@
 OK  the first-run dialog did appear  sawDialog=True
-OK  a background disk walk really ran  scanMs=2009
+OK  a background disk walk really ran  scanMs=1964
 OK  the dialog never claims the game is missing  marks=?
 OK  and it shows the game as found  marks=?
 OK  the game dir was adopted into settings  GameDir=D:\_reptest16\pkg\game\th123

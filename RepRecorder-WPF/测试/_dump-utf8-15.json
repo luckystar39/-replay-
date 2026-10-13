@@ -62,7 +62,7 @@
     {
         "what":  "the window kept answering while the walk ran",
         "ok":  true,
-        "detail":  "worst round trip=8 ms"
+        "detail":  "worst round trip=3 ms"
     },
     {
         "what":  "a background walk was actually observed",

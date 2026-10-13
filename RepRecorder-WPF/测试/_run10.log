@@ -1,13 +1,13 @@
-﻿OK   app alive  pid=3792 waited=0s
+﻿OK   app alive  pid=36760 waited=0s
 step: empty queue guards
 OK   starts with an empty queue  queue=0
 OK   stop is disabled while idle  
 OK   start is enabled while idle  
 OK   status.recording is false while idle  recording=False
 step: round-record turned off for the empty-queue check
-OK   pressing start on an empty queue says so  loglen=337
+OK   pressing start on an empty queue says so  loglen=318
 OK   empty-queue start does not enter recording  recording=False
-OK   empty-queue start leaves the window alive  pid=3792
+OK   empty-queue start leaves the window alive  pid=36760
 step: selection -> ??????
 OK   six rows added  count=6
 OK   nothing selected yet  
@@ -15,12 +15,12 @@ step: parallel baseline=1
 OK   selectrange accepted  
 OK   five rows are selected  sel=5
 OK   parallel count follows the selection  combo=5 before=1
-OK   the count change is logged  loglen=481
+OK   the count change is logged  loglen=462
 OK   clearselect empties the blue selection  sel=0
 OK   clearing selection KEEPS the parallel count  combo=5
 OK   single-row select gives sel=1  
 OK   parallel count follows to 1  combo=1
 OK   select:-1 clears  
 OK   out-of-range select is still ok  sel=0
-OK   app survived the whole selection pass  pid=3792
+OK   app survived the whole selection pass  pid=36760
 OK   no exception in log  
