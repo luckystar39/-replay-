@@ -31,7 +31,7 @@ namespace RepRecorder
     //   ⚠ 编译.bat 里【没有】/version: 开关 —— 那两句版本号属性全在 AssemblyInfo.cs 里。
     public static class AppInfo
     {
-        public const string Version = "1.1.2";
+        public const string Version = "1.1.3";
     }
 
     // ============================================================ 设置
@@ -56,13 +56,21 @@ namespace RepRecorder
             "上限锁在 6 是因为 OBS 最多只有 6 条音轨 —— 超过 6 格每格的声音就没法分开，会录成没声音的视频。\r\n" +
             "内存参考：每实例约 550 MB，6 个约 3.3 GB。")]
         public int ParallelCount { get; set; }
+        [Category("并行录制"), Description("并行录制时把游戏窗口设成多大（三档，就是游戏里的 Alt+大键盘1/2/3）：\r\n" +
+            "1 = 640×480：最省资源，但成品要放大 2.25 倍，会明显发糊；\r\n" +
+            "2 = 1280×960：默认。成品只放大 1.125 倍，几乎原生，画质和资源最平衡；\r\n" +
+            "3 = 1920×1440：完全不放大（切分时 1:1 裁），但画布大 25%、6 个游戏要渲染 2.25 倍像素，\r\n" +
+            "弱显卡可能掉帧、中间文件也大 25%。\r\n" +
+            "只对【并行录制】生效（单录那条路不改窗口，大小由游戏自己决定）；只改录制时那一次窗口，**不动**用户磁盘上的游戏配置；屏幕装不下所选档时会自动退回能装下的档。")]
+        public int GameScale { get; set; }
         [Category("并行录制"), Description("切分并行视频时，同时跑几个 ffmpeg（默认 3）。\r\n" +
             "并行录完是一整张合并视频，要按格裁成 N 个文件，这一步是重编码，最花时间。\r\n" +
             "同时跑多个能快好几倍（切 6 格从 3 分钟降到 1 分钟左右）；\r\n" +
             "但 N 卡的 NVENC 同时编码路数有限（家用卡一般 3~8 路），设太大反而会回退到很慢的软件编码。")]
         public int SplitParallel { get; set; }
-        [Category("并行录制"), Description("切分并行视频用的编码器：h264_nvenc（默认，兼容性最好）/ hevc_nvenc / av1_nvenc / libx264。\r\n" +
-            "没有 N 卡会自动改用 libx264，不用手动改。")]
+        [Category("并行录制"), Description("切分并行视频用哪张显卡/CPU 出成品：\r\n" +
+            "h264_nvenc = NVIDIA 显卡（默认，快）、h264_amf = AMD 显卡（快）、libx264 = CPU 软编（兼容，慢）。\r\n" +
+            "选错了也不会失败：用不了就自动改用 CPU 软编（慢），日志里会写明实际走的是哪一档。")]
         public string ParallelSplitEncoder { get; set; }
         [Category("并行录制"), Description("切分时的质量 CQ（越小越清晰、文件越大），默认 19。")]
         public int ParallelSplitCQ { get; set; }   // 越大体积越小（19→23 约省一半）
@@ -226,6 +234,7 @@ namespace RepRecorder
             AudioLeadMs = 80;         // 把声音往前挪 80ms：实测成品里音频比画面慢 77~87ms（详见属性上的说明）
             KeepGameCapturable = true;
             ParallelCount = 3;
+            GameScale = 2;             // 游戏窗口 1280×960：成品只放大 1.125 倍，画质/资源最平衡
             ParallelSplitEncoder = "h264_nvenc";
             SplitParallel = 3;        // 切分时同时跑 3 个 ffmpeg（快 ~3 倍；N 卡同时编码路数够用）
             ParallelSplitCQ = 23;   // 用户反馈视频太大 → 默认从 19 调到 23（体积约省一半，画质几乎无感）
@@ -362,6 +371,13 @@ namespace RepRecorder
             //   再被「确定」把所有字段写回去 —— 老用户会莫名其妙从 6 变成 1（最慢）。
             //   放在版本号判断之外，手改设置文件、从旧备份还原都绕不过去（同上面两条）。
             if (s.SplitParallel > 3) s.SplitParallel = 3;
+            // 「游戏画面大小」同一个道理，而且这里是**两件事**：
+            //   ① 老设置文件里没有这个字段（=0）→ 给默认 2；② 手改过 4/5/6 → 夹到 3。
+            //   ⚠ 必须无条件夹：界面下拉只列 1/2/3，而 ChoiceRow 遇到对不上的值会静默回落到第一项
+            //     （UiDialogs.cs `if (idx < 0) idx = 0;`），再被「确定」写回去 —— 那样用户会
+            //     莫名其妙变成"最糊"的 Alt+1。和上面 SplitParallel 那条是同一个坑。
+            if (s.GameScale <= 0) s.GameScale = 2;
+            if (s.GameScale > 3) s.GameScale = 3;
             // ⚠ 必须在 FillDefaults 之前：FillDefaults 里会调 FindFfmpeg，而它是 static、
             //   只能读这份镜像。顺序反了就等于"设置里的 ffmpeg 路径第一次启动时不生效"。
             FfmpegOverride = s.FfmpegExe == null ? "" : s.FfmpegExe;

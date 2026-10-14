@@ -1,82 +1,137 @@
 [
     {
-        "what":  "env reports five items",
+        "what":  "app alive",
         "ok":  true,
-        "detail":  "n=5"
+        "detail":  "pid=39636"
     },
     {
-        "what":  "a healthy machine reports allOk",
+        "what":  "panel starts expanded",
         "ok":  true,
-        "detail":  "allOk=True"
+        "detail":  "already expanded"
     },
     {
-        "what":  "the env line is actually rendered in the UI",
+        "what":  "all left-panel controls present",
         "ok":  true,
-        "detail":  "text=OBS：已就绪    游戏：已就绪"
+        "detail":  "missing="
     },
     {
-        "what":  "no dialog pops when nothing is wrong",
+        "what":  "btnStart has a playlist glyph + CJK",
+        "ok":  true,
+        "detail":  "raw=▶ 开始录制"
+    },
+    {
+        "what":  "mem hint looks like \"\u003cn.n\u003e GB\"",
+        "ok":  true,
+        "detail":  "raw=约 3.2 GB"
+    },
+    {
+        "what":  "cbParallel shows the saved value",
+        "ok":  true,
+        "detail":  "raw=6 expect=6"
+    },
+    {
+        "what":  "cbMic has a selection",
+        "ok":  true,
+        "detail":  "raw=只录游戏声音"
+    },
+    {
+        "what":  "set cbParallel=2",
+        "ok":  true,
+        "detail":  "ok=True"
+    },
+    {
+        "what":  "settings ParallelCount==3",
+        "ok":  true,
+        "detail":  "file=3"
+    },
+    {
+        "what":  "mem hint follows (1.6 GB)",
+        "ok":  true,
+        "detail":  "raw=约 1.6 GB"
+    },
+    {
+        "what":  "panel width \u003e 120",
+        "ok":  true,
+        "detail":  "panel=794"
+    },
+    {
+        "what":  "not collapsed",
+        "ok":  true,
+        "detail":  "collapsed=False"
+    },
+    {
+        "what":  "collapsed after press",
+        "ok":  true,
+        "detail":  "collapsed=True"
+    },
+    {
+        "what":  "panel width 0 when collapsed",
+        "ok":  true,
+        "detail":  "panel=0"
+    },
+    {
+        "what":  "settings PanelCollapsed==true",
+        "ok":  true,
+        "detail":  "file=True"
+    },
+    {
+        "what":  "top button shows the expand arrow (U+25B6)",
+        "ok":  true,
+        "detail":  "raw=▶  展开面板"
+    },
+    {
+        "what":  "expanded again",
+        "ok":  true,
+        "detail":  "collapsed=False"
+    },
+    {
+        "what":  "panel width restored",
+        "ok":  true,
+        "detail":  "panel=794"
+    },
+    {
+        "what":  "top button back to the collapse arrow (U+25C0)",
+        "ok":  true,
+        "detail":  "raw=◀  收起面板"
+    },
+    {
+        "what":  "background viewport matches the rendered size after panel toggling",
+        "ok":  true,
+        "detail":  "viewport=0,-60,1180x885  rendered=1180x885  layer=1180x648"
+    },
+    {
+        "what":  "no wrong-sized background frame while expanding (round 0)",
+        "ok":  true,
+        "detail":  "0 bad frames out of 12 samples"
+    },
+    {
+        "what":  "no wrong-sized background frame while expanding (round 1)",
+        "ok":  true,
+        "detail":  "0 bad frames out of 12 samples"
+    },
+    {
+        "what":  "no crash in log",
         "ok":  true,
         "detail":  ""
     },
     {
-        "what":  "the first-run check was remembered",
+        "what":  "a stored 3000px panel width is clamped (right side survives)",
         "ok":  true,
-        "detail":  "EnvChecked=True"
+        "detail":  "win=1180x648  panel=794  right=380"
     },
     {
-        "what":  "a missing mod is reported",
-        "ok":  true,
-        "detail":  "mod=整合包里没有这个文件"
-    },
-    {
-        "what":  "allOk goes false",
-        "ok":  true,
-        "detail":  "allOk=False"
-    },
-    {
-        "what":  "the first-run dialog pops up",
+        "what":  "settings dialog opened",
         "ok":  true,
         "detail":  ""
     },
     {
-        "what":  "the env line now shows a problem",
+        "what":  "the port box was actually typed over (guard is meaningful)",
         "ok":  true,
-        "detail":  "text=OBS：已就绪    游戏：已就绪"
+        "detail":  "typed=9999"
     },
     {
-        "what":  "the dialog carries the recall id",
+        "what":  "re-detect refreshes the port box (not silently discarded)",
         "ok":  true,
-        "detail":  ""
-    },
-    {
-        "what":  "closing it works",
-        "ok":  true,
-        "detail":  ""
-    },
-    {
-        "what":  "the first-run self-check does not nag twice",
-        "ok":  true,
-        "detail":  "EnvChecked=True"
-    },
-    {
-        "what":  "recording is refused when the game dir is broken",
-        "ok":  true,
-        "detail":  "recording=False"
-    },
-    {
-        "what":  "and the user is told why (dialog)",
-        "ok":  true,
-        "detail":  ""
-    },
-    {
-        "what":  "no exception in log",
-        "ok":  true,
-        "detail":  ""
-    },
-    {
-        "what":  "the OBS registry step reads HKCU too",
-        "ok":  true,
-        "detail":  "cands=D:\\obs\\obs-studio\\bin\\64bit\\obs64.exe | C:\\Users\\江博文\\AppData\\Local\\Temp\\repobs-verify\\bin\\64bit\\obs64.exe"
+        "detail":  "was=4455  typed=9999  after=4455  cfg=4455"
     }
 ]

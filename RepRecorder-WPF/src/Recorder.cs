@@ -531,46 +531,50 @@ namespace RepRecorder
             int dy = pt.Y - wr.Top;
             SetWindowPos(h, IntPtr.Zero, x - dx, y - dy, wr.Right - wr.Left, wr.Bottom - wr.Top, SWP_NOZORDER | SWP_NOACTIVATE);
         }
-        // 把游戏窗口撑到"够用又不浪费"的尺寸 —— **只放大，不缩小**。
+        // 按设置把每个游戏窗口设成「640×480 × GameScale」—— 就是游戏里的 Alt+大键盘1/2/3。
+        // **以设置为准**：比目标大的也缩下来（2026-10-13 用户拍板："连缩也管"）。
         //
-        // 为什么要做：每格采到的像素就是游戏窗口的**真实像素**。窗口 640×480 而成品是 1440×1080，
-        // 就必然放大 2.25 倍（糊）；窗口 1280×960 时只放大 1.125 倍（几乎原生）。
-        // 而窗口大小平时由 WindowResizer 模块的 ini 决定（默认 1x=640×480），用户不会去改它 ——
-        // 于是"画质差"这件事就一直是默认状态。程序自己撑一下，所有人都不用管。
+        // 为什么要有这个：每格采到的像素就是游戏窗口的**真实像素**。窗口 640×480 而成品是
+        // 1440×1080，就必然放大 2.25 倍（糊）；1280×960 只放大 1.125 倍（几乎原生）。
+        // 而窗口大小平时由 WindowResizer 模块的 ini 决定（整合包默认 1x=640×480），用户不会去改它。
         //
-        // 实测依据（2026-10-13，本机）：外部对它 SetWindowPos 到 2x 之后，游戏是**按新尺寸重新渲染**的
-        //   —— 抓同一局的画面比过：底部六角形/HUD 的硬边像素块和 640×480 时同一风格，
-        //   不是"把 640×480 拉大"的那种糊图。（同一天还实测：模块的 Alt+1/Alt+2 只对当次运行有效，
-        //   尺寸只在游戏【正常退出】时才写回 ini —— 而本程序结束一批时是强杀游戏，
-        //   所以"让用户自己按 Alt+2"在录制流程里根本留不下来，只能程序自己动手。）
+        // 实测依据（2026-10-13，本机）：外部 SetWindowPos 之后，游戏是**按新尺寸重新渲染**的
+        //   —— 抓同一局的画面比过：六角形/HUD 的硬边像素块和原生时同一风格，不是"把 640×480 拉大"。
+        //   另外实测：那个模块的 Alt+1/2/3 只对当次运行有效，尺寸只在游戏【正常退出】时才写回 ini，
+        //   而本程序结束一批时是**强杀**游戏 —— 所以"让用户自己按键"在录制流程里根本留不下来。
         //
-        // 只挑 1x/2x（都是 640×480 的整数倍 —— 该模块自己的说明：非整数倍会让游戏里的字发糊），
-        // 并且要同时满足：
-        //   ① 不超过切分后的输出尺寸（再大也会被缩回去，纯浪费编码和磁盘）
-        //   ② 连同程序摆放窗口用的偏移（最多 +320/+60，见下面 MoveWindowClientTo）一起装得进屏幕工作区
-        //      —— 否则窗口跑到屏幕外，那块没被 Windows 合成的内容会被采成黑/花
-        // 本来就已经更大的（用户自己设了 3x 或全屏）**一律不动**：尊重用户的设置，缩小还可能让人莫名其妙。
-        void GrowGameWindows(List<IntPtr> handles)
+        // 不动用户磁盘上的游戏配置：这里只改运行时的窗口，强杀不会触发写回。
+        // 唯一的安全闸门：屏幕工作区装不下所选档 → 退回能装下的最大档。否则窗口跑到屏幕外，
+        // 那块没被 Windows 合成的内容会被采成黑/花。
+        void ApplyGameScale(List<IntPtr> handles)
         {
             try
             {
-                int capW = cfg.CanvasWidth > 0 ? cfg.CanvasWidth : 1440;
-                int capH = cfg.CanvasHeight > 0 ? cfg.CanvasHeight : 1080;
+                int mult = cfg.GameScale;
+                if (mult < 1) mult = 1;
+                if (mult > 3) mult = 3;
                 RECT wa;
                 int workW = 1920, workH = 1080;
                 if (SystemParametersInfo(SPI_GETWORKAREA, 0, out wa, 0) && wa.Right > 0 && wa.Bottom > 0)
                 {
                     workW = wa.Right; workH = wa.Bottom;
                 }
-                int tw = 0, th = 0;
-                for (int mult = 2; mult >= 1; mult--)
+                int fit = 0;
+                for (int m = mult; m >= 1; m--)          // 从所选档往下找第一个装得下的（+320/+60 是下面摆窗口用的偏移）
                 {
-                    int w = 640 * mult, h = 480 * mult;
-                    if (w <= capW && h <= capH && w + 320 <= workW && h + 60 <= workH) { tw = w; th = h; break; }
+                    if (640 * m + 320 <= workW && 480 * m + 60 <= workH) { fit = m; break; }
                 }
-                if (tw == 0) return;                     // 连 1x 都放不下（屏幕太小）→ 什么都不做
+                if (fit == 0)
+                {
+                    Log.Write("并行：屏幕连 Alt+1（640×480）都放不下，这一批不改游戏窗口大小");
+                    return;
+                }
+                if (fit != mult)
+                    Log.Write("并行：屏幕装不下 Alt+" + mult + "（" + (640 * mult) + "×" + (480 * mult) +
+                              "），改按 Alt+" + fit + " 设");
+                int tw = 640 * fit, th = 480 * fit;
                 int done = 0;
-                for (int pass = 0; pass < 2; pass++)
+                for (int pass = 0; pass < 2; pass++)     // 设完复核一次：模块启动时也会按 ini 设一次，谁先谁后不定
                 {
                     int n = 0;
                     foreach (IntPtr h in handles)
@@ -578,19 +582,19 @@ namespace RepRecorder
                         if (h == IntPtr.Zero) continue;
                         int cw, chh;
                         if (!ClientSizeOf(h, out cw, out chh)) continue;
-                        if (cw >= tw && chh >= th) continue;      // 已经够大（或更大）：不动
+                        if (cw == tw && chh == th) continue;      // 已经是这个尺寸：不动
                         SetClientSize(h, tw, th);
                         n++;
                     }
                     if (n == 0) break;
                     done = n;
-                    Thread.Sleep(1500);              // 等游戏重建渲染目标（模块可能紧接着又按 ini 设一次）
+                    Thread.Sleep(1500);              // 等游戏重建渲染目标
                 }
                 if (done > 0)
-                    Log.Write("并行：已把 " + done + " 个游戏窗口撑到 " + tw + "×" + th +
-                              "（每格按真实像素采；窗口越大成品越接近原生，代价是中间文件更大）");
+                    Log.Write("并行：已把 " + done + " 个游戏窗口设为 " + tw + "×" + th +
+                              "（按设置「游戏画面大小」= Alt+" + fit + "）");
             }
-            catch (Exception ex) { Log.Write("并行：撑大游戏窗口失败（不影响录制）：" + ex.Message); }
+            catch (Exception ex) { Log.Write("并行：设置游戏窗口大小失败（不影响录制）：" + ex.Message); }
         }
         bool ClientSizeOf(IntPtr h, out int cw, out int ch)
         {
@@ -897,7 +901,11 @@ namespace RepRecorder
             // 像素点采样（neighbor）而不是 lanczos：游戏是 640×480 的像素画，
             // 用 lanczos 放大到 1440×1080 会整体发糊（用户实测：和别人的录像一比"清晰程度差很多"）。
             // neighbor 保留硬边像素块，和游戏本身/别人录出来的观感一致。
-            if (cfg.CanvasWidth > cw || cfg.CanvasHeight > ch)
+            // ⚠ 条件要看【裁完之后】的尺寸，不能看"格子比画布小"：
+            //   Alt+3 那档格子本来就正好是 1440×1080，裁掉 6 像素边之后是 1428×1072，
+            //   老写法（`cfg.CanvasWidth > cw` → 1440 > 1440 为假）就不缩了 ——
+            //   成品会变成 1428×1072，和别的录像尺寸不一致（2026-10-13 实测到的）。
+            if (cfg.CanvasWidth != c.Cw2 || cfg.CanvasHeight != c.Ch2)
                 c.Filter += ",scale=" + cfg.CanvasWidth + ":" + cfg.CanvasHeight + ":flags=lanczos";
             //   ↑ 上面三行是当初选 neighbor 的理由，但用户后来指定回到 lanczos：这是 9/27 22:55
             //     那版（用户觉得"很清晰"的那版）的放大方式。最终决定＝lanczos，别照上面那段改回 neighbor。
@@ -910,20 +918,11 @@ namespace RepRecorder
             if (ff == null) { err = "找不到 ffmpeg"; return false; }
             // 「再录一次（旧的保留）」时这个名字不是 xxx.mp4 而是 xxx (2).mp4 —— 见 OutputPathFor。
             string target = OutputPathFor(job, ".mp4");
-            string enc = string.IsNullOrEmpty(cfg.ParallelSplitEncoder) ? "h264_nvenc" : cfg.ParallelSplitEncoder;
-            // 编码器 + 各自合适的参数，并准备好"换编码器重试"的梯子：
-            // 别人的电脑不一定有 NVIDIA 显卡（h264_nvenc 用不了）→ 自动退到 libx264 软件编码，保证一定成功。
-            // 注意：nvenc 的 -rc vbr / -cq 参数 libx264 不认，所以每档要带自己的参数。
-            List<string> encArgs = new List<string>();
-            if (enc == "libx264")
-            {
-                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");
-            }
-            else
-            {
-                encArgs.Add(" -c:v " + enc + " -preset p5 -tune hq -rc vbr -cq " + cfg.ParallelSplitCQ + " -b:v 0 -pix_fmt yuv420p");
-                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");   // 没有 N 卡时的兜底
-            }
+            string enc = EncName();
+            // 编码器 + 各自合适的参数 + "换编码器重试"的梯子，都在 EncArgsFor 里（理由写在那边）：
+            // 别人的电脑不一定是 N 卡 —— A 卡走 h264_amf，没有独显就走 libx264 软编，
+            // 一路自动往下退，保证一定出得来成品。
+            List<string> encArgs = EncArgsFor(enc, cfg.ParallelSplitCQ);
             if (startSec < 0) startSec = 0;
             double dur = maxSeconds - startSec;   // 这格真正要的时长
             string seek = (startSec > 0.2)
@@ -953,12 +952,17 @@ namespace RepRecorder
             //    前两次尝试都失败、退化成第三次的 -an（无声），于是并行成品全都没声音。已修）
             string aa = " -c:a aac -b:a 192k" + fadeA + trim;
             List<string> attempts = new List<string>();
-            foreach (string e in encArgs)
+            List<string> attemptWhat = new List<string>();   // 和 attempts 一一对应，只用来写日志
+            for (int k = 0; k < encArgs.Count; k++)
+            {
                 // "-map 0:a:N?" 的"?"：这条音轨不存在也别报错，直接出无声视频（实测 rc=0）。
                 // ⚠ 以前这一档写的是"不带 -map"——那样 ffmpeg 会自动挑第 0 条音轨，
                 //   于是第 4 格的成品配的是【第 1 格那个玩家的声音】，比没有声音更糟。
-                attempts.Add(baseArgs + " -map 0:a:" + idx + "?" + vfCore + e + aa);
+                attempts.Add(baseArgs + " -map 0:a:" + idx + "?" + vfCore + encArgs[k] + aa);
+                attemptWhat.Add(k == 0 ? EncLabel(enc) : "CPU 软编");
+            }
             attempts.Add(baseArgs + vfCore + encArgs[0] + " -an" + trim);   // 最后兜底：无声
+            attemptWhat.Add("无声兜底");
             int attemptNo = 0;
             foreach (string a in attempts)
             {
@@ -977,14 +981,13 @@ namespace RepRecorder
                     if (code == 0 && File.Exists(target) && new FileInfo(target).Length > 4096)
                     {
                         if (attemptNo > 1)
-                            Log.Write("并行切分：第 " + attemptNo + " 种参数才成功（"
-                                      + (attemptNo > encArgs.Count ? "最后兜底：无声" : "多半没 NVIDIA 显卡，已换 libx264 软编") + "）");
+                            Log.Write("并行切分：第 " + attemptNo + " 种参数才成功（" + attemptWhat[attemptNo - 1] + "）");
                         job.Output = target;    // 实际落点由这里说了算（见上面 OutputPathFor 那行）
                         return true;
                     }
                     err = "ffmpeg 退出码 " + code;
                     if (code != 0 && attemptNo == 1 && encArgs.Count > 1)
-                        Log.Write("并行切分：" + enc + " 失败（多半没对应显卡），改用 libx264 软编重试…");
+                        Log.Write("并行切分：" + EncLabel(enc) + "（" + enc + "）用不了，正在试后面的参数…");
                 }
                 catch (Exception ex) { err = ex.Message; }
             }
@@ -1011,6 +1014,76 @@ namespace RepRecorder
             return v.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
         }
 
+        // ── 编码器：三档（N 卡 / A 卡 / CPU 软编）各自的参数与解码前缀 ──────────────
+        // 抽帧分析和切分都要用，所以放在这里、两边共用一份。
+        // ⚠ 以前 SplitOne / SplitGroup 各写死了一份"编码器 → 参数"，加一档得改两处，
+        //   漏一处就是"某个路径上静默少试一发"，很难发现。
+        string EncName()
+        {
+            if (cfg == null || string.IsNullOrEmpty(cfg.ParallelSplitEncoder)) return "h264_nvenc";
+            return cfg.ParallelSplitEncoder;
+        }
+
+        // 日志里对用户说的名字 —— 就用设置里那个下拉的选项名，别让人对不上。
+        static string EncLabel(string enc)
+        {
+            if (enc == "libx264") return "CPU 软编";
+            if (enc.EndsWith("_amf", StringComparison.OrdinalIgnoreCase)) return "AMD 显卡";
+            return "NVIDIA 显卡";
+        }
+
+        // 这一档编码器要用的参数，按"从优到劣"排。
+        // 除 CPU 软编外，最后都再跟一发 libx264 兜底：用户选了显卡但其实没那张卡 / 驱动坏了，
+        // 也能出成品（只是慢），不会整批失败。
+        // ⚠ 三家的参数各不相通：nvenc 认 -preset/-tune/-rc vbr/-cq，AMF 认 -usage/-quality/-rc cqp/-qp_*。
+        //   把 nvenc 那套丢给 h264_amf 不会报错 —— ffmpeg 只打一句"xxx has not been used"就当没给，
+        //   于是画质档位悄悄变成 AMF 自己的默认值（比报错更阴，实测 2026-10-14）。
+        //   参数名是从包里那个 ffmpeg 的 `-h encoder=h264_amf` 查出来的，不是照文档猜的。
+        static List<string> EncArgsFor(string enc, int cq)
+        {
+            List<string> a = new List<string>();
+            if (enc == "libx264")
+            {
+                a.Add(" -c:v libx264 -preset medium -crf " + cq + " -pix_fmt yuv420p");
+                return a;
+            }
+            if (enc.EndsWith("_amf", StringComparison.OrdinalIgnoreCase))
+            {
+                // AMF 用"固定 QP"（它没有 nvenc 的 -cq）：I 帧紧一点、P/B 松一点 ——
+                // 观感几乎不变，文件更小，和 x264 系的老习惯一致。
+                // ⚠ hevc_amf 只有 qp_i/qp_p、**没有 qp_b**：实测（2026-10-14）给它 -qp_b 不会报错，
+                //   ffmpeg 只打一句 "Codec AVOption qp_b has not been used"，然后当没给 ——
+                //   既然不起作用就别给（h264_amf / av1_amf 是真的吃这个参数，所以那两档照给）。
+                string s = " -c:v " + enc + " -usage transcoding -quality quality -rc cqp -qp_i " + cq +
+                           " -qp_p " + (cq + 2);
+                if (!enc.Equals("hevc_amf", StringComparison.OrdinalIgnoreCase)) s += " -qp_b " + (cq + 4);
+                a.Add(s + " -pix_fmt yuv420p");
+            }
+            else
+            {
+                a.Add(" -c:v " + enc + " -preset p5 -tune hq -rc vbr -cq " + cq + " -b:v 0 -pix_fmt yuv420p");
+            }
+            a.Add(" -c:v libx264 -preset medium -crf " + cq + " -pix_fmt yuv420p");   // 没有那张显卡时的兜底
+            return a;
+        }
+
+        // "把解码交给显卡"的前缀（空串 = 不交）。
+        // 为什么：软解 3840×1920@60 这种"6 个游戏同屏"的高动态流，ffmpeg 会把 16~24 个线程全占满
+        //   —— 用户实测：录完 rep、刚开始切分那一刻 CPU 跑满，任务管理器里就是 ffmpeg。
+        //   加了之后解码走显卡的硬件解码器，CPU 只剩裁切/缩放。
+        //   本机实测（i7-14650HX，3840×1920@60 素材，N 卡）：
+        //     抽帧分析 2.0 核 → 0.3 核，耗时 14.4 秒 → 10.2 秒；
+        //     切分（单组） 1.7 核 → 0.2 核，耗时不变。
+        // ⚠ 只交给**对应的那张卡**：N 卡走 NVDEC（cuda），A 卡走 D3D11 硬解（d3d11va，Windows 上通用）；
+        //   选了 CPU 软编就别去碰显卡。
+        //   两条路都有兜底 —— 加了它那次失败会自动退回不带它的写法。
+        static string HwaccelPrefix(string enc)
+        {
+            if (enc == "libx264") return "";
+            if (enc.EndsWith("_amf", StringComparison.OrdinalIgnoreCase)) return "-hwaccel d3d11va ";
+            return "-hwaccel cuda ";
+        }
+
         // 一组格子共用一个 ffmpeg。cells = 这一组在 batch 里的下标（升序）。
         // 成功才返回 true（batch[...].Output 已填好）；失败时调用方退回 SplitOne 逐格重切。
         bool SplitGroup(string grid, List<Job> batch, int[] cells, int cols, int cw, int ch,
@@ -1020,15 +1093,8 @@ namespace RepRecorder
             string ff = FindFfmpeg();
             if (ff == null) { err = "找不到 ffmpeg"; return false; }
             int n = cells.Length;
-            string enc = string.IsNullOrEmpty(cfg.ParallelSplitEncoder) ? "h264_nvenc" : cfg.ParallelSplitEncoder;
-            List<string> encArgs = new List<string>();
-            if (enc == "libx264")
-                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");
-            else
-            {
-                encArgs.Add(" -c:v " + enc + " -preset p5 -tune hq -rc vbr -cq " + cfg.ParallelSplitCQ + " -b:v 0 -pix_fmt yuv420p");
-                encArgs.Add(" -c:v libx264 -preset medium -crf " + cfg.ParallelSplitCQ + " -pix_fmt yuv420p");
-            }
+            string enc = EncName();
+            List<string> encArgs = EncArgsFor(enc, cfg.ParallelSplitCQ);
             // 目标文件名先全部算好：一条命令行里要一次给全 N 个落点。
             // ⚠ 之后收尾时【不能】再算一遍（"再录一次"会算出下一个空名字，于是列表指着一个不存在的文件）。
             string[] targets = new string[n];
@@ -1081,10 +1147,25 @@ namespace RepRecorder
             }
             string head = "-hide_banner -y -i \"" + grid + "\" -filter_complex \"" + fc + "\"";
             List<string> cmds = new List<string>();
-            foreach (string e in encArgs) cmds.Add(GroupArgs(head, cells, e, true, aFilters, targets));
+            List<string> cmdWhat = new List<string>();   // 和 cmds 一一对应，只用来写日志（"实际用的是哪一档"）
+            // 第一发就带显卡解码（CPU 占用能降一个量级，见 HwaccelPrefix 的注释）；
+            // 它失败会自动落到下一发（不带 hwaccel 的同参数），所以不会因此丢成品。
+            string hw = HwaccelPrefix(enc);
+            if (hw.Length > 0)
+            {
+                cmds.Add(GroupArgs(hw + head, cells, encArgs[0], true, aFilters, targets));
+                cmdWhat.Add(EncLabel(enc) + "（显卡解码）");
+            }
+            for (int k = 0; k < encArgs.Count; k++)
+            {
+                cmds.Add(GroupArgs(head, cells, encArgs[k], true, aFilters, targets));
+                cmdWhat.Add(k == 0 ? EncLabel(enc) : "CPU 软编");
+            }
             cmds.Add(GroupArgs(head, cells, encArgs[0], false, aFilters, targets));   // 最后兜底：整组无声
+            cmdWhat.Add("无声兜底");
             Log.Write("并行切分：一组 " + n + " 格（第 " + (cells[0] + 1) + "~" + (cells[n - 1] + 1) +
-                      " 格，配第 " + (cells[0] + 1) + "~" + (cells[n - 1] + 1) + " 条音轨），用 " + enc);
+                      " 格，配第 " + (cells[0] + 1) + "~" + (cells[n - 1] + 1) + " 条音轨），用 " +
+                      EncLabel(enc) + "（" + enc + "）");
 
             int attemptNo = 0;
             foreach (string a in cmds)
@@ -1104,14 +1185,14 @@ namespace RepRecorder
                     if (code == 0 && AllTargetsOk(targets))
                     {
                         if (attemptNo > 1)
-                            Log.Write("并行切分：一组 " + n + " 格，第 " + attemptNo + " 种参数才成功（"
-                                      + (attemptNo > encArgs.Count ? "最后兜底：无声" : "多半没 NVIDIA 显卡，已换 libx264 软编") + "）");
+                            Log.Write("并行切分：一组 " + n + " 格，退到第 " + attemptNo + "/" + cmds.Count +
+                                      " 种参数才成功（" + cmdWhat[attemptNo - 1] + "）");
                         for (int k = 0; k < n; k++) batch[cells[k]].Output = targets[k];
                         return true;
                     }
                     err = "ffmpeg 退出码 " + code;
                     if (code != 0 && attemptNo == 1 && encArgs.Count > 1)
-                        Log.Write("并行切分：" + enc + " 失败（多半没对应显卡），改用 libx264 软编重试…");
+                        Log.Write("并行切分：" + EncLabel(enc) + "（" + enc + "）用不了，正在试后面的参数…");
                 }
                 catch (Exception ex) { err = ex.Message; }
             }
@@ -1497,9 +1578,9 @@ namespace RepRecorder
                         blackCells[i] = true;
                     }
                 }
-                // 窗户都出现了 → 开录前先把它们撑到"够用又不浪费"的尺寸（只放大不缩小）。
-                // ⚠ 必须在量尺寸之前做：下面那段就是按"撑完之后的真实客户区"排画布的。
-                GrowGameWindows(handles2);
+                // 窗口都出现了 → 开录前按设置把它们设成"640×480 × 游戏画面大小"那一档。
+                // ⚠ 必须在量尺寸之前做：下面那段就是按"设完之后的真实客户区"排画布的。
+                ApplyGameScale(handles2);
                 // 窗口尺寸（每格按游戏客户区大小排，保持 4:3 不变形）
                 for (int i = 0; i < handles2.Count; i++)
                 {
@@ -4470,13 +4551,29 @@ namespace RepRecorder
                            .Append(Path.Combine(tmpDir, "h" + i + "_%04d.jpg")).Append("\"");
                 }
                 ProcessStartInfo psi = new ProcessStartInfo(ff,
+                    HwaccelPrefix(EncName()) +
                     "-hide_banner -loglevel error -y -t 45 -i \"" + grid + "\" -filter_complex \"" + fc + "\"" + outArgs);
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
                 psi.WorkingDirectory = Path.GetDirectoryName(ff);
                 Process p = Process.Start(psi);
                 FfmpegWait w = WaitFfmpeg(p, "抽帧分析");
-                ExitCodeAndDispose(p);
+                int rc = ExitCodeAndDispose(p);
+                // 显卡解码这条路失败（老驱动 / 没那张卡）→ 退回软解重来一次。
+                // 只在"设置里选的就是显卡编码"时才试过显卡（见 HwaccelPrefix）；A 卡机器这里走 d3d11va，也有这条兜底。
+                if (HwaccelPrefix(EncName()).Length > 0 && (rc != 0 || w != FfmpegWait.Exited))
+                {
+                    Log.Write("并行：显卡解码抽帧没成（退出码 " + rc + "），退回软解重试");
+                    foreach (string s in Directory.GetFiles(tmpDir)) { try { File.Delete(s); } catch { } }
+                    psi = new ProcessStartInfo(ff,
+                        "-hide_banner -loglevel error -y -t 45 -i \"" + grid + "\" -filter_complex \"" + fc + "\"" + outArgs);
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+                    psi.WorkingDirectory = Path.GetDirectoryName(ff);
+                    p = Process.Start(psi);
+                    w = WaitFfmpeg(p, "抽帧分析");
+                    ExitCodeAndDispose(p);
+                }
                 // 超时或取消：当作"分析不出来"，全部留在 0（也就是不往前剪）——
                 // 拿半截帧去判断只会得出错的头位置，比不剪更糟。只解码一遍，所有格子一起作废。
                 if (w != FfmpegWait.Exited) return heads;

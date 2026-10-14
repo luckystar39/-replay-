@@ -557,9 +557,20 @@ namespace RepRecorder
 
         void Hint(Grid g, string text)
         {
+            Hint(g, text, 0);
+        }
+
+        // maxWidth>0：给这块小字一个宽度上限并允许换行。
+        // ⚠ 为什么需要（2026-10-14 修）：行的三列是「196 固定 / 星号 / 自动」，
+        //   "自动"那列会先按内容的**整行宽度**量走 —— 备注一长，星号列就被挤成 0 宽，
+        //   同一行的下拉框/输入框直接看不见（用户截图就是这样：备注在、下拉框没了，
+        //   而且备注右边还被截断）。给了上限之后它会自己换行，星号列保得住。
+        void Hint(Grid g, string text, double maxWidth)
+        {
             TextBlock h = Ui.Txt(text, 11, Palette.HudDim, false);
             h.VerticalAlignment = VerticalAlignment.Center;
             h.Margin = new Thickness(8, 0, 0, 0);
+            if (maxWidth > 0) { h.TextWrapping = TextWrapping.Wrap; h.MaxWidth = maxWidth; }
             Grid.SetColumn(h, 2);
             g.Children.Add(h);
         }
@@ -585,11 +596,18 @@ namespace RepRecorder
             Grid.SetColumn(cb, 1);
             cb.HorizontalAlignment = HorizontalAlignment.Left;
             g.Children.Add(cb);
-            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint, 460);   // 460：给备注一个宽度上限，别把中间那列（下拉框）挤成 0
             col.Children.Add(g);
         }
 
         void ChoiceRow(StackPanel col, string label, string name, string[] displays, string[] values)
+        {
+            ChoiceRow(col, label, name, displays, values, "");
+        }
+
+        // 和上面同一个东西，只是右边多一块小字（「游戏画面大小」要在旁边列三档的后果）。
+        // 说明里可以带 \n —— Hint 用的是单个 TextBlock，换行会照显示。
+        void ChoiceRow(StackPanel col, string label, string name, string[] displays, string[] values, string hint)
         {
             string cur = cfg == null ? "" : Convert.ToString(Prop(name).GetValue(cfg, null));
             int idx = Array.IndexOf(values, cur);
@@ -604,6 +622,18 @@ namespace RepRecorder
             Grid.SetColumn(cb, 1);
             g.Children.Add(cb);
             col.Children.Add(g);
+            // ⚠ 说明【必须另起一行】，不能塞进这一行的第三列：
+            //   行是三列「196 固定（标签）/ 星号（控件）/ 自动（说明）」，而这个对话框只有 640 宽 ——
+            //   说明一长，"自动"列就把整行宽度吃光、星号列塌成 0 宽，**同一行的下拉框直接看不见**
+            //   （2026-10-14 用户截图 + 我自己截图都复现了）。给它 MaxWidth 也没用：
+            //   196 + 460 就已经超过 640 了。放在 StackPanel 里则占满整行、自动换行。
+            if (!string.IsNullOrEmpty(hint))
+            {
+                TextBlock t = Ui.Txt(hint, 11, Palette.HudDim, false);
+                t.TextWrapping = TextWrapping.Wrap;
+                t.Margin = new Thickness(8, 3, 0, 0);
+                col.Children.Add(t);
+            }
         }
 
         void NumberRow(StackPanel col, string label, string name, string hint)
@@ -625,7 +655,7 @@ namespace RepRecorder
             Grid.SetColumn(tb, 1);
             tb.HorizontalAlignment = HorizontalAlignment.Left;
             g.Children.Add(tb);
-            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint, 460);   // 460：给备注一个宽度上限，别把中间那列（下拉框）挤成 0
             col.Children.Add(g);
         }
 
@@ -648,7 +678,7 @@ namespace RepRecorder
             Grid.SetColumn(pb, 1);
             pb.HorizontalAlignment = HorizontalAlignment.Left;
             g.Children.Add(pb);
-            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint, 460);   // 460：给备注一个宽度上限，别把中间那列（下拉框）挤成 0
             col.Children.Add(g);
         }
 
@@ -709,7 +739,7 @@ namespace RepRecorder
             Grid.SetColumn(br, 1);
             Grid.SetColumn(right, 1);
             g.Children.Add(right);
-            if (!string.IsNullOrEmpty(hint)) Hint(g, hint);
+            if (!string.IsNullOrEmpty(hint)) Hint(g, hint, 460);   // 460：给备注一个宽度上限，别把中间那列（下拉框）挤成 0
             col.Children.Add(g);
         }
 
@@ -766,6 +796,14 @@ namespace RepRecorder
                       new string[] { "1", "2", "3", "4", "5", "6" },
                       new string[] { "1", "2", "3", "4", "5", "6" });
             ToggleRow(col, "轮录（录完一批自动接着录下一批）", "RoundRecord", "");
+            // 三档对应游戏里的 Alt+大键盘1/2/3。后果写在右边（下拉框只有 210px，塞进去会被截断）。
+            ChoiceRow(col, "游戏画面大小", "GameScale",
+                      new string[] { "Alt+1（640×480）", "Alt+2（1280×960）", "Alt+3（1920×1440）" },
+                      new string[] { "1", "2", "3" },
+                      "Alt+1：最省资源；成品放大 2.25 倍，会明显发糊\n" +
+                      "Alt+2：成品只放大 1.125 倍，几乎原生（推荐）\n" +
+                      "Alt+3：完全不放大（最清晰）；但画布和中间文件都大 25%，弱显卡可能掉帧\n" +
+                      "⚠ 只对并行录制生效（同时录 2 个以上）；单录时窗口大小由游戏本身决定");
             ChoiceRow(col, "录音模式", "MicMode",
                       new string[] { "只录游戏声音", "游戏 + 麦克风" },
                       new string[] { "gameOnly", "gameAndMic" });
@@ -809,8 +847,9 @@ namespace RepRecorder
                       new string[] { "1", "2", "3" },
                       new string[] { "1", "2", "3" });
             ChoiceRow(col, "切分编码器", "ParallelSplitEncoder",
-                      new string[] { "NVIDIA 显卡（快）", "CPU 软编（兼容）" },
-                      new string[] { "h264_nvenc", "libx264" });
+                      new string[] { "NVIDIA 显卡（快）", "AMD 显卡（快）", "CPU 软编（兼容）" },
+                      new string[] { "h264_nvenc", "h264_amf", "libx264" },
+                      "选你机器上那张显卡。选错了也不会失败 —— 用不了会自动改用 CPU 软编（慢），日志里写明走的是哪一档");
             NumberRow(col, "切分质量 CQ", "ParallelSplitCQ", "（越小越清晰、文件越大，23 是常用值）");
 
             ScrollViewer sv = new ScrollViewer();

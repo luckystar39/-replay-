@@ -1,13 +1,22 @@
-OK  build script does not reference System.Windows.Forms  
-OK  no code line in src/ uses System.Windows.Forms  hits=0
-OK  no `using System.Windows.Forms;` anywhere  hits=0
-OK  palette (colors moved out of the old MainForm) exists  
-OK  Palette.cs is in the build command line  
-OK  folder picker (replaces WinForms FolderBrowserDialog) exists  
-OK  FolderPicker.cs is in the build command line  
-OK  the built exe does not reference System.Windows.Forms  refs=mscorlib,System,PresentationFramework,System.Drawing,PresentationCore,WindowsBase,System.Web.Extensions,System.Core,System.IO.Compression.FileSystem
-OK  the built exe still references PresentationFramework  
-OK  main window appeared even when started with --old  
-OK  --old is swallowed, not treated as a dropped file  
-OK  the startup log says WPF  
+OK  process alive, pid=27504
+OK  window found by AutomationId=win, name="Rep → MP4 录制器（OBS） v1.1.3"
+OK  btnPanel -> ControlType.Button
+OK  btnBg -> ControlType.Button
+OK  capMin -> ControlType.Button
+OK  capMax -> ControlType.Button
+OK  capClose -> ControlType.Button
+OK  panelLeft -> ControlType.Pane
+OK  splitterV -> ControlType.Thumb
+OK  splitterH -> ControlType.Thumb
+OK  logBox -> ControlType.List
+     window 1770x972 px, window-dpi=144, monitor-dpi=144
+OK  DPI aware (window reports the real 144 dpi, not the virtualized 96)
+OK  asks DWM for rounded corners (pref=2)
+     corner patch: square=155  round=160  (informational, see the note in this script)
+     resize base 1770x972 px  (= 1180x648 DIP at 150%)
+     resize step: CPU 1.6 ms  wall 11.9 ms   (WinForms old: 47 ms wall)
+OK  resize is fast
+     screenshot -> D:\【完整包】非想天则整合包2026-06-15\RepRecorder-WPF\测试\_shot-01-shell.png
+OK  maximised window does not overhang the work area  win=0,0 2560x1527  work=0,0 2560x1528  overhang=0  gap=1
+OK  maximised window covers the work area  win=0,0 2560x1527  work=0,0 2560x1528  overhang=0  gap=1
 PASS
