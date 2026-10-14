@@ -5,6 +5,8 @@
 #     不带 --check ：改源码里的版本号 → 编译 → 跑 验证WPF-00 → 同步到分发目录
 #     --check      ：只做"不动源码"的那部分（验收脚本用的就是它）
 #   两种模式最后都会：打更新包 → 算 sha256 → 写 version.json → 写照着做-发版.txt
+#   ⚠ 2026-10-14 起不再做"完整包副本"（用户决定：GitHub 上只放我们做的软件，不放带 ffmpeg 的 85MB zip）。
+#     发行版附件只有更新包一个；version.json 的 FullPackage 留空（程序会回落到下载链接）。
 #
 # 环境变量（由 发版.bat 设好）：
 #   GITEE   = 你的用户名/仓库名（留空 = 还没有 Gitee 仓库，那就跳过 Gitee 那条链接）
@@ -132,7 +134,6 @@ if (-not $check) {
 #   —— 中文被吃掉了。而下载地址是拿这个名字拼出来的，于是链接 404，用户更新失败。
 #   两个仓库共用同一个纯 ASCII 名字，就不会再出现"传上去的名字和清单里的对不上"。
 $updName  = 'RepRecorder-' + $ver + '-update.zip'
-$fullName = 'RepRecorder-' + $ver + '-full.zip'
 $updPath = Join-Path $rel $updName
 if (Test-Path $updPath) { Remove-Item -LiteralPath $updPath -Force }
 $exeIn = Join-Path $src 'RepRecorder.exe'
@@ -144,19 +145,12 @@ $sha = (Get-FileHash $updPath -Algorithm SHA256).Hash.ToLower()
 $sizeKB = [int]((Get-Item $updPath).Length / 1024)
 Write-Host ('  更新包：' + $updName + '（' + $sizeKB + ' KB）')
 
-# 完整包也备一份"纯 ASCII 名字"的副本放进 _发版，这样"传附件"就只是把 _发版 里那两个文件
-# 拖上去，不用临时改名、也不会因为名字对不上而 404。（原件 RepRecorder-发给别人.zip 不动，
-# 网盘/直接发人那条路还在用它。）
-$fullCopy = Join-Path $rel $fullName
-$haveFull = $false
-$fullSrc = Join-Path $root 'RepRecorder-发给别人.zip'
-if (Test-Path -LiteralPath $fullSrc) {
-  Copy-Item -LiteralPath $fullSrc -Destination $fullCopy -Force
-  $haveFull = $true
-  Write-Host ('  完整包副本：' + $fullName + '（' + [int]((Get-Item $fullCopy).Length / 1048576) + ' MB，传完可以删）')
-} else {
-  Write-Host ('  ⚠ 没找到 ' + $fullSrc + '：完整包那条链接不写进清单')
-}
+# 完整包（带 ffmpeg，85MB）—— **2026-10-14 起不再往 GitHub 传了**，所以副本也不做了。
+# 用户的原话："我现在在github上也不上传带有ffmpeg的zip包了，只上传我们做的软件"。
+# 于是发行版上只有更新包那一个附件；完整包按原来那条路发（网盘 / 群文件），
+# 原件 RepRecorder-发给别人.zip 一直由 同步到所有文件夹.bat 重新打包，没被动过。
+# ⚠ 如果哪天又要一份"纯 ASCII 名字"的副本往外发，就两行：
+#   Copy-Item (Join-Path $root 'RepRecorder-发给别人.zip') (Join-Path $rel ('RepRecorder-' + $ver + '-full.zip'))
 
 # ---------------------------------------------------------------- 4) version.json
 $links = @()
@@ -166,10 +160,10 @@ if (-not [string]::IsNullOrEmpty($gitee)) {
 if (-not [string]::IsNullOrEmpty($github)) {
   $links += [pscustomobject]@{ Type = 'GitHub'; Url = 'https://github.com/' + $github + '/releases/download/v' + $ver + '/' + $updName }
 }
+# FullPackage 一直是空的（上面那段不做了）—— 程序那边有回落：
+# 更新对话框的「打开下载页」在 FullPackage 为空时用 DownloadLinks[0]
+# （见 UiDialogs.cs 的 OpenPage），所以留空是安全的，新用户点它落到发行版下载页 ✓
 $full = ''
-if ((-not [string]::IsNullOrEmpty($github)) -and $haveFull) {
-  $full = 'https://github.com/' + $github + '/releases/download/v' + $ver + '/' + $fullName
-}
 $manifest = [pscustomobject]@{
   Version      = $ver
   Notes        = $notes
@@ -193,8 +187,8 @@ $steps += ''
 $steps += '1) 建 Release。⚠ 标签（tag）必须正好是 v' + $ver + '——清单里的下载地址是靠标签定位的，'
 $steps += '   标签写成别的（比如中文名）链接就永远是 404。发行版的"名称"可以随便写，标签不行。'
 $steps += '   附件就在 ' + $rel + ' 里（名字别改，都是纯 ASCII）：'
-$steps += '     更新包：' + $updName + '（' + $sizeKB + ' KB）—— Gitee 和 GitHub 都传这个'
-if ($haveFull) { $steps += '     完整包：' + $fullName + '（84.8MB）—— 只传 GitHub，Gitee 那 1GB 别占；传完可以删掉副本' }
+$steps += '     更新包：' + $updName + '（' + $sizeKB + ' KB，里面只有 exe + 两份说明）'
+$steps += '     —— Gitee 和 GitHub 都传这一个（两个平台的发行版都只有它，2026-10-14 起不再传完整包）'
 if (-not [string]::IsNullOrEmpty($gitee))  { $steps += '     Gitee ：https://gitee.com/' + $gitee + '/releases/new' }
 if (-not [string]::IsNullOrEmpty($github)) { $steps += '     GitHub：https://github.com/' + $github + '/releases/new' }
 $steps += '   ⚠ 为什么必须是纯 ASCII：往 GitHub 传中文名的附件，落地后中文会被吃掉'
@@ -205,8 +199,9 @@ $steps += ''
 $steps += '2) 把 version.json 的内容整段复制到 Gitee 仓库的 version.json 里，提交'
 $steps += '     （内容就在 ' + $jsonPath + '）'
 $steps += ''
-$steps += '3) 完整包按你原来的方式发（网盘 / 直接发人）—— Gitee 每仓库附件总共只有 1GB，'
-$steps += '   完整包 84.8MB 传几次就满，所以它走 GitHub（GitHub 传的就是 _发版 里那份 ASCII 副本）。'
+$steps += '3) 完整包（带 ffmpeg 的 RepRecorder-发给别人.zip，约 85MB）按你原来的方式发（网盘 / 群文件 /'
+$steps += '   直接发人）—— 2026-10-14 起它不再进 GitHub 发行版，发行版上只有上面那一个更新包。'
+$steps += '   那份 zip 由 同步到所有文件夹.bat 每次重新打包（exe + ffmpeg + 两份说明），原件一直在仓库根目录。'
 $steps += ''
 $steps += '4) 发完自己验一次：跑 RepRecorder-WPF\_netcheck.ps1（要联网、要有已发布的发行版）。'
 $steps += '   它会真的从线上把更新包下下来、校验 sha、替换自身再重启，还会逐条 HEAD 两个下载地址'

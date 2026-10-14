@@ -343,10 +343,14 @@ Check 'the manifest carries a gitee link now that the repo exists' (($j -ne $nul
 # file was uploaded under that name, GitHub dropped the Chinese and served it as
 # ".../RepRecorder-1.1-.zip" -- so the advertised url 404'd and the fallback download was dead.
 # With no non-ascii byte anywhere in a url, that whole class cannot happen.
-$urls = @($j.FullPackage) + @($j.DownloadLinks | ForEach-Object { $_.Url })
+$urls = @($j.DownloadLinks | ForEach-Object { $_.Url }) + @($j.FullPackage | Where-Object { $_ })
 $badUrl = @($urls | Where-Object { $_ -match '[^\x00-\x7F]' })
-Check 'every url in the manifest is ascii-only' (($urls.Count -ge 3) -and ($badUrl.Count -eq 0)) ('urls=' + $urls.Count + ' non-ascii=' + $badUrl.Count)
-Check 'it names the full package too (ascii)' (($j -ne $null) -and ($j.FullPackage -like '*RepRecorder-1.1-full.zip')) ('full=' + $j.FullPackage)
+Check 'every url in the manifest is ascii-only' (($urls.Count -ge 2) -and ($badUrl.Count -eq 0)) ('urls=' + $urls.Count + ' non-ascii=' + $badUrl.Count)
+# 2026-10-14: the release no longer ships the full package (the ~85MB zip with ffmpeg) --
+# the author decided GitHub should only host our own software.  FullPackage is now
+# intentionally empty, and the app falls back to DownloadLinks[0] (UiDialogs.cs OpenPage).
+# The old assertion here demanded a '*-full.zip' url; it flipped together with the policy.
+Check 'the full package link is intentionally empty' ($j.FullPackage -eq '') ('full=' + $j.FullPackage)
 
 # The single most valuable assertion here: the update package must NOT drag ffmpeg along
 # (217 MB) -- that would turn "one-click update" into an 85 MB download.

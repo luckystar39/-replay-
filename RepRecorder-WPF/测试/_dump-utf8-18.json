@@ -87,7 +87,7 @@
     {
         "what":  "it names the new version and the current one",
         "ok":  true,
-        "detail":  "text=发现新版本 v9.9（你现在是 v1.1.2）"
+        "detail":  "text=发现新版本 v9.9（你现在是 v1.1.3）"
     },
     {
         "what":  "the dialog closes",
@@ -137,7 +137,7 @@
     {
         "what":  "a hash mismatch is refused",
         "ok":  true,
-        "detail":  "result=fail err=下载到的文件校验值不对（可能没下全）。期望 cf8f3f8c93e778c038d78bb15014fda6c8dd5f967619683af83dfb4612db9096，实际 97fbc617c99a2ea7104676d51c9e9b3ba852e48b400860cdb31407b87b9ce2a4"
+        "detail":  "result=fail err=下载到的文件校验值不对（可能没下全）。期望 2e1a6d1c5337e56deef8861f05eb69b31ce17a0ba28850461781e26579b8ae84，实际 151630e9c2169df034d093d4387ee61dc4acbc28d29143bf028385b73f3ba982"
     },
     {
         "what":  "and the target was not touched",
@@ -247,7 +247,7 @@
     {
         "what":  "the manifest carries a sha256",
         "ok":  true,
-        "detail":  "sha=cd4df65e542823b8c3f655f1465fc533805b8273cdaa4ecf61c10c627d34126d"
+        "detail":  "sha=46e8aa6f1cbd8ad8f7046e6e456faeeac76fd26c0e99a320f7f110877c050a79"
     },
     {
         "what":  "the sha256 matches the package it just built",
@@ -267,17 +267,17 @@
     {
         "what":  "every url in the manifest is ascii-only",
         "ok":  true,
-        "detail":  "urls=3 non-ascii=0"
+        "detail":  "urls=2 non-ascii=0"
     },
     {
-        "what":  "it names the full package too (ascii)",
+        "what":  "the full package link is intentionally empty",
         "ok":  true,
-        "detail":  "full=https://github.com/luckystar39/soku-RepRecorder/releases/download/v1.1/RepRecorder-1.1-full.zip"
+        "detail":  "full="
     },
     {
         "what":  "the update package stays small (it must not carry ffmpeg)",
         "ok":  true,
-        "detail":  "bytes=195085"
+        "detail":  "bytes=143413"
     },
     {
         "what":  "the package has RepRecorder.exe at its root",
@@ -302,7 +302,7 @@
     {
         "what":  "and the manual check re-stamped the time",
         "ok":  true,
-        "detail":  "was=00:34:58 now=00:34:58"
+        "detail":  "was=06:39:51 now=06:39:52"
     },
     {
         "what":  "the button is usable again after the dialog",
