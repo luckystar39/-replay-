@@ -1450,7 +1450,6 @@ namespace RepRecorder
             bool parMutedByUs = false;                    // 这一批是不是我们静音了系统输出（收尾要恢复）
             int CW = 0, CH = 0;
             int cols = 1, rows = 1;   // 画布网格（格子多了要折行，见下面）
-            int origW = 0, origH = 0, origFps = 0;
             string origTracks = null;
 
             try
@@ -1475,14 +1474,6 @@ namespace RepRecorder
                     }
                 }
                 Log.Write("并行：已清理上一批可能残留的 P1~P6 采集源并把音轨归零");
-                try
-                {
-                    Dictionary<string, object> v = obs.Request("GetVideoSettings", null);
-                    origW = Convert.ToInt32(v["baseWidth"]);
-                    origH = Convert.ToInt32(v["baseHeight"]);
-                    if (v.ContainsKey("fpsNumerator") && v["fpsNumerator"] != null) origFps = Convert.ToInt32(v["fpsNumerator"]);
-                }
-                catch { }
                 try
                 {
                     Dictionary<string, object> q = new Dictionary<string, object>();
@@ -2088,11 +2079,8 @@ namespace RepRecorder
                     }
                 }
                 catch { }
-                try { if (origW > 0) { Dictionary<string,object> ov = new Dictionary<string,object>();
-                        ov["baseWidth"] = origW; ov["baseHeight"] = origH; ov["outputWidth"] = origW; ov["outputHeight"] = origH;
-                        ov["fpsNumerator"] = origFps > 0 ? origFps : 60; ov["fpsDenominator"] = 1;
-                        obs.Request("SetVideoSettings", ov);
-                        Log.Write("并行：已还原 OBS 画布 " + origW + "×" + origH); } } catch { }
+                // 画面设置（画布/输出/帧率 + 各场景里源的摆放）统一在 RestoreRecordDirectory 里还原 ——
+                // 并行、单录两条路都走那个方法，所以这里不再单独写一份（以前那份还会把"输出分辨率"写成画布大小）。
                 try { SetProfileParamRaw("SimpleOutput", "RecTracks", string.IsNullOrEmpty(origTracks) ? "1" : origTracks); } catch { }
                 foreach (string s in vNames) { try { obs.Request("RemoveInput", new Dictionary<string,object>{{"inputName",s}}); } catch { } }
                 foreach (string s in aNames) { try { obs.Request("RemoveInput", new Dictionary<string,object>{{"inputName",s}}); } catch { } }
@@ -2479,6 +2467,9 @@ namespace RepRecorder
                 {
                     obs.MetersEnabled = true;   // 订阅音频电平事件（用于录制时自检有没有声音）
                     obs.Connect(cfg.Port, cfg.Password);
+                    // 连上之后先补一次账：设置里若还留着上次没还的快照（被强杀/断电），现在就还给用户。
+                    // 这样"下次开程序"就等于补还原了，用户不用自己去 OBS 里改回来。
+                    if (!string.IsNullOrEmpty(cfg.ObsVideoSnapshot)) RestoreObsVideo();
                     return true;
                 }
                 catch (Exception ex)
@@ -2496,6 +2487,10 @@ namespace RepRecorder
             try
             {
                 StopObsRecordingIfAny();   // 上次被强杀留下的"没停的录像"要先停掉，否则后面全报 500
+
+                // ⚠ 必须在改画布【之前】拍快照：并行那条路随后还会再改一次画布（改成 6 格那么大），
+                //   但都是这一批的事 —— 拍一张就够，这一张里含着用户自己的画布/输出缩放/帧率和各源的摆放。
+                SnapshotObsVideo();
 
                 if (cfg.AutoCanvas)
                 {
@@ -2690,8 +2685,143 @@ namespace RepRecorder
             }
             catch (Exception ex) { Log.Write("切换场景失败：" + ex.Message); }
         }
+        // ── OBS 画面设置快照 / 还原 ──────────────────────────────────────────────
+        // 为什么要有（2026-10-14 用户实测）：并行录制会把画布改成"6 格那么大"、单录会改成 1440×1080，
+        //   而 OBS 在画布变化时会**顺带重算场景里每个源的摆放** —— 于是用户自己那个「显示器采集」
+        //   被挪到画布外、录屏变成全黑（他以为程序把 OBS 弄坏了）。
+        // 以前的实现有三个洞：① 只有并行那条路收尾还原，**单录不还原**；
+        //   ② 写回时把"输出分辨率"也写成了画布大小 —— 用户设的输出缩放（比如 1152×648）就这样没了；
+        //   ③ 包在 catch{} 里、异常收尾还会跳过 —— 失败一句话都不写，用户只能自己发现画面被改了。
+        // 现在：开录前**整份**快照（画布+输出+帧率+缩放算法，以及各场景里每个源的摆放），
+        //   收尾**整份**写回；快照同时写进设置文件 —— 被强杀时下次一连上 OBS 就补还原（见 EnsureObs）。
+        static readonly string[] ObsTransformKeys = new string[] {
+            "positionX", "positionY", "rotation", "scaleX", "scaleY", "alignment",
+            "boundsType", "boundsAlignment", "boundsWidth", "boundsHeight",
+            "cropLeft", "cropRight", "cropTop", "cropBottom" };
+
+        // 开录前调（在 PrepareObs 里、改画布之前）。⚠ 设置里若还留着上一批的快照，先还掉再拍 ——
+        //   否则会把"已经被改坏的状态"当成用户的原样拍下来。
+        void SnapshotObsVideo()
+        {
+            if (!string.IsNullOrEmpty(cfg.ObsVideoSnapshot))
+            {
+                Log.Write("OBS 快照：发现上一批没收尾（多半被强杀过），先还原再重新记录");
+                RestoreObsVideo();
+            }
+            Dictionary<string, object> shot = new Dictionary<string, object>();
+            try { shot["video"] = obs.Request("GetVideoSettings", null); }
+            catch (Exception ex) { Log.Write("OBS 快照：读画面设置失败（这一批不还原画布）：" + ex.Message); }
+            List<object> items = new List<object>();
+            try
+            {
+                foreach (object so in ObsClient.ToList(obs.Request("GetSceneList", null)["scenes"]))
+                {
+                    Dictionary<string, object> sc = (Dictionary<string, object>)so;
+                    string sceneName = Convert.ToString(sc["sceneName"]);
+                    List<object> list;
+                    try
+                    {
+                        list = ObsClient.ToList(obs.Request("GetSceneItemList",
+                            new Dictionary<string, object> { { "sceneName", sceneName } })["sceneItems"]);
+                    }
+                    catch { continue; }
+                    foreach (object io in list)
+                    {
+                        Dictionary<string, object> it = (Dictionary<string, object>)io;
+                        int sid = Convert.ToInt32(it["sceneItemId"]);
+                        Dictionary<string, object> tr;
+                        try
+                        {
+                            tr = (Dictionary<string, object>)obs.Request("GetSceneItemTransform",
+                                new Dictionary<string, object> { { "sceneName", sceneName }, { "sceneItemId", sid } })["sceneItemTransform"];
+                        }
+                        catch { continue; }
+                        Dictionary<string, object> keep = new Dictionary<string, object>();
+                        keep["sceneName"] = sceneName;
+                        keep["sceneItemId"] = sid;
+                        keep["sourceName"] = Convert.ToString(it["sourceName"]);
+                        foreach (string k in ObsTransformKeys) if (tr.ContainsKey(k)) keep[k] = tr[k];
+                        items.Add(keep);
+                    }
+                }
+            }
+            catch (Exception ex) { Log.Write("OBS 快照：读场景里源的摆放失败（这一批不还原摆放）：" + ex.Message); }
+            shot["items"] = items;
+            try
+            {
+                cfg.ObsVideoSnapshot = new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(shot);
+                cfg.Save();
+            }
+            catch (Exception ex) { Log.Write("OBS 快照：写进设置文件失败（被强杀就补不还原了）：" + ex.Message); }
+            if (shot["video"] != null)
+            {
+                Dictionary<string, object> v = (Dictionary<string, object>)shot["video"];
+                Log.Write("OBS 快照：已记下画布 " + v["baseWidth"] + "×" + v["baseHeight"] +
+                          "（输出 " + v["outputWidth"] + "×" + v["outputHeight"] + "）和 " + items.Count + " 个源的摆放");
+            }
+        }
+
+        // 收尾调（正常/异常都要走，见 RestoreRecordDirectory）。失败一律写日志 —— 别再静默。
+        void RestoreObsVideo()
+        {
+            string raw = cfg.ObsVideoSnapshot;
+            if (string.IsNullOrEmpty(raw)) return;
+            System.Web.Script.Serialization.JavaScriptSerializer js =
+                new System.Web.Script.Serialization.JavaScriptSerializer();
+            Dictionary<string, object> shot = null;
+            try { shot = js.DeserializeObject(raw) as Dictionary<string, object>; } catch { }
+            if (shot == null)
+            {
+                Log.Write("OBS 还原：快照读不出来（跳过），已清掉");
+                cfg.ObsVideoSnapshot = ""; try { cfg.Save(); } catch { }
+                return;
+            }
+            try
+            {
+                Dictionary<string, object> v = shot.ContainsKey("video") ? shot["video"] as Dictionary<string, object> : null;
+                if (v != null)
+                {
+                    obs.Request("SetVideoSettings", v);
+                    Log.Write("OBS 还原：画布 " + v["baseWidth"] + "×" + v["baseHeight"] +
+                              "、输出 " + v["outputWidth"] + "×" + v["outputHeight"]);
+                }
+            }
+            catch (Exception ex) { Log.Write("OBS 还原：画面设置没还成 —— " + ex.Message); }
+            int ok = 0, miss = 0;
+            try
+            {
+                System.Collections.IEnumerable list = shot.ContainsKey("items") ? shot["items"] as System.Collections.IEnumerable : null;
+                if (list != null)
+                    foreach (object o in list)
+                    {
+                        Dictionary<string, object> it = o as Dictionary<string, object>;
+                        if (it == null) continue;
+                        try
+                        {
+                            Dictionary<string, object> req = new Dictionary<string, object>();
+                            req["sceneName"] = it["sceneName"];
+                            req["sceneItemId"] = Convert.ToInt32(it["sceneItemId"]);
+                            Dictionary<string, object> t = new Dictionary<string, object>();
+                            foreach (string k in ObsTransformKeys) if (it.ContainsKey(k)) t[k] = it[k];
+                            req["sceneItemTransform"] = t;
+                            obs.Request("SetSceneItemTransform", req);
+                            ok++;
+                        }
+                        catch { miss++; }   // 场景/元素已经不在了（比如本程序自己建的那个场景），跳过
+                    }
+            }
+            catch (Exception ex) { Log.Write("OBS 还原：源的摆放没还成 —— " + ex.Message); }
+            if (ok + miss > 0)
+                Log.Write("OBS 还原：源的位置还回 " + ok + " 个" + (miss > 0 ? "（" + miss + " 个已不存在，跳过）" : ""));
+            cfg.ObsVideoSnapshot = "";
+            try { cfg.Save(); } catch { }
+        }
+
         void RestoreRecordDirectory()
         {
+            // 顺手把 OBS 的画面设置也还回去（这一批改过的画布/输出分辨率 + 场景里源的摆放）。
+            // ⚠ 放在最前面：下面那个 return 是"录像目录没记过"时才走的，画面设置照样要还。
+            RestoreObsVideo();
             if (originalRecordDir == null || !obs.IsConnected) return;
             if (string.IsNullOrEmpty(originalRecordDir)) return;
             Dictionary<string, object> r = new Dictionary<string, object>();

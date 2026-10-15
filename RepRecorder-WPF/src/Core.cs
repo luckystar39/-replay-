@@ -48,6 +48,9 @@ namespace RepRecorder
         public string LastUpdateCheckUtc { get; set; }
         [Category("更新"), Description("用户点过「以后再说」的版本号 —— 不再为它弹提示（内部用）。")]
         public string SkippedUpdateVersion { get; set; }
+        [Category("OBS 连接"), Description("开录前记下的 OBS 画面设置快照（画布/输出分辨率/帧率/缩放算法 + 各场景里每个源的摆放），收尾还原用（内部用）。\r\n" +
+            "正常收尾之后就清空了；如果它还在，说明上次没收尾（多半被强杀），程序下次连上 OBS 会先把它还原。")]
+        public string ObsVideoSnapshot { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 端口，默认 4455。")]
         public int Port { get; set; }
         [Category("OBS 连接"), Description("obs-websocket 密码。留空则自动从 OBS 配置文件读取。")]

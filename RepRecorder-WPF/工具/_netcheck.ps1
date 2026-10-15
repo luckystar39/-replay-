@@ -6,7 +6,9 @@
 #   pass A "published": the manifest exactly as published (Gitee first in the list)
 #   pass B "github":    only the GitHub link offered -- proves the FALLBACK works too,
 #                       which nothing else covers (the app stops at the first link that works)
-#   plus a reachability check on FullPackage (85 MB: HEAD only, not downloaded here)
+#   plus a reachability check on FullPackage -- since 1.1.3 there is none (FullPackage is empty
+#   on purpose: the 85MB zip with ffmpeg is no longer published), so that step now asserts the
+#   empty value instead.  If a full package is ever published again, its url is HEADed here.
 $ErrorActionPreference = 'Continue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -104,6 +106,11 @@ Check 'the github urls are ascii-only' ($nonAscii -eq 0) ('non-ascii chars=' + $
 # ---------------------------------------------------------------- 2) the full package link
 # The app never downloads this one (the button just opens a browser), so a HEAD is the right
 # check: it catches the 404 that a private repo / wrong asset name would give.
+# ⚠ 2026-10-14: the author stopped publishing the full package (the ~85MB zip with ffmpeg) --
+# GitHub now only hosts our own software, so the release ships the update package alone and
+# FullPackage is intentionally empty.  The app handles that (UiDialogs.cs OpenPage falls back
+# to DownloadLinks[0]), so an EMPTY value is now the expected state, not a failure.  A value
+# that is present still has to open, for the day a full package gets published somewhere again.
 if ($j.FullPackage.Length -gt 0) {
   try {
     $req = [Net.WebRequest]::Create($j.FullPackage)
@@ -116,7 +123,7 @@ if ($j.FullPackage.Length -gt 0) {
     $resp.Close()
   } catch { Check 'the full-package link opens (no 404)' $false $_.Exception.Message }
 } else {
-  Check 'the full-package link opens (no 404)' $false 'FullPackage is empty in the manifest'
+  Check 'FullPackage is intentionally empty (no full package since 1.1.3)' $true 'the app falls back to DownloadLinks[0]'
 }
 
 # Every advertised download link must actually serve bytes.  A missing or mis-named asset on a
